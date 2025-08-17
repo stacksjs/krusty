@@ -1,4 +1,642 @@
-export interface BinaryConfig {
-  from: string
+export interface BunshConfig {
   verbose: boolean
+  prompt?: PromptConfig
+  history?: HistoryConfig
+  completion?: CompletionConfig
+  aliases?: Record<string, string>
+  environment?: Record<string, string>
+  plugins?: PluginConfig[]
+  theme?: ThemeConfig
+  modules?: ModuleConfig
+  hooks?: HooksConfig
+}
+
+export interface PromptConfig {
+  format?: string
+  showGit?: boolean
+  showTime?: boolean
+  showUser?: boolean
+  showHost?: boolean
+  showPath?: boolean
+  showExitCode?: boolean
+  rightPrompt?: string
+  transient?: boolean
+}
+
+export interface HistoryConfig {
+  maxEntries?: number
+  file?: string
+  ignoreDuplicates?: boolean
+  ignoreSpace?: boolean
+  searchMode?: 'fuzzy' | 'exact'
+}
+
+export interface CompletionConfig {
+  enabled?: boolean
+  caseSensitive?: boolean
+  showDescriptions?: boolean
+  maxSuggestions?: number
+}
+
+export interface ThemeConfig {
+  colors?: {
+    primary?: string
+    secondary?: string
+    success?: string
+    warning?: string
+    error?: string
+    info?: string
+  }
+  symbols?: {
+    prompt?: string
+    continuation?: string
+    git?: {
+      branch?: string
+      ahead?: string
+      behind?: string
+      staged?: string
+      unstaged?: string
+      untracked?: string
+    }
+  }
+}
+
+export interface CommandResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+  duration: number
+}
+
+export interface Command {
+  name: string
+  args: string[]
+  raw: string
+  background?: boolean
+  pipes?: Command[]
+}
+
+export interface ParsedCommand {
+  commands: Command[]
+  redirects?: {
+    stdout?: string
+    stderr?: string
+    stdin?: string
+  }
+}
+
+export interface BuiltinCommand {
+  name: string
+  description: string
+  usage: string
+  execute: (args: string[], shell: Shell) => Promise<CommandResult>
+}
+
+export interface Shell {
+  config: BunshConfig
+  cwd: string
+  environment: Record<string, string>
+  history: string[]
+  aliases: Record<string, string>
+  builtins: Map<string, BuiltinCommand>
+
+  // Core methods
+  execute: (command: string) => Promise<CommandResult>
+  parseCommand: (input: string) => ParsedCommand
+  changeDirectory: (path: string) => boolean
+
+  // REPL methods
+  start: () => Promise<void>
+  stop: () => void
+
+  // Prompt methods
+  renderPrompt: () => Promise<string>
+
+  // History methods
+  addToHistory: (command: string) => void
+  searchHistory: (query: string) => string[]
+
+  // Completion methods
+  getCompletions: (input: string, cursor: number) => string[]
+}
+
+export interface GitInfo {
+  branch?: string
+  ahead?: number
+  behind?: number
+  staged?: number
+  unstaged?: number
+  untracked?: number
+  stashed?: number
+  isRepo: boolean
+  isDirty: boolean
+}
+
+export interface SystemInfo {
+  user: string
+  hostname: string
+  platform: string
+  arch: string
+  nodeVersion: string
+  bunVersion: string
+}
+
+export interface PromptSegment {
+  content: string
+  style?: {
+    color?: string
+    background?: string
+    bold?: boolean
+    italic?: boolean
+    underline?: boolean
+  }
+}
+
+export interface CompletionItem {
+  text: string
+  description?: string
+  type: 'command' | 'file' | 'directory' | 'alias' | 'builtin' | 'variable'
+}
+
+// Module system types
+export interface ModuleContext {
+  cwd: string
+  environment: Record<string, string>
+  gitInfo?: GitInfo
+  systemInfo?: SystemInfo
+}
+
+export interface ModuleResult {
+  content: string
+  style?: {
+    color?: string
+    background?: string
+    bold?: boolean
+    italic?: boolean
+  }
+}
+
+export interface Module {
+  name: string
+  enabled: boolean
+  detect: (context: ModuleContext) => boolean
+  render: (context: ModuleContext) => Promise<ModuleResult | null>
+  config?: Record<string, any>
+}
+
+export interface ModuleConfig {
+  // Development environments
+  aws?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    region_aliases?: Record<string, string>
+    profile_aliases?: Record<string, string>
+  }
+  azure?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    subscription_aliases?: Record<string, string>
+  }
+  bun?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  deno?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  golang?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  python?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  java?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  kotlin?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  php?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  ruby?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  swift?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  zig?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  lua?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  perl?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  rlang?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  dotnet?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  erlang?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  cmake?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  c?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  cpp?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  terraform?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  pulumi?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+
+  // Cloud providers
+  gcloud?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    region_aliases?: Record<string, string>
+    project_aliases?: Record<string, string>
+  }
+
+  // Git modules
+  git_branch?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    truncation_length?: number
+    truncation_symbol?: string
+  }
+  git_commit?: {
+    enabled?: boolean
+    format?: string
+    commit_hash_length?: number
+    only_detached?: boolean
+  }
+  git_state?: {
+    enabled?: boolean
+    format?: string
+    rebase?: string
+    merge?: string
+    revert?: string
+    cherry_pick?: string
+    bisect?: string
+    am?: string
+    am_or_rebase?: string
+  }
+  git_status?: {
+    enabled?: boolean
+    format?: string
+    ahead?: string
+    behind?: string
+    diverged?: string
+    conflicted?: string
+    deleted?: string
+    renamed?: string
+    modified?: string
+    staged?: string
+    untracked?: string
+  }
+  git_metrics?: {
+    enabled?: boolean
+    format?: string
+    added_style?: string
+    deleted_style?: string
+  }
+
+  // System modules
+  os?: {
+    enabled?: boolean
+    format?: string
+    symbols?: Record<string, string>
+  }
+  hostname?: {
+    enabled?: boolean
+    format?: string
+    ssh_only?: boolean
+    trim_at?: string
+  }
+  directory?: {
+    enabled?: boolean
+    format?: string
+    truncation_length?: number
+    truncate_to_repo?: boolean
+    fish_style_pwd_dir_length?: number
+    use_logical_path?: boolean
+    home_symbol?: string
+  }
+  username?: {
+    enabled?: boolean
+    format?: string
+    show_always?: boolean
+    aliases?: Record<string, string>
+  }
+  shell?: {
+    enabled?: boolean
+    format?: string
+    bash_indicator?: string
+    fish_indicator?: string
+    zsh_indicator?: string
+    powershell_indicator?: string
+    ion_indicator?: string
+    elvish_indicator?: string
+    tcsh_indicator?: string
+    nu_indicator?: string
+    xonsh_indicator?: string
+    cmd_indicator?: string
+  }
+  battery?: {
+    enabled?: boolean
+    format?: string
+    full_symbol?: string
+    charging_symbol?: string
+    discharging_symbol?: string
+    unknown_symbol?: string
+    empty_symbol?: string
+    display?: Array<{
+      threshold: number
+      style: string
+    }>
+  }
+  cmd_duration?: {
+    enabled?: boolean
+    format?: string
+    min_time?: number
+    show_milliseconds?: boolean
+    show_notifications?: boolean
+  }
+  memory_usage?: {
+    enabled?: boolean
+    format?: string
+    threshold?: number
+    symbol?: string
+  }
+  time?: {
+    enabled?: boolean
+    format?: string
+    time_format?: string
+    utc_time_offset?: string
+    time_range?: string
+  }
+  nix_shell?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    impure_msg?: string
+    pure_msg?: string
+    unknown_msg?: string
+  }
+  env_var?: Record<string, {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    variable?: string
+    default?: string
+  }>
+  custom?: Record<string, {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    command?: string
+    when?: string | boolean
+    shell?: string[]
+    description?: string
+    files?: string[]
+    extensions?: string[]
+    directories?: string[]
+  }>
+}
+
+// Plugin system types
+export interface PluginConfig {
+  name: string
+  enabled?: boolean
+  path?: string
+  url?: string
+  version?: string
+  config?: Record<string, any>
+}
+
+export interface Plugin {
+  name: string
+  version: string
+  description?: string
+  author?: string
+  
+  // Plugin lifecycle methods
+  initialize?(context: PluginContext): Promise<void> | void
+  activate?(context: PluginContext): Promise<void> | void
+  deactivate?(context: PluginContext): Promise<void> | void
+  destroy?(context: PluginContext): Promise<void> | void
+  
+  // Plugin capabilities
+  commands?: Record<string, PluginCommand>
+  modules?: Module[]
+  hooks?: Record<string, HookHandler>
+  completions?: PluginCompletion[]
+  aliases?: Record<string, string>
+  
+  // Plugin metadata
+  dependencies?: string[]
+  bunshVersion?: string
+}
+
+export interface PluginContext {
+  shell: Shell
+  config: BunshConfig
+  pluginConfig?: Record<string, any>
+  logger: PluginLogger
+  utils: PluginUtils
+}
+
+export interface PluginCommand {
+  description: string
+  usage?: string
+  examples?: string[]
+  execute: (args: string[], context: PluginContext) => Promise<CommandResult>
+}
+
+export interface PluginCompletion {
+  command: string
+  complete: (input: string, cursor: number, context: PluginContext) => string[]
+}
+
+export interface PluginLogger {
+  debug(message: string, ...args: any[]): void
+  info(message: string, ...args: any[]): void
+  warn(message: string, ...args: any[]): void
+  error(message: string, ...args: any[]): void
+}
+
+export interface PluginUtils {
+  exec(command: string, options?: any): Promise<{ stdout: string, stderr: string, exitCode: number }>
+  readFile(path: string): Promise<string>
+  writeFile(path: string, content: string): Promise<void>
+  exists(path: string): boolean
+  expandPath(path: string): string
+  formatTemplate(template: string, variables: Record<string, string>): string
+}
+
+// Hooks system types
+export interface HooksConfig {
+  // Shell lifecycle hooks
+  'shell:init'?: HookConfig[]
+  'shell:start'?: HookConfig[]
+  'shell:stop'?: HookConfig[]
+  'shell:exit'?: HookConfig[]
+  
+  // Command hooks
+  'command:before'?: HookConfig[]
+  'command:after'?: HookConfig[]
+  'command:error'?: HookConfig[]
+  
+  // Prompt hooks
+  'prompt:before'?: HookConfig[]
+  'prompt:after'?: HookConfig[]
+  'prompt:render'?: HookConfig[]
+  
+  // Directory hooks
+  'directory:change'?: HookConfig[]
+  'directory:enter'?: HookConfig[]
+  'directory:leave'?: HookConfig[]
+  
+  // History hooks
+  'history:add'?: HookConfig[]
+  'history:search'?: HookConfig[]
+  
+  // Completion hooks
+  'completion:before'?: HookConfig[]
+  'completion:after'?: HookConfig[]
+  
+  // Custom hooks
+  [key: string]: HookConfig[] | undefined
+}
+
+export interface HookConfig {
+  name?: string
+  enabled?: boolean
+  command?: string
+  script?: string
+  function?: string
+  plugin?: string
+  priority?: number
+  conditions?: HookCondition[]
+  async?: boolean
+  timeout?: number
+}
+
+export interface HookCondition {
+  type: 'env' | 'file' | 'directory' | 'command' | 'custom'
+  value: string
+  operator?: 'equals' | 'contains' | 'startsWith' | 'endsWith' | 'exists' | 'not'
+}
+
+export interface HookContext {
+  shell: Shell
+  event: string
+  data: any
+  config: BunshConfig
+  environment: Record<string, string>
+  cwd: string
+  timestamp: number
+}
+
+export type HookHandler = (context: HookContext) => Promise<HookResult> | HookResult
+
+export interface HookResult {
+  success: boolean
+  data?: any
+  error?: string
+  preventDefault?: boolean
+  stopPropagation?: boolean
 }

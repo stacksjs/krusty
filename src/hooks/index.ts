@@ -1,0 +1,468 @@
+import type {
+  BunshConfig,
+  HookCondition,
+  HookConfig,
+  HookContext,
+  HookHandler,
+  HookResult,
+  HooksConfig,
+  Shell,
+} from '../types'
+import { exec } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import process from 'node:process'
+import { promisify } from 'node:util'
+
+const execAsync = promisify(exec)
+
+// Hook manager
+export class HookManager {
+  private hooks = new Map<string, RegisteredHook[]>()
+  private executing = new Set<string>()
+
+  constructor(private shell: Shell, private config: BunshConfig) {
+    this.loadHooks()
+  }
+
+  // Load hooks from configuration
+  private loadHooks(): void {
+    if (!this.config.hooks)
+      return
+
+    for (const [event, hookConfigs] of Object.entries(this.config.hooks)) {
+      if (!hookConfigs)
+        continue
+
+      for (const hookConfig of hookConfigs) {
+        if (hookConfig.enabled === false)
+          continue
+
+        try {
+          this.registerHook(event, hookConfig)
+        }
+        catch (error) {
+          console.error(`Failed to register hook for ${event}:`, error)
+        }
+      }
+    }
+  }
+
+  // Register a hook
+  registerHook(event: string, config: HookConfig): void {
+    const registeredHook: RegisteredHook = {
+      event,
+      config,
+      handler: this.createHookHandler(config),
+      priority: config.priority || 0,
+    }
+
+    if (!this.hooks.has(event)) {
+      this.hooks.set(event, [])
+    }
+
+    const hooks = this.hooks.get(event)!
+    hooks.push(registeredHook)
+
+    // Sort by priority (higher priority first)
+    hooks.sort((a, b) => b.priority - a.priority)
+  }
+
+  // Create hook handler from configuration
+  private createHookHandler(config: HookConfig): HookHandler {
+    return async (context: HookContext): Promise<HookResult> => {
+      try {
+        // Check conditions
+        if (config.conditions && !this.checkConditions(config.conditions, context)) {
+          return { success: true }
+        }
+
+        let result: HookResult = { success: true }
+
+        if (config.command) {
+          result = await this.executeCommand(config.command, context)
+        }
+        else if (config.script) {
+          result = await this.executeScript(config.script, context)
+        }
+        else if (config.function) {
+          result = await this.executeFunction(config.function, context)
+        }
+        else if (config.plugin) {
+          result = await this.executePluginHook(config.plugin, context)
+        }
+
+        return result
+      }
+      catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
+  }
+
+  // Execute command hook
+  private async executeCommand(command: string, context: HookContext): Promise<HookResult> {
+    try {
+      const expandedCommand = this.expandTemplate(command, context)
+      const { stdout, stderr } = await execAsync(expandedCommand, {
+        cwd: context.cwd,
+        env: { ...process.env, ...context.environment },
+      })
+
+      return {
+        success: true,
+        data: { stdout, stderr },
+      }
+    }
+    catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        data: { stdout: error.stdout || '', stderr: error.stderr || '' },
+      }
+    }
+  }
+
+  // Execute script hook
+  private async executeScript(scriptPath: string, context: HookContext): Promise<HookResult> {
+    const expandedPath = this.expandPath(scriptPath)
+
+    if (!existsSync(expandedPath)) {
+      return {
+        success: false,
+        error: `Script not found: ${expandedPath}`,
+      }
+    }
+
+    try {
+      const { stdout, stderr } = await execAsync(`"${expandedPath}"`, {
+        cwd: context.cwd,
+        env: {
+          ...process.env,
+          ...context.environment,
+          BUNSH_HOOK_EVENT: context.event,
+          BUNSH_HOOK_DATA: JSON.stringify(context.data),
+          BUNSH_CWD: context.cwd,
+        },
+      })
+
+      return {
+        success: true,
+        data: { stdout, stderr },
+      }
+    }
+    catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        data: { stdout: error.stdout || '', stderr: error.stderr || '' },
+      }
+    }
+  }
+
+  // Execute function hook
+  private async executeFunction(functionName: string, context: HookContext): Promise<HookResult> {
+    try {
+      // Look for function in global scope or loaded modules
+      const func = (globalThis as any)[functionName]
+
+      if (typeof func !== 'function') {
+        return {
+          success: false,
+          error: `Function ${functionName} not found`,
+        }
+      }
+
+      const result = await func(context)
+      return result || { success: true }
+    }
+    catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  // Execute plugin hook
+  private async executePluginHook(pluginName: string, context: HookContext): Promise<HookResult> {
+    const pluginManager = (this.shell as any).pluginManager
+    if (!pluginManager) {
+      return {
+        success: false,
+        error: 'Plugin manager not available',
+      }
+    }
+
+    const plugin = pluginManager.getPlugin(pluginName)
+    if (!plugin) {
+      return {
+        success: false,
+        error: `Plugin ${pluginName} not found`,
+      }
+    }
+
+    const hookHandler = plugin.hooks?.[context.event]
+    if (!hookHandler) {
+      return {
+        success: false,
+        error: `Hook ${context.event} not found in plugin ${pluginName}`,
+      }
+    }
+
+    try {
+      return await hookHandler(context)
+    }
+    catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
+  // Check hook conditions
+  private checkConditions(conditions: HookCondition[], context: HookContext): boolean {
+    return conditions.every(condition => this.checkCondition(condition, context))
+  }
+
+  // Check single condition
+  private checkCondition(condition: HookCondition, context: HookContext): boolean {
+    const { type, value, operator = 'equals' } = condition
+    let result = false
+
+    switch (type) {
+      case 'env':
+        const envValue = context.environment[value]
+        result = !!envValue
+        break
+
+      case 'file':
+        const filePath = this.expandPath(value)
+        result = existsSync(filePath) && statSync(filePath).isFile()
+        break
+
+      case 'directory':
+        const dirPath = this.expandPath(value)
+        result = existsSync(dirPath) && statSync(dirPath).isDirectory()
+        break
+
+      case 'command':
+        // For command conditions, we check if the command exists
+        try {
+          require('node:child_process').execSync(`which ${value}`, { stdio: 'ignore' })
+          result = true
+        }
+        catch {
+          result = false
+        }
+        break
+
+      case 'custom':
+        // Custom conditions can be implemented by plugins
+        result = this.evaluateCustomCondition(value, context)
+        break
+    }
+
+    // Apply operator
+    if (operator === 'not') {
+      result = !result
+    }
+
+    return result
+  }
+
+  // Evaluate custom condition
+  private evaluateCustomCondition(condition: string, context: HookContext): boolean {
+    try {
+      // Simple expression evaluation - in production, use a proper expression parser
+      const func = new Function('context', `return ${condition}`)
+      return !!func(context)
+    }
+    catch {
+      return false
+    }
+  }
+
+  // Execute hooks for an event
+  async executeHooks(event: string, data: any = {}): Promise<HookResult[]> {
+    const hooks = this.hooks.get(event)
+    if (!hooks || hooks.length === 0) {
+      return []
+    }
+
+    // Prevent recursive hook execution
+    const executionKey = `${event}:${JSON.stringify(data)}`
+    if (this.executing.has(executionKey)) {
+      return []
+    }
+
+    this.executing.add(executionKey)
+
+    try {
+      const context: HookContext = {
+        shell: this.shell,
+        event,
+        data,
+        config: this.config,
+        environment: { ...process.env, ...this.shell.environment },
+        cwd: this.shell.cwd,
+        timestamp: Date.now(),
+      }
+
+      const results: HookResult[] = []
+      let preventDefault = false
+      let stopPropagation = false
+
+      for (const hook of hooks) {
+        if (stopPropagation)
+          break
+
+        try {
+          const timeout = hook.config.timeout || 5000
+          const result = await this.executeWithTimeout(
+            hook.handler(context),
+            timeout,
+          )
+
+          results.push(result)
+
+          if (result.preventDefault) {
+            preventDefault = true
+          }
+
+          if (result.stopPropagation) {
+            stopPropagation = true
+          }
+
+          // If hook failed and it's not async, stop execution
+          if (!result.success && !hook.config.async) {
+            break
+          }
+        }
+        catch (error) {
+          results.push({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          })
+
+          // Stop on error unless it's an async hook
+          if (!hook.config.async) {
+            break
+          }
+        }
+      }
+
+      return results
+    }
+    finally {
+      this.executing.delete(executionKey)
+    }
+  }
+
+  // Execute with timeout
+  private async executeWithTimeout<T>(promise: Promise<T>, timeout: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Hook execution timeout')), timeout)
+      }),
+    ])
+  }
+
+  // Expand template variables
+  private expandTemplate(template: string, context: HookContext): string {
+    return template.replace(/\{(\w+)\}/g, (match, key) => {
+      switch (key) {
+        case 'event': return context.event
+        case 'cwd': return context.cwd
+        case 'timestamp': return context.timestamp.toString()
+        case 'data': return JSON.stringify(context.data)
+        default:
+          return context.environment[key] || match
+      }
+    })
+  }
+
+  // Expand file paths
+  private expandPath(path: string): string {
+    if (path.startsWith('~')) {
+      return path.replace('~', homedir())
+    }
+    return resolve(path)
+  }
+
+  // Get registered hooks for an event
+  getHooks(event: string): RegisteredHook[] {
+    return this.hooks.get(event) || []
+  }
+
+  // Get all registered events
+  getEvents(): string[] {
+    return Array.from(this.hooks.keys())
+  }
+
+  // Remove hooks for an event
+  removeHooks(event: string): void {
+    this.hooks.delete(event)
+  }
+
+  // Clear all hooks
+  clearHooks(): void {
+    this.hooks.clear()
+  }
+}
+
+// Registered hook interface
+interface RegisteredHook {
+  event: string
+  config: HookConfig
+  handler: HookHandler
+  priority: number
+}
+
+// Hook utilities
+export class HookUtils {
+  static createSimpleHook(command: string, priority = 0): HookConfig {
+    return {
+      command,
+      priority,
+      enabled: true,
+    }
+  }
+
+  static createScriptHook(scriptPath: string, priority = 0): HookConfig {
+    return {
+      script: scriptPath,
+      priority,
+      enabled: true,
+    }
+  }
+
+  static createConditionalHook(
+    command: string,
+    conditions: HookCondition[],
+    priority = 0,
+  ): HookConfig {
+    return {
+      command,
+      conditions,
+      priority,
+      enabled: true,
+    }
+  }
+
+  static createAsyncHook(command: string, timeout = 10000, priority = 0): HookConfig {
+    return {
+      command,
+      async: true,
+      timeout,
+      priority,
+      enabled: true,
+    }
+  }
+}
