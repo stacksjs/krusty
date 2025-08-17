@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    "paths": {
+      "bunsh": ["./src"]
+    },
     "target": "esnext",
     "lib": ["esnext"],
     "moduleDetection": "force",
