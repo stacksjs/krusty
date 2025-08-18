@@ -655,15 +655,11 @@ export class CompletionProvider {
     if (scripts.length)
       return scripts
 
-    // 2) Fall back to project root (parent of src)
-    try {
-      const here = fileURLToPath(new URL('.', import.meta.url))
-      const projectRoot = resolve(here, '..')
-      scripts = tryRead(projectRoot)
-      if (scripts.length)
-        return scripts
-    }
-    catch {}
+    // 2) Fall back to project root using helper for consistency
+    const projectRoot = this.getProjectRoot()
+    scripts = tryRead(projectRoot)
+    if (scripts.length)
+      return scripts
 
     return []
   }
