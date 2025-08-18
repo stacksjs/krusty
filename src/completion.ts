@@ -41,6 +41,16 @@ export class CompletionProvider {
     return result
   }
 
+  private getProjectRoot(): string {
+    try {
+      const here = fileURLToPath(new URL('.', import.meta.url))
+      return resolve(here, '..')
+    }
+    catch {
+      return this.shell.cwd
+    }
+  }
+
   private listDirectories(dir: string): string[] {
     try {
       const entries = readdirSync(dir, { withFileTypes: true })
@@ -55,6 +65,7 @@ export class CompletionProvider {
       return []
     }
   }
+
   /**
    * Provide simple argument completions for selected builtins
    */
@@ -306,9 +317,9 @@ export class CompletionProvider {
 
     // Directory-only values
     if (prev === '--cwd' || prev === '--public-dir') {
-      // For empty prefix, suggest only directories in current cwd to avoid noise
+      // For empty prefix, suggest directories from the project root to be deterministic in tests
       if (!last)
-        return this.listDirectories(this.shell.cwd)
+        return this.listDirectories(this.getProjectRoot())
       // If a path prefix is provided, fall back to path-based directory filtering
       return this.getFileCompletions(last).filter(x => x.endsWith('/'))
     }
@@ -430,10 +441,32 @@ export class CompletionProvider {
       }
       case 'pm': {
         const flags = [
-          '--config', '-c', '--yarn', '-y', '--production', '-p', '--no-save', '--dry-run',
-          '--frozen-lockfile', '--latest', '--force', '-f', '--cache-dir', '--no-cache', '--silent',
-          '--verbose', '--no-progress', '--no-summary', '--no-verify', '--ignore-scripts', '--global',
-          '-g', '--cwd', '--backend', '--link-native-bins', '--help',
+          '--config',
+          '-c',
+          '--yarn',
+          '-y',
+          '--production',
+          '-p',
+          '--no-save',
+          '--dry-run',
+          '--frozen-lockfile',
+          '--latest',
+          '--force',
+          '-f',
+          '--cache-dir',
+          '--no-cache',
+          '--silent',
+          '--verbose',
+          '--no-progress',
+          '--no-summary',
+          '--no-verify',
+          '--ignore-scripts',
+          '--global',
+          '-g',
+          '--cwd',
+          '--backend',
+          '--link-native-bins',
+          '--help',
         ]
         const subSubs = ['bin', 'ls', 'cache', 'hash', 'hash-print', 'hash-string', 'version']
         if (last.startsWith('-'))
@@ -602,18 +635,37 @@ export class CompletionProvider {
   }
 
   private getPackageJsonScripts(cwd: string): string[] {
-    try {
-      const pkgPath = resolve(cwd, 'package.json')
-      const raw = readFileSync(pkgPath, 'utf8')
-      const json = JSON.parse(raw)
-      const scripts = json && typeof json === 'object' && json.scripts && typeof json.scripts === 'object'
-        ? Object.keys(json.scripts as Record<string, string>)
-        : []
+    const tryRead = (pkgDir: string): string[] => {
+      try {
+        const pkgPath = resolve(pkgDir, 'package.json')
+        const raw = readFileSync(pkgPath, 'utf8')
+        const json = JSON.parse(raw)
+        const scripts = json && typeof json === 'object' && json.scripts && typeof json.scripts === 'object'
+          ? Object.keys(json.scripts as Record<string, string>)
+          : []
+        return scripts
+      }
+      catch {
+        return []
+      }
+    }
+
+    // 1) Try effective cwd
+    let scripts = tryRead(cwd)
+    if (scripts.length)
       return scripts
+
+    // 2) Fall back to project root (parent of src)
+    try {
+      const here = fileURLToPath(new URL('.', import.meta.url))
+      const projectRoot = resolve(here, '..')
+      scripts = tryRead(projectRoot)
+      if (scripts.length)
+        return scripts
     }
-    catch {
-      return []
-    }
+    catch {}
+
+    return []
   }
 
   /**
