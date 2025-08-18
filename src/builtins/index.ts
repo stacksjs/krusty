@@ -3,6 +3,7 @@ import { aliasCommand } from './alias'
 import { bgCommand } from './bg'
 import { builtinCommand } from './builtin'
 import { cdCommand } from './cd'
+import { clearCommand } from './clear'
 import { commandCommand } from './command'
 import { dirsCommand } from './dirs'
 import { disownCommand } from './disown'
@@ -26,6 +27,7 @@ import { pwdCommand } from './pwd'
 import { readCommand } from './read'
 import { reloadCommand } from './reload'
 import { setCommand } from './set'
+import { shrugCommand } from './shrug'
 import { sourceCommand } from './source'
 import { testCommand } from './test'
 import { timeCommand } from './time'
@@ -44,9 +46,10 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
   // Add all builtin commands in alphabetical order
   builtins.set('alias', aliasCommand)
-  builtins.set('cd', cdCommand)
   builtins.set('bg', bgCommand)
   builtins.set('builtin', builtinCommand)
+  builtins.set('c', clearCommand)
+  builtins.set('cd', cdCommand)
   builtins.set('command', commandCommand)
   builtins.set('dirs', dirsCommand)
   builtins.set('disown', disownCommand)
@@ -70,6 +73,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('read', readCommand)
   builtins.set('reload', reloadCommand)
   builtins.set('set', setCommand)
+  builtins.set('shrug', shrugCommand)
   builtins.set('source', sourceCommand)
   builtins.set('.', { ...sourceCommand, name: '.' }) // POSIX alias for source
   builtins.set('test', testCommand)
@@ -82,8 +86,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('unalias', unaliasCommand)
   builtins.set('unset', unsetCommand)
   builtins.set('wait', waitCommand)
-  builtins.set('wip', wipCommand)
   builtins.set('which', whichCommand)
+  builtins.set('wip', wipCommand)
 
   return builtins
 }
