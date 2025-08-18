@@ -94,19 +94,35 @@ export const wipCommand: BuiltinCommand = {
         // - disable GPG signing
         // - disable hooks (core.hooksPath)
         // - disable commit templates
+        // Show colored staged diff summary before committing
+        if (!opts.quiet) {
+          const diff = await shell.executeCommand('git', ['-c', 'color.ui=always', 'diff', '--cached', '--stat'])
+          if (diff.stdout)
+            out.push(diff.stdout.trimEnd())
+        }
+
         const commitArgs = [
           '-c', 'color.ui=always',
           '-c', 'commit.gpgsign=false',
           '-c', 'core.hooksPath=',
           '-c', 'commit.template=',
-          'commit', '--no-verify', '--no-gpg-sign', '-m', msg,
+          // Use --quiet to avoid printing duplicate summary (we show diffstat ourselves)
+          'commit', '--quiet', '--no-verify', '--no-gpg-sign', '-m', msg,
         ]
         if (opts.amend) commitArgs.push('--amend', '--no-edit')
         const commit = await shell.executeCommand('git', commitArgs)
         if (commit.exitCode === 0) {
-          // Show only the commit output (includes concise summary and diffstat once)
-          if (!opts.quiet && commit.stdout)
-            out.push(commit.stdout.trimEnd())
+          // Print a concise colored one-line commit header after committing
+          if (!opts.quiet) {
+            const last = await shell.executeCommand('git', [
+              '--no-pager',
+              '-c', 'color.ui=always',
+              'log', '-1',
+              '--pretty=format:%C(auto)%h %s',
+            ])
+            if (last.stdout)
+              out.push(last.stdout.trimEnd())
+          }
         }
         else {
           // Commit failed; include error details but continue
