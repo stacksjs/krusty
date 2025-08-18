@@ -42,6 +42,47 @@ export class CompletionProvider {
   }
 
   /**
+   * Provide simple argument completions for selected builtins
+   */
+  private getBuiltinArgCompletions(command: string, tokens: string[], last: string): string[] {
+    switch (command) {
+      case 'command': {
+        // Complete the command name (arg1) using the global command list
+        if (tokens.length === 2) {
+          return this.getCommandCompletions(last)
+        }
+        return []
+      }
+      case 'printf': {
+        // Suggest common format strings for the first arg
+        if (tokens.length === 2) {
+          const suggestions = ['"%s"', '"%d"', '"%s %d"', '%q', '"%%s"']
+          return suggestions.filter(s => s.startsWith(last) || last === '')
+        }
+        return []
+      }
+      case 'getopts': {
+        // getopts optstring name [args...]
+        if (tokens.length === 2) {
+          const optstrings = ['"ab:"', '"f:"', '"hv"', '"o:"']
+          return optstrings.filter(s => s.startsWith(last) || last === '')
+        }
+        if (tokens.length === 3) {
+          const names = ['opt', 'flag']
+          return names.filter(s => s.startsWith(last) || last === '')
+        }
+        return []
+      }
+      // Builtins without args: no special completions
+      case 'times':
+      case 'dirs':
+        return []
+      default:
+        return []
+    }
+  }
+
+  /**
    * Public API used by the shell to get completions at a cursor position
    */
   public getCompletions(input: string, cursor: number): string[] {
@@ -54,9 +95,19 @@ export class CompletionProvider {
         return []
       const last = tokens[tokens.length - 1]
       const isFirst = tokens.length === 1
-      return isFirst
-        ? this.getCommandCompletions(last)
-        : this.getFileCompletions(last)
+      if (isFirst)
+        return this.getCommandCompletions(last)
+
+      // If the first token is a builtin, attempt builtin-specific arg completions
+      const cmd = tokens[0]
+      if (this.shell.builtins.has(cmd)) {
+        const builtinComps = this.getBuiltinArgCompletions(cmd, tokens, last)
+        if (builtinComps.length)
+          return builtinComps
+      }
+
+      // Fallback: file path completions
+      return this.getFileCompletions(last)
     }
     catch {
       return []
