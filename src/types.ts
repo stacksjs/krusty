@@ -165,6 +165,7 @@ export interface Shell {
 
   // Core methods
   execute: (command: string) => Promise<CommandResult>
+  executeCommand: (command: string, args: string[]) => Promise<CommandResult>
   parseCommand: (input: string) => ParsedCommand
   changeDirectory: (path: string) => boolean
   reload: () => Promise<CommandResult>
@@ -182,6 +183,23 @@ export interface Shell {
 
   // Completion methods
   getCompletions: (input: string, cursor: number) => string[]
+
+  // Job management methods
+  addJob: (pid: number, command: string) => number
+  removeJob: (pid: number) => void
+  getJobs: () => Array<{
+    id: number
+    pid: number
+    command: string
+    status: 'running' | 'stopped' | 'done'
+  }>
+  getJob: (id: number) => {
+    id: number
+    pid: number
+    command: string
+    status: 'running' | 'stopped' | 'done'
+  } | undefined
+  setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => void
 }
 
 export interface GitInfo {

@@ -36,6 +36,14 @@ export class KrustyShell implements Shell {
   private rl: readline.Interface | null = null
   private running = false
   private lastExitCode = 0
+  private jobs: Array<{
+    id: number
+    pid: number
+    command: string
+    status: 'running' | 'stopped' | 'done'
+  }> = []
+
+  private nextJobId = 1
 
   constructor(config?: KrustyConfig) {
     // Use defaultConfig from src/config to preserve exact equality in tests
@@ -142,6 +150,12 @@ export class KrustyShell implements Shell {
         duration: performance.now() - start,
       }
     }
+  }
+
+  async executeCommand(command: string, args: string[] = []): Promise<CommandResult> {
+    // Create a command object that matches the expected format
+    const cmd = { name: command, args }
+    return this.executeSingleCommand(cmd)
   }
 
   async execute(command: string): Promise<CommandResult> {
@@ -824,10 +838,59 @@ export class KrustyShell implements Shell {
   }
 
   /**
+   * Job management methods
+   */
+  addJob(pid: number, command: string): number {
+    const jobId = this.nextJobId++
+    this.jobs.push({
+      id: jobId,
+      pid,
+      command,
+      status: 'running',
+    })
+
+    // Clean up done jobs
+    this.jobs = this.jobs.filter(job => job.status !== 'done')
+
+    return jobId
+  }
+
+  removeJob(pid: number): void {
+    const index = this.jobs.findIndex(job => job.pid === pid)
+    if (index !== -1) {
+      this.jobs.splice(index, 1)
+    }
+  }
+
+  getJobs(): Array<{ id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' }> {
+    // Clean up done jobs first
+    this.jobs = this.jobs.filter(job => job.status !== 'done')
+    return [...this.jobs]
+  }
+
+  getJob(id: number): { id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' } | undefined {
+    return this.jobs.find(job => job.id === id)
+  }
+
+  setJobStatus(id: number, status: 'running' | 'stopped' | 'done'): void {
+    const job = this.jobs.find(j => j.id === id)
+    if (job) {
+      job.status = status
+    }
+
+    // Clean up done jobs
+    if (status === 'done') {
+      setTimeout(() => {
+        this.jobs = this.jobs.filter(j => j.id !== id)
+      }, 1000) // Give some time for the job to be queried one last time
+    }
+  }
+
+  /**
    * Helper method to set up streaming for a child process
    * This ensures consistent handling of output streams across all command executions
    */
-  private setupStreamingProcess(
+  private async setupStreamingProcess(
     child: ChildProcess,
     start: number,
     command: any,

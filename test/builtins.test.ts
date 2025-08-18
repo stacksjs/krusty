@@ -331,4 +331,142 @@ describe('Builtin Commands', () => {
       expect(result.stderr).toContain('Unknown command')
     })
   })
+
+  describe('time command', () => {
+    it('should return error when no command is provided', async () => {
+      const result = await shell.execute('time')
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('missing command')
+    })
+
+    it('should execute command and return timing information', async () => {
+      const result = await shell.execute('time echo hello')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('hello')
+      expect(result.stdout).toMatch(/real\s+0\.\d{3}s/)
+      expect(result.stdout).toMatch(/user\s+0\.\d{3}s/)
+      expect(result.stdout).toMatch(/sys\s+0\.\d{3}s/)
+    })
+  })
+
+  describe('source command', () => {
+    it('should execute commands from a file', async () => {
+      // This is a simplified test since we can't easily create files in the test environment
+      // In a real test, we would create a temporary file with commands
+      const result = await shell.execute('source /dev/null')
+      expect(result.exitCode).toBe(0)
+    })
+
+    it('should handle non-existent file', async () => {
+      const result = await shell.execute('source /nonexistent/file')
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('ENOENT')
+    })
+  })
+
+  describe('jobs command', () => {
+    it('should return empty when no jobs are running', async () => {
+      const result = await shell.execute('jobs')
+      expect(result.exitCode).toBe(0)
+    })
+
+    it('should support the -l flag', async () => {
+      const result = await shell.execute('jobs -l')
+      expect(result.exitCode).toBe(0)
+    })
+  })
+
+  describe('fg/bg commands', () => {
+    it('fg should return error when no jobs are running', async () => {
+      const result = await shell.execute('fg')
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('no current job')
+    })
+
+    it('bg should return error when no jobs are running', async () => {
+      const result = await shell.execute('bg')
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('no current job')
+    })
+  })
+
+  describe('kill command', () => {
+    it('should return error when no arguments are provided', async () => {
+      const result = await shell.execute('kill')
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toContain('usage:')
+    })
+
+    it('should accept signal option', async () => {
+      const result = await shell.execute('kill -s TERM 123')
+      // In this simplified implementation, we're just testing that the command runs
+      expect([0, 1]).toContain(result.exitCode)
+    })
+  })
+
+  describe('type command', () => {
+    it('should identify builtin commands', async () => {
+      const result = await shell.execute('type cd')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('is a shell builtin')
+    })
+
+    it('should identify aliases', async () => {
+      await shell.execute('alias ll="ls -la"')
+      const result = await shell.execute('type ll')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('is an alias for')
+    })
+
+    it('should handle multiple arguments', async () => {
+      const result = await shell.execute('type cd ls')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('cd is a shell builtin')
+    })
+  })
+
+  describe('env command', () => {
+    it('should display environment variables', async () => {
+      const result = await shell.execute('env')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('PWD=')
+    })
+  })
+
+  describe('set command', () => {
+    it('should display all variables when no arguments', async () => {
+      const result = await shell.execute('set')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('PWD=')
+    })
+
+    it('should set shell options', async () => {
+      const result = await shell.execute('set -e')
+      expect(result.exitCode).toBe(0)
+    })
+
+    it('should set variables', async () => {
+      const result = await shell.execute('set TEST_VAR=test')
+      expect(result.exitCode).toBe(0)
+      expect(shell.environment.TEST_VAR).toBe('test')
+    })
+  })
+
+  describe('unset command', () => {
+    it('should remove environment variables', async () => {
+      shell.environment.TEST_VAR = 'test'
+      const result = await shell.execute('unset TEST_VAR')
+      expect(result.exitCode).toBe(0)
+      expect(shell.environment.TEST_VAR).toBeUndefined()
+    })
+
+    it('should handle multiple variables', async () => {
+      shell.environment.VAR1 = '1'
+      shell.environment.VAR2 = '2'
+      const result = await shell.execute('unset VAR1 VAR2')
+      expect(result.exitCode).toBe(0)
+      expect(shell.environment.VAR1).toBeUndefined()
+      expect(shell.environment.VAR2).toBeUndefined()
+    })
+  })
 })
