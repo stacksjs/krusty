@@ -73,4 +73,61 @@ describe('Builtin argument completions', () => {
     const hashOut = shell.getCompletions('hash ec', 'hash ec'.length)
     expect(hashOut).toContain('echo')
   })
+
+  it('suggests builtin names for `help`', () => {
+    const out = shell.getCompletions('help ec', 'help ec'.length)
+    expect(out).toContain('echo')
+  })
+
+  it('suggests flags and -o options for `set`', () => {
+    const flagsOut = shell.getCompletions('set -', 'set -'.length)
+    expect(flagsOut.some(x => ['-e', '-u', '-x', '-v', '+e', '+u', '+x', '+v'].includes(x))).toBe(true)
+
+    const dashO = shell.getCompletions('set -o ', 'set -o '.length)
+    expect(dashO.some(x => ['vi', 'emacs', 'noclobber', 'pipefail', 'noglob'].includes(x))).toBe(true)
+  })
+
+  it('suggests flags and variable names for `read`', () => {
+    const flags = shell.getCompletions('read -', 'read -'.length)
+    expect(flags.some(x => ['-r', '-p', '-n', '-t', '-a', '-d', '-s', '-u'].includes(x))).toBe(true)
+
+    shell.environment.READ_TARGET = '1'
+    const vars = shell.getCompletions('read R', 'read R'.length)
+    expect(vars).toContain('READ_TARGET')
+  })
+
+  it('suggests -a for `unalias` flags', () => {
+    const out = shell.getCompletions('unalias -', 'unalias -'.length)
+    expect(out).toContain('-a')
+  })
+
+  it('suggests jobs flags', () => {
+    const out = shell.getCompletions('jobs -', 'jobs -'.length)
+    expect(out.some(x => ['-l', '-p', '-r', '-s'].includes(x))).toBe(true)
+  })
+
+  it('completes alias and unalias names', () => {
+    shell.aliases.gs = 'git status'
+    const a = shell.getCompletions('alias g', 'alias g'.length)
+    expect(a).toContain('gs')
+    const u = shell.getCompletions('unalias g', 'unalias g'.length)
+    expect(u).toContain('gs')
+  })
+
+  it('suggests pushd/popd stack indices and directories', () => {
+    const pushdOut = shell.getCompletions('pushd +', 'pushd +'.length)
+    expect(pushdOut.some(x => x.startsWith('+') || x.startsWith('-'))).toBe(true)
+    const popdOut = shell.getCompletions('popd -', 'popd -'.length)
+    expect(popdOut.some(x => x.startsWith('+') || x.startsWith('-'))).toBe(true)
+  })
+
+  it('suggests umask masks and -S', () => {
+    const out = shell.getCompletions('umask ', 'umask '.length)
+    expect(out).toEqual(expect.arrayContaining(['-S', '022']))
+  })
+
+  it('completes command names after exec', () => {
+    const out = shell.getCompletions('exec ec', 'exec ec'.length)
+    expect(out).toContain('echo')
+  })
 })

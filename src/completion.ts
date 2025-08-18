@@ -93,6 +93,11 @@ export class CompletionProvider {
         const keys = Object.keys(this.shell.environment || {})
         return keys.filter(k => k.startsWith(last) || last === '')
       }
+      case 'help': {
+        // Suggest builtin names for help
+        const names = Array.from(this.shell.builtins.keys())
+        return names.filter(n => n.startsWith(last) || last === '')
+      }
       case 'alias': {
         // Suggest existing alias names
         const names = Object.keys(this.shell.aliases || {})
@@ -100,6 +105,26 @@ export class CompletionProvider {
       }
       case 'unalias': {
         const names = Object.keys(this.shell.aliases || {})
+        const flags = ['-a']
+        const pool = last.startsWith('-') ? flags : names
+        return pool.filter(n => n.startsWith(last) || last === '')
+      }
+      case 'set': {
+        // Common flags and -o options
+        const flags = ['-e', '-u', '-x', '-v', '+e', '+u', '+x', '+v']
+        const oOpts = ['-o', 'vi', 'emacs', 'noclobber', 'pipefail', 'noglob']
+        if (last === '-o' || (tokens.includes('-o') && tokens[tokens.length - 2] === '-o'))
+          return oOpts.filter(o => o.startsWith(last) || last === '')
+        const pool = last.startsWith('-') || last.startsWith('+') ? flags : [...flags, '-o']
+        return pool.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'read': {
+        // Suggest flags first, then variable names
+        const flags = ['-r', '-p', '-n', '-t', '-a', '-d', '-s', '-u']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        const envKeys = Object.keys(this.shell.environment || {})
+        const names = ['var', 'name', 'line', ...envKeys]
         return names.filter(n => n.startsWith(last) || last === '')
       }
       case 'type':

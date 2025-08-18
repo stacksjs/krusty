@@ -11,9 +11,13 @@ export const jobsCommand: BuiltinCommand = {
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
     const showPid = args.includes('-l') || args.includes('--long')
+    if (shell.config.verbose)
+      shell.log.debug('[jobs] flags: %o', { l: showPid })
 
     // Get all jobs
     const jobs = shell.getJobs()
+    if (shell.config.verbose)
+      shell.log.debug('[jobs] listing %d job(s)', jobs.length)
 
     if (jobs.length === 0) {
       return {
@@ -46,11 +50,14 @@ export const jobsCommand: BuiltinCommand = {
       return line
     })
 
-    return {
+    const result: CommandResult = {
       exitCode: 0,
       stdout: `${jobEntries.join('\n')}\n`,
       stderr: '',
       duration: performance.now() - start,
     }
+    if (shell.config.verbose)
+      shell.log.debug('[jobs] done in %dms', Math.round(result.duration))
+    return result
   },
 }

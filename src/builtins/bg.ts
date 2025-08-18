@@ -27,6 +27,8 @@ export const bgCommand: BuiltinCommand = {
     const jobIds = args.length > 0
       ? args.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id))
       : [jobs[jobs.length - 1]?.id].filter(Boolean) as number[]
+    if (shell.config.verbose)
+      shell.log.debug('[bg] parsed jobIds=%o', jobIds)
 
     if (jobIds.length === 0) {
       return {
@@ -55,15 +57,20 @@ export const bgCommand: BuiltinCommand = {
       else {
         // Mark the job as running in the background
         shell.setJobStatus(jobId, 'running')
+        if (shell.config.verbose)
+          shell.log.debug('[bg] set job %d to running (background)', jobId)
         results.push(`[${jobId}] ${job.command} &`)
       }
     }
 
-    return {
+    const res: CommandResult = {
       exitCode: hasError ? 1 : 0,
       stdout: `${results.join('\n')}\n`,
       stderr: hasError ? `${results.filter(r => r.startsWith('bg: ')).join('\n')}\n` : '',
       duration: performance.now() - start,
     }
+    if (shell.config.verbose)
+      shell.log.debug('[bg] done hasError=%s in %dms', String(hasError), Math.round(res.duration))
+    return res
   },
 }

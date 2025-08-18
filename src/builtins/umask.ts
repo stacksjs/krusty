@@ -15,6 +15,8 @@ export const umaskCommand: BuiltinCommand = {
     if (shell.umask === undefined) {
       shell.umask = 0o022 // Default umask (rwxr-xr-x)
     }
+    if (shell.config.verbose)
+      shell.log.debug('[umask] start current=%s', shell.umask.toString(8).padStart(3, '0'))
 
     // Parse options
     let printSymbolic = false
@@ -51,6 +53,8 @@ export const umaskCommand: BuiltinCommand = {
         modeArg = arg
       }
     }
+    if (shell.config.verbose)
+      shell.log.debug('[umask] parsed flags: %o modeArg=%s', { S: printSymbolic, p: preserveOutput }, String(modeArg))
 
     // If mode is provided, set the umask
     if (modeArg) {
@@ -94,12 +98,15 @@ export const umaskCommand: BuiltinCommand = {
       }
 
       shell.umask = newUmask
-      return {
+      const res: CommandResult = {
         exitCode: 0,
         stdout: '',
         stderr: '',
         duration: performance.now() - start,
       }
+      if (shell.config.verbose)
+        shell.log.debug('[umask] set to %s in %dms', shell.umask.toString(8).padStart(3, '0'), Math.round(res.duration))
+      return res
     }
 
     // No mode provided, display current umask
@@ -127,11 +134,14 @@ export const umaskCommand: BuiltinCommand = {
       output = `${shell.umask.toString(8).padStart(3, '0')}\n`
     }
 
-    return {
+    const res: CommandResult = {
       exitCode: 0,
       stdout: output,
       stderr: '',
       duration: performance.now() - start,
     }
+    if (shell.config.verbose)
+      shell.log.debug('[umask] display mode=%s output=%s in %dms', preserveOutput ? 'preserve' : printSymbolic ? 'symbolic' : 'numeric', output.trim(), Math.round(res.duration))
+    return res
   },
 }

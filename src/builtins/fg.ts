@@ -51,10 +51,14 @@ export const fgCommand: BuiltinCommand = {
       }
       jobId = id
     }
+    if (shell.config.verbose)
+      shell.log.debug('[fg] parsed jobId=%s', String(jobId))
 
     // Find the job
     const job = shell.getJob(jobId)
     if (!job) {
+      if (shell.config.verbose)
+        shell.log.debug('[fg] job not found: %d', jobId)
       return {
         exitCode: 1,
         stdout: '',
@@ -65,15 +69,20 @@ export const fgCommand: BuiltinCommand = {
 
     // Mark the job as running in the foreground
     shell.setJobStatus(jobId, 'running')
+    if (shell.config.verbose)
+      shell.log.debug('[fg] set job %d to running (foreground)', jobId)
 
     // In a real shell, this would actually bring the process to the foreground
     // For now, we'll just update the job status
 
-    return {
+    const res: CommandResult = {
       exitCode: 0,
       stdout: `${job.command}\n`,
       stderr: '',
       duration: performance.now() - start,
     }
+    if (shell.config.verbose)
+      shell.log.debug('[fg] done in %dms', Math.round(res.duration))
+    return res
   },
 }
