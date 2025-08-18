@@ -64,7 +64,8 @@ export class KrustyShell implements Shell {
       ignoreDuplicates: true,
       ignoreSpace: true,
     })
-    this.aliases = {}
+    // Initialize aliases from config (tests expect constructor to honor provided aliases)
+    this.aliases = { ...(this.config.aliases || {}) }
     this.builtins = createBuiltins()
 
     // Initialize history manager

@@ -116,9 +116,19 @@ export class CommandParser {
       }
 
       if (!inQuotes && (char === '"' || char === '\'')) {
-        inQuotes = true
-        quoteChar = char
-        continue
+        // Start a quoted section if we're at a token boundary (no current content)
+        // OR if the quote follows an '=' (e.g., name="value with spaces").
+        // Otherwise, treat the quote as a literal inside the current token (e.g., it's)
+        const prevChar = i > 0 ? input[i - 1] : ''
+        if (current === '' || prevChar === '=') {
+          inQuotes = true
+          quoteChar = char
+          continue
+        }
+        else {
+          current += char
+          continue
+        }
       }
 
       if (inQuotes && char === quoteChar) {

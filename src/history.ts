@@ -1,9 +1,9 @@
 import type { Interface } from 'node:readline'
 import type { HistoryConfig } from './types'
 import { existsSync, promises as fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
-import { cwd, stdin, stdout } from 'node:process'
+import { cwd, env, stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline'
 
 export class HistoryManager {
@@ -177,7 +177,13 @@ export class HistoryManager {
 
   private resolvePath(path: string): string {
     if (path.startsWith('~')) {
-      return resolve(homedir(), path.slice(1))
+      const homeEnv = env.HOME
+      const home = homeEnv && homeEnv.trim() ? homeEnv : homedir()
+      const base = !home || home === '/' ? tmpdir() : home
+      if (path === '~')
+        return base
+      const rest = path.startsWith('~/') ? path.slice(2) : path.slice(1)
+      return resolve(base, rest)
     }
     return resolve(cwd(), path)
   }

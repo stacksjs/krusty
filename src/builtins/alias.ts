@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from '../types'
 
 /**
  * Alias command - defines or displays command aliases
@@ -52,18 +52,7 @@ export const aliasCommand: BuiltinCommand = {
     }
 
     // Reconstruct and parse definitions: support spaces and '=' in values.
-    // We'll iterate tokens and group them into name=value definitions by using the first '='
-    // When reconstructing the value, re-quote tokens that require quoting so that
-    // complex values are preserved as expected by tests.
-    const quoteIfNeeded = (s: string): string => {
-      // Needs quoting if contains whitespace or shell-special characters
-      const needs = /[\s"'!@#$%^&*()[\]|;<>?]/.test(s)
-      if (!needs)
-        return s
-      // Prefer single quotes for shell; escape internal single quotes as '\''
-      const escaped = s.replace(/'/g, '\'\\\'\'')
-      return `'${escaped}'`
-    }
+    // We keep the value exactly as parsed by the tokenizer to preserve quotes/newlines verbatim.
 
     let i = 0
     while (i < args.length) {
@@ -116,8 +105,13 @@ export const aliasCommand: BuiltinCommand = {
         i++
       }
 
-      // Build alias value: keep the first part (from the same token) as-is, only quote subsequent tokens if needed.
-      const aliasValue = [valuePart, ...extraParts.map(quoteIfNeeded)].join(' ')
+      // Build alias value preserving exact content as provided by tokenizer
+      let aliasValue = [valuePart, ...extraParts].join(' ')
+      // If the entire value is wrapped in matching quotes, strip them
+      if ((aliasValue.startsWith('"') && aliasValue.endsWith('"'))
+        || (aliasValue.startsWith('\'') && aliasValue.endsWith('\''))) {
+        aliasValue = aliasValue.slice(1, -1)
+      }
 
       // If the alias name is quoted, remove the quotes
       if ((aliasName.startsWith('"') && aliasName.endsWith('"'))
