@@ -712,20 +712,20 @@ export class KrustyShell implements Shell {
   private async executeExternalCommand(command: any): Promise<CommandResult> {
     const start = performance.now()
 
-    // Set environment variables to ensure colors are preserved
-    const env = {
-      ...this.environment,
-      FORCE_COLOR: '3',
-      COLORTERM: 'truecolor',
-      TERM: 'xterm-256color',
-      CI: undefined, // Ensure CI is not set which would disable colors
-      BUN_FORCE_COLOR: '3', // Specifically for bun commands
-      NO_COLOR: undefined, // Ensure NO_COLOR is not set
-    }
+    // Create a clean environment object without undefined values
+    const cleanEnv = Object.fromEntries(
+      Object.entries({
+        ...this.environment,
+        FORCE_COLOR: '3',
+        COLORTERM: 'truecolor',
+        TERM: 'xterm-256color',
+        BUN_FORCE_COLOR: '3', // Specifically for bun commands
+      }).filter(([_, value]) => value !== undefined) as [string, string][],
+    )
 
     const child = spawn(command.name, command.args, {
       cwd: this.cwd,
-      env,
+      env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -736,20 +736,20 @@ export class KrustyShell implements Shell {
   private async executeWithInput(command: any, input: string): Promise<CommandResult> {
     const start = performance.now()
 
-    // Set environment variables to ensure colors are preserved
-    const env = {
-      ...this.environment,
-      FORCE_COLOR: '3',
-      COLORTERM: 'truecolor',
-      TERM: 'xterm-256color',
-      CI: undefined, // Ensure CI is not set which would disable colors
-      BUN_FORCE_COLOR: '3', // Specifically for bun commands
-      NO_COLOR: undefined, // Ensure NO_COLOR is not set
-    }
+    // Create a clean environment object without undefined values
+    const cleanEnv = Object.fromEntries(
+      Object.entries({
+        ...this.environment,
+        FORCE_COLOR: '3',
+        COLORTERM: 'truecolor',
+        TERM: 'xterm-256color',
+        BUN_FORCE_COLOR: '3', // Specifically for bun commands
+      }).filter(([_, value]) => value !== undefined) as [string, string][],
+    )
 
     const child = spawn(command.name, command.args, {
       cwd: this.cwd,
-      env,
+      env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 

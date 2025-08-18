@@ -3,11 +3,11 @@ biomejs
 booleanish
 bumpp
 bunfig
-krusty
 bunx
 changelogen
 changelogithub
 chrisbbreuer
+chsh
 codecov
 commitlint
 commitlintrc
@@ -20,6 +20,7 @@ dtsx
 entrypoints
 heroicons
 iconify
+krusty
 lockb
 openweb
 outdir

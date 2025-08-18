@@ -7,6 +7,120 @@ import process from 'node:process'
 export function createBuiltins(): Map<string, BuiltinCommand> {
   const builtins = new Map<string, BuiltinCommand>()
 
+  // Define source command first since it's used by others
+  const sourceCommand: BuiltinCommand = {
+    name: 'source',
+    description: 'Execute commands from a file in the current shell context',
+    usage: 'source file [arguments...]',
+    async execute(args: string[], shell: Shell): Promise<CommandResult> {
+      const start = performance.now()
+
+      if (args.length === 0) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'source: filename argument required\nsource: usage: source filename [arguments]\n',
+          duration: performance.now() - start,
+        }
+      }
+
+      const filePath = args[0]
+      const scriptArgs = args.slice(1)
+      let fullPath: string | null = null
+      const fs = await import('node:fs/promises')
+      const path = await import('node:path')
+
+      try {
+        // Resolve the file path
+        if (filePath.startsWith('/') || filePath.startsWith('./') || filePath.startsWith('../')) {
+          fullPath = path.resolve(shell.cwd, filePath)
+        }
+        else {
+          // Search in PATH if not a relative/absolute path
+          const pathDirs = (shell.environment.PATH || '').split(':')
+          for (const dir of pathDirs) {
+            if (!dir)
+              continue // Skip empty PATH entries
+            const testPath = path.join(dir, filePath)
+            try {
+              await fs.access(testPath)
+              fullPath = testPath
+              break
+            }
+            catch {
+              continue
+            }
+          }
+        }
+
+        if (!fullPath) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `source: ${filePath}: file not found in PATH\n`,
+            duration: performance.now() - start,
+          }
+        }
+
+        // Read the file
+        const content = await fs.readFile(fullPath, 'utf8')
+
+        // Save current args and set the script arguments
+        const originalArgs = process.argv.slice(2)
+        process.argv = [process.argv[0], fullPath, ...scriptArgs]
+
+        try {
+          // Execute each line
+          const lines = content.split('\n')
+          let lastResult: CommandResult = {
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            duration: 0,
+          }
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            // Skip comments and empty lines
+            if (!trimmed || trimmed.startsWith('#')) {
+              continue
+            }
+
+            // Execute the command
+            const result = await shell.execute(trimmed)
+            lastResult = result
+
+            // Stop on error if we're not in a script
+            if (result.exitCode !== 0) {
+              break
+            }
+          }
+
+          return {
+            ...lastResult,
+            duration: performance.now() - start,
+          }
+        }
+        finally {
+          // Restore original args
+          process.argv = [process.argv[0], ...originalArgs]
+        }
+      }
+      catch (error) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `source: ${error instanceof Error ? error.message : 'Error executing file'}\n`,
+          duration: performance.now() - start,
+        }
+      }
+    },
+  }
+
+  // Add source command to builtins first
+  builtins.set('source', sourceCommand)
+  builtins.set('.', { ...sourceCommand, name: '.' }) // POSIX alias for source
+
   // cd command
   builtins.set('cd', {
     name: 'cd',
@@ -585,117 +699,6 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   }
   builtins.set('clear', clearCommand)
   builtins.set('cls', { ...clearCommand, name: 'cls' }) // Windows alias
-
-  // source/. command
-  const sourceCommand = {
-    name: 'source',
-    description: 'Execute commands from a file in the current shell context',
-    usage: 'source file [arguments...]',
-    async execute(args: string[], shell: Shell): Promise<CommandResult> {
-      const start = performance.now()
-
-      if (args.length === 0) {
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: 'source: filename argument required\nsource: usage: source filename [arguments]\n',
-          duration: performance.now() - start,
-        }
-      }
-
-      const filePath = args[0]
-      const scriptArgs = args.slice(1)
-
-      try {
-        const fs = await import('node:fs/promises')
-        const path = await import('node:path')
-
-        // Resolve the file path
-        let fullPath: string
-        if (filePath.startsWith('/') || filePath.startsWith('./') || filePath.startsWith('../')) {
-          fullPath = path.resolve(shell.cwd, filePath)
-        }
-        else {
-          // Search in PATH if not a relative/absolute path
-          const pathDirs = (shell.environment.PATH || '').split(':')
-          for (const dir of pathDirs) {
-            const testPath = path.join(dir, filePath)
-            try {
-              await fs.access(testPath)
-              fullPath = testPath
-              break
-            }
-            catch {
-              continue
-            }
-          }
-          if (!fullPath!) {
-            return {
-              exitCode: 1,
-              stdout: '',
-              stderr: `source: ${filePath}: file not found in PATH\n`,
-              duration: performance.now() - start,
-            }
-          }
-        }
-
-        // Read the file
-        const content = await fs.readFile(fullPath, 'utf8')
-
-        // Save current args and set the script arguments
-        const originalArgs = process.argv.slice(2)
-        process.argv = [process.argv[0], fullPath, ...scriptArgs]
-
-        try {
-          // Execute each line
-          const lines = content.split('\n')
-          let lastResult: CommandResult = {
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            duration: 0,
-          }
-
-          for (const line of lines) {
-            const trimmed = line.trim()
-            // Skip comments and empty lines
-            if (!trimmed || trimmed.startsWith('#')) {
-              continue
-            }
-
-            // Execute the command
-            const result = await shell.execute(trimmed)
-            lastResult = result
-
-            // Stop on error if we're not in a script
-            if (result.exitCode !== 0) {
-              break
-            }
-          }
-
-          return {
-            ...lastResult,
-            duration: performance.now() - start,
-          }
-        }
-        finally {
-          // Restore original args
-          process.argv = [process.argv[0], ...originalArgs]
-        }
-      }
-      catch (error) {
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: `source: ${error instanceof Error ? error.message : 'Error executing file'}\n`,
-          duration: performance.now() - start,
-        }
-      }
-    },
-  }
-
-  builtins.set('source', sourceCommand)
-  builtins.set('.', { ...sourceCommand, name: '.' }) // POSIX alias for source
 
   // jobs command
   builtins.set('jobs', {

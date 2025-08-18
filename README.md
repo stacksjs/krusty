@@ -1,46 +1,112 @@
-<p align="center"><img src=".github/art/cover.jpg" alt="Social Card of this repo"></p>
+![Krusty Shell](.github/art/cover.jpg)
 
 [![npm version][npm-version-src]][npm-version-href]
 [![GitHub Actions][github-actions-src]][github-actions-href]
-[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
-<!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
-<!-- [![Codecov][codecov-src]][codecov-href] -->
+[![Bun Version](https://img.shields.io/badge/dynamic/json?url=https://bundlejs.com/api/version?name=krusty&style=flat-square&label=bun&query=version&color=blue)](https://bun.sh)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4.svg?style=flat-square)](https://github.com/prettier/prettier)
 
-# krusty
+# Krusty Shell
 
-This is an opinionated TypeScript Starter kit to help kick-start development of your next Bun package.
+Krusty is a modern, feature-rich shell built with TypeScript and Bun. It provides a familiar shell experience with enhanced features, extensibility, and developer-friendly tooling.
 
 ## Features
 
-This Starter Kit comes pre-configured with the following:
+- 🚀 **Performant** - Built on Bun for exceptional performance
+- 🔍 **Intelligent Tab Completion** - Context-aware command and file completion
+- 📝 **Scripting Support** - Write complex shell scripts with JavaScript/TypeScript
+- 🔧 **Extensible** - Easily add custom commands and plugins
+- 🎨 **Themable** - Customize the look and feel to your preference
+- 🔄 **Modern Syntax** - Supports modern shell features and operators
+- 📦 **Built-in Package Manager** - Manage your shell extensions with ease
+- 🧪 **Tested** - Comprehensive test suite for reliability
 
-- 🛠️ [Powerful Build Process](https://github.com/oven-sh/bun) - via Bun
-- 💪🏽 [Fully Typed APIs](https://www.typescriptlang.org/) - via TypeScript
-- 📚 [Documentation-ready](https://vitepress.dev/) - via VitePress
-- ⌘ [CLI & Binary](https://www.npmjs.com/package/bunx) - via Bun & CAC
-- 🧪 [Built With Testing In Mind](https://bun.sh/docs/cli/test) - pre-configured unit-testing powered by [Bun](https://bun.sh/docs/cli/test)
-- 🤖 [Renovate](https://renovatebot.com/) - optimized & automated PR dependency updates
-- 🎨 [ESLint](https://eslint.org/) - for code linting _(and formatting)_
-- 📦️ [pkg.pr.new](https://pkg.pr.new) - Continuous (Preview) Releases for your libraries
-- 🐙 [GitHub Actions](https://github.com/features/actions) - runs your CI _(fixes code style issues, tags releases & creates its changelogs, runs the test suite, etc.)_
-
-## Get Started
-
-It's rather simple to get your package development started:
+## Installation
 
 ```bash
-# you may use this GitHub template or the following command:
-bunx degit stacksjs/ts-starter my-pkg
-cd my-pkg
+# Install Krusty globally
+bun add -g krusty
 
-bun i # install all deps
-bun run build # builds the library for production-ready use
-
-# after you have successfully committed, you may create a "release"
-bun run release # automates git commits, versioning, and changelog generations
+# Start the shell
+krusty
 ```
 
-_Check out the package.json scripts for more commands._
+## Built-in Commands
+
+Krusty comes with a variety of built-in commands:
+
+### File Operations
+
+- `cd` - Change directory
+- `ls` - List directory contents
+- `pwd` - Print working directory
+
+### Process Management
+
+- `jobs` - List background jobs
+- `fg` - Bring job to foreground
+- `bg` - Run job in background
+- `kill` - Send signal to process
+
+### Environment
+
+- `env` - Display or set environment variables
+- `set` - Set shell options and variables
+- `unset` - Remove variables or functions
+- `export` - Set environment variables
+
+### Utilities
+
+- `alias` - Create command aliases
+- `type` - Display command type information
+- `time` - Time command execution
+- `source` - Execute commands from a file
+
+## Customization
+
+### Aliases
+
+Create command aliases in your `krusty.config.ts` file:
+
+```typescript
+export default {
+  // ... other config
+  aliases: {
+    ll: 'ls -la',
+    gs: 'git status',
+  },
+  // ... other config
+}
+```
+
+### Environment Variables
+
+Set environment variables in your `krusty.config.ts` file:
+
+```typescript
+export default {
+  // ... other config
+  env: {
+    EDITOR: 'code',
+    PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}`,
+  },
+  // ... other config
+}
+```
+
+## Development
+
+```bash
+# Clone the repository
+git clone https://github.com/stacksjs/krusty.git
+cd krusty
+
+# Install dependencies
+bun install
+
+# Build the project
+bun run build
+```
 
 ## Testing
 
@@ -60,7 +126,7 @@ Please see [CONTRIBUTING](.github/CONTRIBUTING.md) for details.
 
 For help, discussion about best practices, or any other conversation that would benefit from being searchable:
 
-[Discussions on GitHub](https://github.com/stacksjs/ts-starter/discussions)
+[Discussions on GitHub](https://github.com/stacksjs/krusty/discussions)
 
 For casual chit-chat with others using this package:
 
@@ -88,8 +154,8 @@ Made with 💙
 <!-- Badges -->
 [npm-version-src]: https://img.shields.io/npm/v/krusty?style=flat-square
 [npm-version-href]: https://npmjs.com/package/krusty
-[github-actions-src]: https://img.shields.io/github/actions/workflow/status/stacksjs/ts-starter/ci.yml?style=flat-square&branch=main
-[github-actions-href]: https://github.com/stacksjs/ts-starter/actions?query=workflow%3Aci
+[github-actions-src]: https://img.shields.io/github/actions/workflow/status/stacksjs/krusty/ci.yml?style=flat-square&branch=main
+[github-actions-href]: https://github.com/stacksjs/krusty/actions?query=workflow%3Aci
 
-<!-- [codecov-src]: https://img.shields.io/codecov/c/gh/stacksjs/ts-starter/main?style=flat-square
-[codecov-href]: https://codecov.io/gh/stacksjs/ts-starter -->
+<!-- [codecov-src]: https://img.shields.io/codecov/c/gh/stacksjs/krusty/main?style=flat-square
+[codecov-href]: https://codecov.io/gh/stacksjs/krusty -->

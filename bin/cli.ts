@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun run
 import process from 'node:process'
 import { CAC } from 'cac'
 import { version } from '../package.json'
@@ -14,7 +14,10 @@ interface CliOptions {
 
 // Default command - start the shell
 cli
-  .command('[...args]', 'Start the krusty shell', { allowUnknownOptions: true })
+  .command('[...args]', 'Start the krusty shell', {
+    allowUnknownOptions: true,
+    ignoreOptionDefaultValue: true,
+  })
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (args: string[], options: CliOptions) => {
@@ -133,6 +136,67 @@ cli
       process.stderr.write(result.stderr)
 
     process.exit(result.exitCode)
+  })
+
+// Set as default shell
+cli
+  .command('set-shell', 'Set Krusty as the default shell')
+  .action(async () => {
+    const shellPath = process.argv[1] // Path to current script
+    const isWindows = process.platform === 'win32'
+
+    if (isWindows) {
+      // Windows implementation
+      process.stdout.write('Setting Krusty as default shell on Windows...\n')
+      // On Windows, we need to modify the registry
+      try {
+        const { execSync } = await import('node:child_process')
+        const { homedir } = await import('node:os')
+        const { writeFileSync } = await import('node:fs')
+
+        // Create a .bat file to launch Krusty
+        const batPath = `${homedir()}/krusty_shell.bat`
+        writeFileSync(batPath, `@echo off\n"${process.execPath}" "${shellPath}" %*`)
+
+        // Set the registry to use our .bat file
+        execSync(`reg add "HKCU\\Software\\Microsoft\\Command Processor" /v "AutoRun" /d "${batPath}" /f`)
+        process.stdout.write('Success! Krusty is now your default shell on Windows.\n')
+        process.stdout.write('You may need to restart your terminal for changes to take effect.\n')
+      }
+      catch {
+        process.stderr.write('Failed to set Krusty as default shell. Please run as administrator.\n')
+        process.exit(1)
+      }
+    }
+    else {
+      // Unix-like systems (macOS, Linux)
+      process.stdout.write('Setting Krusty as default shell...\n')
+      try {
+        const { writeFileSync, chmodSync } = await import('node:fs')
+        const { execSync } = await import('node:child_process')
+
+        // Create a wrapper script
+        const wrapperPath = '/usr/local/bin/krusty-shell'
+        const wrapperScript = `#!/bin/sh\nexec "${process.execPath}" "${shellPath}" "$@"\n`
+
+        // Write the wrapper script
+        writeFileSync(wrapperPath, wrapperScript)
+        chmodSync(wrapperPath, 0o755) // Make it executable
+
+        // Add to /etc/shells if not already present
+        execSync(`grep -qF '${wrapperPath}' /etc/shells || echo '${wrapperPath}' | sudo tee -a /etc/shells`)
+
+        // Change the shell
+        execSync(`chsh -s ${wrapperPath} ${process.env.USER}`)
+
+        process.stdout.write('Success! Krusty is now your default shell.\n')
+        process.stdout.write('You may need to log out and log back in for changes to take effect.\n')
+      }
+      catch {
+        process.stderr.write('Failed to set Krusty as default shell. You may need to run with sudo.\n')
+        process.exit(1)
+      }
+    }
   })
 
 // Version command
