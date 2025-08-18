@@ -58,6 +58,53 @@ export class CompletionProvider {
         const files = this.getFileCompletions(last)
         return files.filter(f => f.endsWith('/'))
       }
+      case 'echo': {
+        // Common echo flags
+        const flags = ['-n', '-e', '-E']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        return []
+      }
+      case 'history': {
+        // Common history flags
+        const flags = ['-c', '-d', '-a', '-n', '-r', '-w', '-p', '-s']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        return []
+      }
+      case 'test':
+      case '[': {
+        // File, string, and integer operators
+        const ops = [
+          // file
+          '-e',
+          '-f',
+          '-d',
+          '-s',
+          '-r',
+          '-w',
+          '-x',
+          '-L',
+          '-h',
+          '-b',
+          '-c',
+          '-p',
+          '-S',
+          // string
+          '-n',
+          '-z',
+          '=',
+          '!=',
+          // int (POSIX)
+          '-eq',
+          '-ne',
+          '-gt',
+          '-ge',
+          '-lt',
+          '-le',
+        ]
+        return ops.filter(o => o.startsWith(last) || last === '')
+      }
       case 'printf': {
         // Suggest common format strings for the first arg
         if (tokens.length === 2) {
@@ -198,6 +245,282 @@ export class CompletionProvider {
     }
   }
 
+  // Bun CLI completions inspired by official Bun shell completion scripts
+  private getBunArgCompletions(tokens: string[], last: string): string[] {
+    // tokens[0] === 'bun'
+    const subcommands = [
+      'run',
+      'test',
+      'x',
+      'repl',
+      'init',
+      'create',
+      'install',
+      'i',
+      'add',
+      'a',
+      'remove',
+      'rm',
+      'update',
+      'outdated',
+      'link',
+      'unlink',
+      'pm',
+      'build',
+      'upgrade',
+      'help',
+      'bun',
+    ]
+    const globalFlags = ['--version', '-V', '--cwd', '--help', '-h', '--use']
+
+    // If only 'bun' or completing first arg
+    if (tokens.length === 1 || (tokens.length === 2 && !tokens[1].startsWith('-'))) {
+      const pool = [...subcommands, ...globalFlags]
+      return pool.filter(s => s.startsWith(last) || last === '')
+    }
+
+    const sub = tokens[1]
+    const prev = tokens[tokens.length - 2] || ''
+    const suggest = (...vals: string[]) => vals.filter(v => v.startsWith(last) || last === '')
+
+    // Common value lists
+    const jsxRuntime = ['classic', 'automatic']
+    const targetVals = ['browser', 'bun', 'node']
+    const sourcemapVals = ['none', 'external', 'inline']
+    const formatVals = ['esm', 'cjs', 'iife']
+    const installVals = ['auto', 'force', 'fallback']
+
+    // Value-bearing flags
+    if (prev === '--jsx-runtime')
+      return suggest(...jsxRuntime)
+    if (prev === '--target')
+      return suggest(...targetVals)
+    if (prev === '--sourcemap')
+      return suggest(...sourcemapVals)
+    if (prev === '--format')
+      return suggest(...formatVals)
+    if (prev === '--install' || prev === '-i')
+      return suggest(...installVals)
+
+    // Subcommand-specific flags and fallbacks
+    switch (sub) {
+      case 'run': {
+        const flags = [
+          '--bun',
+          '-b',
+          '--cwd',
+          '--config',
+          '-c',
+          '--env-file',
+          '--extension-order',
+          '--jsx-factory',
+          '--jsx-fragment',
+          '--jsx-import-source',
+          '--jsx-runtime',
+          '--preload',
+          '-r',
+          '--main-fields',
+          '--no-summary',
+          '--version',
+          '-v',
+          '--revision',
+          '--tsconfig-override',
+          '--define',
+          '-d',
+          '--external',
+          '-e',
+          '--loader',
+          '-l',
+          '--packages',
+          '--origin',
+          '-u',
+          '--port',
+          '-p',
+          '--smol',
+          '--minify',
+          '--minify-syntax',
+          '--minify-whitespace',
+          '--minify-identifiers',
+          '--no-macros',
+          '--target',
+          '--inspect',
+          '--inspect-wait',
+          '--inspect-brk',
+          '--hot',
+          '--watch',
+          '--no-install',
+          '--install',
+          '-i',
+          '--prefer-offline',
+          '--prefer-latest',
+          '--silent',
+          '--dump-environment-variables',
+          '--dump-limits',
+        ]
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        return this.getFileCompletions(last)
+      }
+      case 'build': {
+        const flags = [
+          '--outfile',
+          '--outdir',
+          '--minify',
+          '--minify-whitespace',
+          '--minify-syntax',
+          '--minify-identifiers',
+          '--sourcemap',
+          '--target',
+          '--splitting',
+          '--compile',
+          '--format',
+        ]
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        return this.getFileCompletions(last)
+      }
+      case 'test': {
+        const flags = [
+          '-h',
+          '--help',
+          '-b',
+          '--bun',
+          '--cwd',
+          '-c',
+          '--config',
+          '--env-file',
+          '--extension-order',
+          '--jsx-factory',
+          '--jsx-fragment',
+          '--jsx-import-source',
+          '--jsx-runtime',
+          '--preload',
+          '-r',
+          '--main-fields',
+          '--no-summary',
+          '--version',
+          '-v',
+          '--revision',
+          '--tsconfig-override',
+          '--define',
+          '-d',
+          '--external',
+          '-e',
+          '--loader',
+          '-l',
+          '--origin',
+          '-u',
+          '--port',
+          '-p',
+          '--smol',
+          '--minify',
+          '--minify-syntax',
+          '--minify-identifiers',
+          '--no-macros',
+          '--target',
+          '--inspect',
+          '--inspect-wait',
+          '--inspect-brk',
+          '--watch',
+          '--timeout',
+          '--update-snapshots',
+          '--rerun-each',
+          '--only',
+          '--todo',
+          '--coverage',
+          '--bail',
+          '--test-name-pattern',
+          '-t',
+        ]
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'add':
+      case 'a':
+      case 'install':
+      case 'i': {
+        const flags = [
+          '--config',
+          '-c',
+          '--yarn',
+          '-y',
+          '--production',
+          '-p',
+          '--no-save',
+          '--dry-run',
+          '--frozen-lockfile',
+          '--force',
+          '-f',
+          '--cache-dir',
+          '--no-cache',
+          '--silent',
+          '--verbose',
+          '--no-progress',
+          '--no-summary',
+          '--no-verify',
+          '--ignore-scripts',
+          '--global',
+          '-g',
+          '--cwd',
+          '--backend',
+          '--link-native-bins',
+          '--help',
+          '--dev',
+          '-d',
+          '--development',
+          '--optional',
+          '--peer',
+          '--exact',
+        ]
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'remove':
+      case 'rm':
+      case 'link':
+      case 'unlink':
+      case 'update':
+      case 'outdated':
+      case 'pm': {
+        const flags = [
+          '--config',
+          '-c',
+          '--yarn',
+          '-y',
+          '--production',
+          '-p',
+          '--no-save',
+          '--dry-run',
+          '--frozen-lockfile',
+          '--latest',
+          '--force',
+          '-f',
+          '--cache-dir',
+          '--no-cache',
+          '--silent',
+          '--verbose',
+          '--no-progress',
+          '--no-summary',
+          '--no-verify',
+          '--ignore-scripts',
+          '--global',
+          '-g',
+          '--cwd',
+          '--backend',
+          '--link-native-bins',
+          '--help',
+        ]
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'upgrade': {
+        const flags = ['--canary']
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      default: {
+        const gen = last.startsWith('-') ? globalFlags.filter(f => f.startsWith(last)) : []
+        return gen.length ? gen : this.getFileCompletions(last)
+      }
+    }
+  }
+
   /**
    * Public API used by the shell to get completions at a cursor position
    */
@@ -220,6 +543,13 @@ export class CompletionProvider {
         const builtinComps = this.getBuiltinArgCompletions(cmd, tokens, last)
         if (builtinComps.length)
           return builtinComps
+      }
+
+      // Special-case: provide rich completions for popular external tools
+      if (cmd === 'bun') {
+        const bunComps = this.getBunArgCompletions(tokens, last)
+        if (bunComps.length)
+          return bunComps
       }
 
       // Fallback: file path completions

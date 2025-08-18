@@ -31,21 +31,21 @@ describe('getopts builtin', () => {
     shell.environment.OPTIND = '1'
 
     // First call: -a recognized, no arg
-    let r1 = await shell.execute('getopts "ab:" opt -a -b val')
+    const r1 = await shell.execute('getopts "ab:" opt -a -b val')
     expect(r1.exitCode).toBe(0)
     expect(shell.environment.opt).toBe('a')
     expect(shell.environment.OPTARG).toBe('')
     expect(shell.environment.OPTIND).toBe('2')
 
     // Second call: -b expects arg, captures 'val'
-    let r2 = await shell.execute('getopts "ab:" opt -a -b val')
+    const r2 = await shell.execute('getopts "ab:" opt -a -b val')
     expect(r2.exitCode).toBe(0)
     expect(shell.environment.opt).toBe('b')
     expect(shell.environment.OPTARG).toBe('val')
     expect(shell.environment.OPTIND).toBe('4')
 
     // Third call: end of options
-    let r3 = await shell.execute('getopts "ab:" opt -a -b val')
+    const r3 = await shell.execute('getopts "ab:" opt -a -b val')
     expect(r3.exitCode).toBe(1)
     expect(shell.environment.opt).toBe('?')
   })
