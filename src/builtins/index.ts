@@ -37,6 +37,7 @@ import { unaliasCommand } from './unalias'
 import { unsetCommand } from './unset'
 import { waitCommand } from './wait'
 import { whichCommand } from './which'
+import { wipCommand } from './wip'
 
 export function createBuiltins(): Map<string, BuiltinCommand> {
   const builtins = new Map<string, BuiltinCommand>()
@@ -81,6 +82,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('unalias', unaliasCommand)
   builtins.set('unset', unsetCommand)
   builtins.set('wait', waitCommand)
+  builtins.set('wip', wipCommand)
   builtins.set('which', whichCommand)
 
   return builtins

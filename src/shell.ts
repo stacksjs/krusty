@@ -559,6 +559,12 @@ export class KrustyShell implements Shell {
       }
     }
 
+    // Prefer builtins over aliases to ensure builtin behavior is not shadowed by alias names
+    if (!options?.bypassFunctions && this.builtins.has(command.name)) {
+      const builtin = this.builtins.get(command.name)!
+      return builtin.execute(command.args, this)
+    }
+
     // Expand aliases with cycle detection
     const expandedCommand = options?.bypassAliases ? command : this.expandAliasWithCycleDetection(command)
 

@@ -39,8 +39,11 @@ export const defaultConfig: KrustyConfig = {
     // Stage all changes and open a commit message prompt
     commit: 'git add .; git commit -m',
     // Work-in-progress: create a WIP commit and push with styled, informative output
-    // Uses printf (builtin) for ANSI styling and forces git color output
-    wip: "printf '\\x1b[2m\\x1b[36m─── WIP start ───\\x1b[0m\\n'; git -c color.ui=always add -A; git -c color.ui=always commit -m 'chore: wip'; printf '\\x1b[2mcommit summary (last)\\x1b[0m\\n'; git --no-pager -c color.ui=always log -1 --stat --oneline; printf '\\x1b[2m\\x1b[36m─── pushing ───\\x1b[0m\\n'; git -c color.ui=always push; printf '\\x1b[2m\\x1b[32m─── done ───\\x1b[0m\\n'",
+    // - Show concise status and staged diff before committing
+    // - Suppress commit's own summary (-q) to avoid duplicate info
+    // - Skip commit/push if no staged changes are present
+    // - Only run post-commit log and push if commit succeeds
+    wip: "printf '\\x1b[2m\\x1b[36m─── WIP start ───\\x1b[0m\\n'; git --no-pager -c color.ui=always status -sb; git -c color.ui=always add -A; printf '\\x1b[2mstaged summary\\x1b[0m\\n'; git --no-pager -c color.ui=always diff --cached --stat; git diff --cached --quiet && printf '\\x1b[2m\\x1b[33mno changes to commit; skipping push\\x1b[0m\\n' || git -c color.ui=always commit -m 'chore: wip' -q && printf '\\x1b[2mcommit (last)\\x1b[0m\\n' && git --no-pager -c color.ui=always log -1 --oneline && printf '\\x1b[2m\\x1b[36m─── pushing ───\\x1b[0m\\n' && git -c color.ui=always push; printf '\\x1b[2m\\x1b[32m─── done ───\\x1b[0m\\n'",
     // Push current branch
     push: 'git push',
   },
