@@ -119,10 +119,10 @@ export const wipCommand: BuiltinCommand = {
         if (opts.amend) commitArgs.push('--amend', '--no-edit')
         const commit = await shell.executeCommand('git', commitArgs)
         if (commit.exitCode === 0) {
-          if (opts.verbose && commit.stdout)
+          if (!opts.quiet && commit.stdout)
             out.push(commit.stdout.trimEnd())
-          // Only show last commit summary/details in verbose mode
-          if (opts.verbose) {
+          // Always show last commit summary/details by default (unless quiet)
+          if (!opts.quiet) {
             out.push(banner('commit (last)', 'none', { forceColor: opts.forceColor, noColor: opts.noColor }))
             const last = await shell.executeCommand('git', ['--no-pager', '-c', 'color.ui=always', 'log', '-1', '--oneline'])
             if (last.stdout) out.push(last.stdout.trimEnd())
