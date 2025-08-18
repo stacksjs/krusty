@@ -1,0 +1,31 @@
+import type { BuiltinCommand, CommandResult } from './types'
+
+function format(spec: string, args: string[]): string {
+  let i = 0
+  return spec.replace(/%[sdq%]/g, (m) => {
+    if (m === '%%')
+      return '%'
+    const arg = args[i++] ?? ''
+    switch (m) {
+      case '%s': return String(arg)
+      case '%d': return String(Number(arg))
+      case '%q': return JSON.stringify(String(arg))
+      default: return m
+    }
+  })
+}
+
+export const printfCommand: BuiltinCommand = {
+  name: 'printf',
+  description: 'Format and print data',
+  usage: 'printf format [arguments...]',
+  async execute(args: string[]): Promise<CommandResult> {
+    const start = performance.now()
+    if (args.length === 0)
+      return { exitCode: 1, stdout: '', stderr: 'printf: missing format string\n', duration: performance.now() - start }
+
+    const fmt = args.shift()!
+    const out = format(fmt, args)
+    return { exitCode: 0, stdout: out, stderr: '', duration: performance.now() - start }
+  },
+}

@@ -18,6 +18,7 @@ deps
 destructurable
 dtsx
 entrypoints
+getopts
 heroicons
 iconify
 krusty
@@ -25,9 +26,11 @@ lockb
 openweb
 outdir
 pausable
+popd
 Postcardware
 prefetch
 preinstall
+pushd
 quickfix
 shikijs
 socio
