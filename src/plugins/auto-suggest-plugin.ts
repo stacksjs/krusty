@@ -9,7 +9,7 @@ class AutoSuggestPlugin extends BasePlugin implements Plugin {
   name = 'auto-suggest'
   version = '1.0.0'
   description = 'Inline-like auto suggestions from history and common typos'
-  author = 'krusty Team'
+  author = 'Krusty Team'
   krustyVersion = '>=1.0.0'
 
   // Suggestions from history and common corrections

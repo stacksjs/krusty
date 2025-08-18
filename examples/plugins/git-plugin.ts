@@ -14,7 +14,7 @@ export class GitPlugin extends BasePlugin {
   name = 'git-plugin'
   version = '1.0.0'
   description = 'Enhanced Git functionality for krusty'
-  author = 'krusty Team'
+  author = 'Krusty Team'
   krustyVersion = '>=1.0.0'
 
   // Plugin commands
