@@ -124,42 +124,34 @@ export class CompletionProvider {
       const repoRoot = resolve(moduleDir, '..')
       const candidates = [resolve(this.shell.cwd, basePath), resolve(repoRoot, basePath)]
 
-      const attempt = { dir: dirname(candidates[0]), base: basename(candidates[0]), rawBaseDir: dirname(rawPrefix) }
       const completions: string[] = []
+      const seen = new Set<string>()
 
-      let files
-      try {
-        files = readdirSync(attempt.dir, { withFileTypes: true })
-      }
-      catch {
-        // Try the repo-root candidate
-        const fallbackAttempt = { dir: dirname(candidates[1]), base: basename(candidates[1]), rawBaseDir: dirname(rawPrefix) }
+      for (const candidate of candidates) {
+        const attempt = { dir: dirname(candidate), base: basename(candidate), rawBaseDir: dirname(rawPrefix) }
+        let files
         try {
-          files = readdirSync(fallbackAttempt.dir, { withFileTypes: true })
-          // Use fallback attempt values for matching and display
-          attempt.dir = fallbackAttempt.dir
-          attempt.base = fallbackAttempt.base
-          attempt.rawBaseDir = fallbackAttempt.rawBaseDir
+          files = readdirSync(attempt.dir, { withFileTypes: true })
         }
         catch {
-          return []
+          continue
         }
-      }
+        for (const file of files) {
+          if (file.name.startsWith(attempt.base)) {
+            const displayBase = rawPrefix.endsWith('/')
+              ? file.name
+              : join(attempt.rawBaseDir, file.name)
 
-      for (const file of files) {
-        if (file.name.startsWith(attempt.base)) {
-          const displayBase = rawPrefix.endsWith('/')
-            ? file.name
-            : join(attempt.rawBaseDir, file.name)
-
-          let displayPath = file.isDirectory() ? `${displayBase}/` : displayBase
-
-          // Re-add the opening quote if present in the original prefix
-          if (hadQuote) {
-            const quote = prefix[0]
-            displayPath = `${quote}${displayPath}`
+            let displayPath = file.isDirectory() ? `${displayBase}/` : displayBase
+            if (hadQuote) {
+              const quote = prefix[0]
+              displayPath = `${quote}${displayPath}`
+            }
+            if (!seen.has(displayPath)) {
+              seen.add(displayPath)
+              completions.push(displayPath)
+            }
           }
-          completions.push(displayPath)
         }
       }
 

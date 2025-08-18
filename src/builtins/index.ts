@@ -13,6 +13,7 @@ import { jobsCommand } from './jobs'
 import { killCommand } from './kill'
 import { pwdCommand } from './pwd'
 import { readCommand } from './read'
+import { setCommand } from './set'
 import { sourceCommand } from './source'
 import { testCommand } from './test'
 import { timeCommand } from './time'
@@ -20,6 +21,7 @@ import { trapCommand } from './trap'
 import { typeCommand } from './type'
 import { umaskCommand } from './umask'
 import { unaliasCommand } from './unalias'
+import { unsetCommand } from './unset'
 import { whichCommand } from './which'
 
 export function createBuiltins(): Map<string, BuiltinCommand> {
@@ -40,6 +42,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('kill', killCommand)
   builtins.set('pwd', pwdCommand)
   builtins.set('read', readCommand)
+  builtins.set('set', setCommand)
   builtins.set('source', sourceCommand)
   builtins.set('.', { ...sourceCommand, name: '.' }) // POSIX alias for source
   builtins.set('test', testCommand)
@@ -49,6 +52,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('type', typeCommand)
   builtins.set('umask', umaskCommand)
   builtins.set('unalias', unaliasCommand)
+  builtins.set('unset', unsetCommand)
   builtins.set('which', whichCommand)
 
   return builtins

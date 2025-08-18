@@ -76,7 +76,7 @@ export const typeCommand: BuiltinCommand = {
           results.push('alias')
         }
         else {
-          results.push(`${name} is aliased to '${shell.aliases[name]}'`)
+          results.push(`${name} is an alias for ${shell.aliases[name]}`)
         }
         if (!showAll)
           continue
