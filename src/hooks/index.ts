@@ -4,7 +4,7 @@ import type {
   HookContext,
   HookHandler,
   HookResult,
-  krustyConfig,
+  KrustyConfig,
   Shell,
 } from '../types'
 import { exec } from 'node:child_process'
@@ -21,7 +21,7 @@ export class HookManager {
   private hooks = new Map<string, RegisteredHook[]>()
   private executing = new Set<string>()
 
-  constructor(private shell: Shell, private config: krustyConfig) {
+  constructor(private shell: Shell, private config: KrustyConfig) {
     this.loadHooks()
   }
 

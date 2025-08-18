@@ -10,7 +10,7 @@ export class BunModule extends BaseModule {
     return ModuleUtils.hasFiles(context, ['bun.lockb', 'bun.lock', 'bunfig.toml'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('bun --version')
     const symbol = '🥟'
     const content = version ? `${symbol} v${version}` : symbol
@@ -29,7 +29,7 @@ export class DenoModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.ts', '.js'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const output = await ModuleUtils.getCommandOutput('deno -V')
     const version = output ? ModuleUtils.parseVersion(output) : null
     const symbol = '🦕'
@@ -49,7 +49,7 @@ export class NodeModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.js', '.mjs', '.cjs', '.ts'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('node --version')
     const symbol = '⬢'
     const content = version ? `${symbol} ${version}` : symbol
@@ -94,7 +94,7 @@ export class GoModule extends BaseModule {
       || ModuleUtils.hasDirectories(context, ['Godeps'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('go version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🐹'
@@ -114,7 +114,7 @@ export class JavaModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.java', '.class', '.jar'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('java -version 2>&1')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '☕'
@@ -133,7 +133,7 @@ export class KotlinModule extends BaseModule {
     return ModuleUtils.hasExtensions(context, ['.kt', '.kts'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('kotlin -version 2>&1')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🅺'
@@ -153,7 +153,7 @@ export class PhpModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.php'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('php --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🐘'
@@ -173,7 +173,7 @@ export class RubyModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.rb'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('ruby --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '💎'
@@ -193,7 +193,7 @@ export class SwiftModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.swift'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('swift --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🐦'
@@ -213,7 +213,7 @@ export class ZigModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.zig'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('zig version')
     const symbol = '⚡'
     const content = version ? `${symbol} v${version}` : symbol
@@ -233,7 +233,7 @@ export class LuaModule extends BaseModule {
       || ModuleUtils.hasDirectories(context, ['lua'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('lua -v')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🌙'
@@ -253,7 +253,7 @@ export class PerlModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.pl', '.pm', '.pod'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('perl --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🐪'
@@ -274,7 +274,7 @@ export class RModule extends BaseModule {
       || ModuleUtils.hasDirectories(context, ['.Rproj.user'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('R --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '📊'
@@ -294,7 +294,7 @@ export class DotNetModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.csproj', '.fsproj', '.xproj', '.sln'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('dotnet --version')
     const symbol = '.NET'
     const content = version ? `${symbol} v${version}` : symbol
@@ -313,7 +313,7 @@ export class ErlangModule extends BaseModule {
       || ModuleUtils.hasExtensions(context, ['.erl', '.hrl'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('erl -noshell -eval "io:format(\\"~s\\", [erlang:system_info(otp_release)]), halt()."')
     const symbol = 'E'
     const content = version ? `${symbol} v${version}` : symbol
@@ -331,7 +331,7 @@ export class CModule extends BaseModule {
     return ModuleUtils.hasExtensions(context, ['.c', '.h'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('gcc --version')
       || await ModuleUtils.getCommandOutput('clang --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
@@ -351,7 +351,7 @@ export class CppModule extends BaseModule {
     return ModuleUtils.hasExtensions(context, ['.cpp', '.cxx', '.cc', '.hpp', '.hxx', '.hh'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('g++ --version')
       || await ModuleUtils.getCommandOutput('clang++ --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
@@ -371,7 +371,7 @@ export class CMakeModule extends BaseModule {
     return ModuleUtils.hasFiles(context, ['CMakeLists.txt', 'CMakeCache.txt'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('cmake --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '△'
@@ -392,7 +392,7 @@ export class TerraformModule extends BaseModule {
       || ModuleUtils.hasDirectories(context, ['.terraform'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('terraform version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '💠'
@@ -411,7 +411,7 @@ export class PulumiModule extends BaseModule {
     return ModuleUtils.hasFiles(context, ['Pulumi.yaml', 'Pulumi.yml'])
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('pulumi version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
     const symbol = '🧊'

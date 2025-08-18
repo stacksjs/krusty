@@ -1,9 +1,9 @@
-import type { krustyConfig } from '../src/types'
+import type { KrustyConfig } from '../src/types'
 import { describe, expect, it } from 'bun:test'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 // Helper to create a bare-minimum config
-function makeConfig(partial: Partial<krustyConfig> = {}): krustyConfig {
+function makeConfig(partial: Partial<KrustyConfig> = {}): KrustyConfig {
   return {
     verbose: false,
     streamOutput: true,
@@ -12,13 +12,13 @@ function makeConfig(partial: Partial<krustyConfig> = {}): krustyConfig {
     plugins: [],
     hooks: {},
     ...partial,
-  } as krustyConfig
+  } as KrustyConfig
 }
 
 describe('Default Plugins', () => {
   it('injects default plugins at load time when none provided', async () => {
     const cfg = makeConfig()
-    const shell = new krustyShell(cfg)
+    const shell = new KrustyShell(cfg)
 
     // Load plugins (defaults are injected during load)
     await shell.loadPlugins()
@@ -32,7 +32,7 @@ describe('Default Plugins', () => {
         { name: 'auto-suggest', enabled: false },
       ],
     })
-    const shell = new krustyShell(cfg)
+    const shell = new KrustyShell(cfg)
 
     // Auto-suggest should remain disabled, but highlight should be injected
     await shell.loadPlugins()
@@ -42,7 +42,7 @@ describe('Default Plugins', () => {
 
   it('auto-suggest provides suggestions from history, aliases, and typo corrections', async () => {
     const cfg = makeConfig()
-    const shell = new krustyShell(cfg)
+    const shell = new KrustyShell(cfg)
 
     // Seed some history and aliases
     shell.addToHistory('bun test')
@@ -66,7 +66,7 @@ describe('Default Plugins', () => {
 
   it('highlight plugin demo command outputs colored text', async () => {
     const cfg = makeConfig()
-    const shell = new krustyShell(cfg)
+    const shell = new KrustyShell(cfg)
     await shell.loadPlugins()
 
     const res = await shell.execute('highlight:demo "echo hi"')

@@ -2,10 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readdirSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 describe('Performance Tests', () => {
-  let shell: krustyShell
+  let shell: KrustyShell
   const testFile = 'test-large-file.txt'
   const testDir = 'test-dir'
   const testFilesCount = 100
@@ -33,7 +33,7 @@ describe('Performance Tests', () => {
     }
 
     // Initialize shell with test config
-    shell = new krustyShell({
+    shell = new KrustyShell({
       ...defaultConfig,
       aliases: {
         'perf-alias': 'echo performance test',
@@ -150,7 +150,7 @@ describe('Performance Tests', () => {
     }
 
     // Update shell with new environment
-    const newShell = new krustyShell({
+    const newShell = new KrustyShell({
       ...defaultConfig,
     })
 

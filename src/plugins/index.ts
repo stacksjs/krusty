@@ -1,6 +1,6 @@
 /* eslint-disable unused-imports/no-unused-vars */
 import type {
-  krustyConfig,
+  KrustyConfig,
   Plugin,
   PluginConfig,
   PluginContext,
@@ -89,7 +89,7 @@ export class PluginManager {
   private pluginContexts = new Map<string, PluginContext>()
   private utils = new PluginUtilsImpl()
 
-  constructor(private shell: Shell, private config: krustyConfig) {}
+  constructor(private shell: Shell, private config: KrustyConfig) {}
 
   // Load plugins from configuration (with default injection)
   async loadPlugins(): Promise<void> {

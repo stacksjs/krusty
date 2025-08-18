@@ -20,9 +20,129 @@ export class CustomModule extends BaseModule {
     // Check custom condition
     if (typeof when === 'string') {
       try {
-        const func = new Function('context', `return ${when}`)
-        if (!func(context))
+        // Create a safe evaluator function
+        const evaluateCondition = (conditionStr: string, _ctx: ModuleContext): boolean => {
+          // Check if the condition contains only allowed characters/patterns
+          // Using a more restrictive pattern to prevent potential issues
+          // Allow alphanumeric, whitespace, and common operators
+          const allowedChars = /^[\w\s.()&|!='"[\]]+$/
+          if (!allowedChars.test(conditionStr)) {
+            return false
+          }
+
+          // Check for disallowed patterns
+          const disallowedPatterns = [
+            /\bfunction\s+(?:\w+\s*)?\(/i, // Match function declarations
+            /=>/,
+            /new\s+\w+\s*\(/i,
+            /\.\s*\w+\s*\(/,
+            /\beval\s*\(/i,
+            /\brequire\s*\(/i,
+            /[`${}]/,
+          ]
+
+          if (disallowedPatterns.some(pattern => pattern.test(conditionStr))) {
+            return false
+          }
+
+          // Use a simple object-based evaluator instead of Function constructor
+          try {
+            // Create a safe context with a limited set of allowed operations
+            const safeEval = (expr: string, context: Record<string, unknown>): boolean => {
+              // Only allow simple property access and basic comparisons
+              // Match simple comparisons with literals or identifiers
+              const validExpr = /^\s*([\w.]+)\s*([=!]=|[<>]=?|&&|\|\|)\s*(?:(['"]).*?\3|true|false|null|undefined|\d+)\s*$/
+              const match = expr.match(validExpr)
+
+              if (!match)
+                return false
+
+              const [, left, operator, right] = match
+
+              // Safely get nested properties
+              const getValue = (path: string, obj: Record<string, unknown>): unknown => {
+                return path.split('.').reduce<unknown>((o, p) =>
+                  (o && typeof o === 'object' && p in o) ? (o as Record<string, unknown>)[p] : undefined, obj)
+              }
+
+              const leftVal = getValue(left, context)
+              let rightVal: unknown = right
+
+              // Handle string literals and other primitive types
+              if (typeof right === 'string') {
+                if ((right.startsWith('"') && right.endsWith('"'))
+                  || (right.startsWith('\'') && right.endsWith('\''))) {
+                  rightVal = right.slice(1, -1)
+                }
+                else if (right === 'true') {
+                  rightVal = true
+                }
+                else if (right === 'false') {
+                  rightVal = false
+                }
+                else if (right === 'null') {
+                  rightVal = null
+                }
+                else if (right === 'undefined') {
+                  rightVal = undefined
+                }
+                else if (/^\d+$/.test(right)) {
+                  rightVal = Number(right)
+                }
+              }
+
+              // Evaluate the comparison
+              switch (operator) {
+                case '==': return leftVal == rightVal // eslint-disable-line eqeqeq
+                case '!=': return leftVal != rightVal // eslint-disable-line eqeqeq
+                case '===': return leftVal === rightVal
+                case '!==': return leftVal !== rightVal
+                case '>': return Number(leftVal) > Number(rightVal)
+                case '<': return Number(leftVal) < Number(rightVal)
+                case '>=': return Number(leftVal) >= Number(rightVal)
+                case '<=': return Number(leftVal) <= Number(rightVal)
+                case '&&': return Boolean(leftVal) && Boolean(rightVal)
+                case '||': return Boolean(leftVal) || Boolean(rightVal)
+                default: return false
+              }
+            }
+
+            // Create a safe context with only the allowed properties
+            const safeContext = {
+              environment: _ctx.environment || {},
+              cwd: _ctx.cwd || '',
+            }
+
+            // Split on logical operators and evaluate each part
+            const parts = conditionStr.split(/(&&|\|\|)/)
+            let result = true
+            let currentOp = '&&' // Default to AND
+
+            for (const part of parts) {
+              if (part === '&&' || part === '||') {
+                currentOp = part
+              }
+              else {
+                const partResult = safeEval(part.trim(), safeContext)
+                if (currentOp === '&&') {
+                  result = result && partResult
+                }
+                else {
+                  result = result || partResult
+                }
+              }
+            }
+
+            return result
+          }
+          catch {
+            return false
+          }
+        }
+
+        if (!evaluateCondition(when, context)) {
           return false
+        }
       }
       catch {
         return false
@@ -53,7 +173,7 @@ export class CustomModule extends BaseModule {
     return true
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const { format, symbol, command } = this.config
 
     // If command is provided, execute it and use output
@@ -109,9 +229,9 @@ export class EnvVarModule extends BaseModule {
     return !!context.environment[varName]
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const varName = this.config.variable || this.name.replace('env_var.', '')
-    const value = context.environment[varName] || this.config.default
+    const value = _context.environment[varName] || this.config.default
 
     if (!value)
       return null

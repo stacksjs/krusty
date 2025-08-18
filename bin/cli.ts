@@ -3,7 +3,7 @@ import process from 'node:process'
 import { CAC } from 'cac'
 import { version } from '../package.json'
 import { config } from '../src/config'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 const cli = new CAC('krusty')
 
@@ -20,7 +20,7 @@ cli
   .action(async (args: string[], options: CliOptions) => {
     // If arguments are provided, execute them as a command
     if (args.length > 0) {
-      const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
       const command = args.join(' ')
       const result = await shell.execute(command)
 
@@ -33,7 +33,7 @@ cli
     }
     else {
       // Start interactive shell
-      const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
 
       // Welcome message
       process.stdout.write(`Welcome to krusty v${version}\n`)
@@ -80,7 +80,7 @@ cli
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (options: CliOptions) => {
-    const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
 
     // Welcome message
     process.stdout.write(`Welcome to krusty v${version}\n`)
@@ -124,7 +124,7 @@ cli
   .command('exec <command>', 'Execute a single command')
   .option('--verbose', 'Enable verbose logging')
   .action(async (command: string, options: CliOptions) => {
-    const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
     const result = await shell.execute(command)
 
     if (result.stdout)

@@ -1,25 +1,25 @@
-import type { krustyConfig } from '../src/types'
+import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PluginManager } from '../src/plugins'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 describe('Plugin System', () => {
-  let shell: krustyShell
+  let shell: KrustyShell
   let pluginManager: PluginManager
   let tempDir: string
   let pluginPath: string
 
   beforeEach(() => {
-    const config: krustyConfig = {
+    const config: KrustyConfig = {
       verbose: false,
       plugins: [],
       hooks: {},
     }
 
-    shell = new krustyShell(config)
+    shell = new KrustyShell(config)
     pluginManager = new PluginManager(shell, config)
 
     // Create temporary directory for test plugin
@@ -150,7 +150,7 @@ describe('Plugin System', () => {
       enabled: false,
     }
 
-    const shellConfig: krustyConfig = {
+    const shellConfig: KrustyConfig = {
       verbose: false,
       plugins: [config],
       hooks: {},

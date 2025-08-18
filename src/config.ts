@@ -1,7 +1,7 @@
-import type { krustyConfig } from './types'
+import type { KrustyConfig } from './types'
 import { loadConfig } from 'bunfig'
 
-export const defaultConfig: krustyConfig = {
+export const defaultConfig: KrustyConfig = {
   verbose: false,
   streamOutput: true,
   logging: {
@@ -192,13 +192,13 @@ export const defaultConfig: krustyConfig = {
 }
 
 // eslint-disable-next-line antfu/no-top-level-await
-export const config: krustyConfig = await loadConfig({
+export const config: KrustyConfig = await loadConfig({
   name: 'krusty',
   defaultConfig,
 })
 
 // Provide a reusable loader that always fetches the latest config from disk
-export async function loadkrustyConfig(): Promise<krustyConfig> {
+export async function loadKrustyConfig(): Promise<KrustyConfig> {
   return await loadConfig({
     name: 'krusty',
     defaultConfig,

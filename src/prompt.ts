@@ -1,4 +1,4 @@
-import type { GitInfo, krustyConfig, PromptSegment, SystemInfo } from './types'
+import type { GitInfo, KrustyConfig, PromptSegment, SystemInfo } from './types'
 import { exec } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { arch, homedir, hostname, platform, userInfo } from 'node:os'
@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 const execAsync = promisify(exec)
 
 export class PromptRenderer {
-  constructor(private config: krustyConfig) {}
+  constructor(private config: KrustyConfig) {}
 
   async render(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string> {
     const format = this.config.prompt?.format || '{user}@{host} {path}{git} {symbol} '

@@ -5,6 +5,9 @@ import { isBrowser } from './environment'
  * @param fontFamily - The font family name to use
  * @param fontUrl - URL to the font file (supports .woff, .woff2, .ttf, .otf)
  * @param options - Font loading options
+ * @param options.weights - Array of font weights to load (100-900)
+ * @param options.display - Font display behavior (auto, block, swap, fallback, optional)
+ * @param options.style - Font style (normal, italic)
  * @returns Promise that resolves when the font is loaded
  */
 export async function loadFont(
@@ -105,6 +108,11 @@ export async function loadFont(
  * Applies font settings to the terminal element
  * @param element - The terminal element to apply font settings to
  * @param font - Font configuration
+ * @param font.family - Font family name
+ * @param font.size - Font size in pixels
+ * @param font.weight - Font weight (100-900 or normal/bold)
+ * @param font.lineHeight - Line height as a multiplier
+ * @param font.ligatures - Whether to enable ligatures
  */
 export function applyFontSettings(
   element: HTMLElement,
@@ -177,6 +185,10 @@ function getFontFormat(url: string): string {
  * Loads Google Fonts
  * @param fontFamily - Google Font family name
  * @param options - Font loading options
+ * @param options.weights - Array of font weights to load (100-900)
+ * @param options.display - Font display behavior (auto, block, swap, fallback, optional)
+ * @param options.subsets - Array of character subsets to load
+ * @param options.text - Specific characters to load for subsetting
  * @returns Promise that resolves when the font is loaded
  */
 export function loadGoogleFont(

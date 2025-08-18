@@ -1,12 +1,12 @@
-import type { krustyConfig } from '../src/types'
+import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { homedir } from 'node:os'
 import { defaultConfig } from '../src/config'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
-describe('krustyShell', () => {
-  let shell: krustyShell
-  let testConfig: krustyConfig
+describe('KrustyShell', () => {
+  let shell: KrustyShell
+  let testConfig: KrustyConfig
 
   beforeEach(() => {
     testConfig = {
@@ -17,7 +17,7 @@ describe('krustyShell', () => {
         file: `/tmp/test_history_${Math.random().toString(36).substr(2, 9)}`,
       },
     }
-    shell = new krustyShell(testConfig)
+    shell = new KrustyShell(testConfig)
   })
 
   afterEach(() => {
@@ -26,7 +26,7 @@ describe('krustyShell', () => {
 
   describe('initialization', () => {
     it('should initialize with default config', () => {
-      const defaultShell = new krustyShell()
+      const defaultShell = new KrustyShell()
       expect(defaultShell.config).toEqual(defaultConfig)
     })
 
@@ -208,7 +208,7 @@ describe('krustyShell', () => {
           file: `/tmp/test_history_limited_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const limitedShell = new krustyShell(limitedConfig)
+      const limitedShell = new KrustyShell(limitedConfig)
 
       limitedShell.addToHistory('cmd1')
       limitedShell.addToHistory('cmd2')

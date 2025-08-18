@@ -1,11 +1,11 @@
-import type { GitInfo, krustyConfig, SystemInfo } from '../src/types'
+import type { GitInfo, KrustyConfig, SystemInfo } from '../src/types'
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
 import { PromptRenderer } from '../src/prompt'
 
 describe('PromptRenderer', () => {
   let renderer: PromptRenderer
-  let testConfig: krustyConfig
+  let testConfig: KrustyConfig
   let mockSystemInfo: SystemInfo
   let mockGitInfo: GitInfo
 

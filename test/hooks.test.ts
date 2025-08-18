@@ -1,24 +1,24 @@
-import type { HookConfig, krustyConfig } from '../src/types'
+import type { HookConfig, KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookManager, HookUtils } from '../src/hooks'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 describe('Hooks System', () => {
-  let shell: krustyShell
+  let shell: KrustyShell
   let hookManager: HookManager
   let tempDir: string
 
   beforeEach(() => {
-    const config: krustyConfig = {
+    const config: KrustyConfig = {
       verbose: false,
       plugins: [],
       hooks: {},
     }
 
-    shell = new krustyShell(config)
+    shell = new KrustyShell(config)
     hookManager = new HookManager(shell, config)
 
     // Create temporary directory for test scripts
@@ -92,7 +92,7 @@ describe('Hooks System', () => {
   })
 
   it('should respect hook priorities', async () => {
-    const results: string[] = []
+    const _results: string[] = []
 
     const hook1: HookConfig = {
       name: 'high-priority-hook',
@@ -243,7 +243,7 @@ describe('Hooks System', () => {
   })
 
   it('should prevent recursive hook execution', async () => {
-    const executionCount = 0
+    const _executionCount = 0
 
     // Create a hook that would trigger itself
     const recursiveHook: HookConfig = {

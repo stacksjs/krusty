@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import type { BuiltinCommand, CommandResult, krustyConfig, ParsedCommand, Plugin, Shell } from './types'
+import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell } from './types'
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -8,7 +8,7 @@ import process from 'node:process'
 import * as readline from 'node:readline'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
-import { defaultConfig, loadkrustyConfig } from './config'
+import { defaultConfig, loadKrustyConfig } from './config'
 import { HistoryManager } from './history'
 import { HookManager } from './hooks'
 import { Logger } from './logger'
@@ -16,8 +16,8 @@ import { CommandParser } from './parser'
 import { PluginManager } from './plugins'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 
-export class krustyShell implements Shell {
-  public config: krustyConfig
+export class KrustyShell implements Shell {
+  public config: KrustyConfig
   public cwd: string
   public environment: Record<string, string>
   public history: string[]
@@ -37,7 +37,7 @@ export class krustyShell implements Shell {
   private running = false
   private lastExitCode = 0
 
-  constructor(config?: krustyConfig) {
+  constructor(config?: KrustyConfig) {
     // Use defaultConfig from src/config to preserve exact equality in tests
     this.config = config || defaultConfig
     // Ensure plugins array exists
@@ -82,7 +82,7 @@ export class krustyShell implements Shell {
     const start = performance.now()
     try {
       // Load latest config from disk
-      const newConfig = await loadkrustyConfig()
+      const newConfig = await loadKrustyConfig()
 
       // Apply environment: start from current process.env to keep runtime updates, then overlay new config
       this.environment = Object.fromEntries(

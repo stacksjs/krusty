@@ -38,41 +38,73 @@ class HighlightPlugin extends BasePlugin implements Plugin {
 
     // Tokenize roughly: strings, flags, operators, paths, words
     const tokens: { v: string, t: 'str' | 'flag' | 'op' | 'path' | 'cmd' }[] = []
-    const regex = /("[^"]*"|'[^']*'|-[\w-]+|[|&]{1,2}|\.{1,2}\/[\w./-]+|\/[\w./-]+|\w+)/g
-    let m: RegExpExecArray | null
+    // Simplified regex without unnecessary non-capturing groups
+    const regex = /"[^"]*"|'[^']*'|-\w[\w-]*|[|&]{1,2}|\.{1,2}\/[\w./-]+|\/[\w./-]+|\w+/g
     let lastIndex = 0
-    while ((m = regex.exec(text))) {
-      if (m.index > lastIndex) {
-        tokens.push({ v: text.slice(lastIndex, m.index), t: 'cmd' }) // keep spacing
+    let match: RegExpExecArray | null
+
+    // Fix: Move the assignment out of the while condition
+    while (true) {
+      match = regex.exec(text)
+      if (!match) {
+        break
       }
-      const tok = m[0]
-      let t: 'str' | 'flag' | 'op' | 'path' | 'cmd' = 'cmd'
-      if (tok.startsWith('"') || tok.startsWith('\''))
+
+      if (match.index > lastIndex) {
+        tokens.push({ v: text.slice(lastIndex, match.index), t: 'cmd' }) // keep spacing
+      }
+
+      const tok = match[0]
+      let t: 'str' | 'flag' | 'op' | 'path' | 'cmd'
+
+      if (tok.startsWith('"') || tok.startsWith('\'')) {
         t = 'str'
-      else if (tok.startsWith('--') || tok.startsWith('-'))
+      }
+      else if (tok.startsWith('--') || (tok.startsWith('-') && tok.length > 1)) {
         t = 'flag'
-      else if (tok === '|' || tok === '&&' || tok === '&')
+      }
+      else if (tok === '|' || tok === '&&' || tok === '&') {
         t = 'op'
-      else if (tok.startsWith('/') || tok.startsWith('./') || tok.startsWith('../'))
+      }
+      else if (tok.startsWith('/') || tok.startsWith('./') || tok.startsWith('../')) {
         t = 'path'
-      else t = 'cmd'
+      }
+      else {
+        t = 'cmd'
+      }
+
       tokens.push({ v: tok, t })
       lastIndex = regex.lastIndex
     }
-    if (lastIndex < text.length)
+    if (lastIndex < text.length) {
       tokens.push({ v: text.slice(lastIndex), t: 'cmd' })
+    }
 
     return tokens
       .map((tk, idx) => {
-        if (/^\s+$/.test(tk.v))
+        if (/^\s+$/.test(tk.v)) {
           return tk.v // keep spacing uncolored
-        const color
-          = tk.t === 'str' ? colors.str
-            : tk.t === 'flag' ? colors.flag
-              : tk.t === 'op' ? colors.op
-                : tk.t === 'path' ? colors.path
-                  : idx === 0 ? colors.cmd // treat first word as command
-                    : colors.cmd
+        }
+
+        // Use a more readable approach for color selection
+        let color: string
+        switch (tk.t) {
+          case 'str':
+            color = colors.str
+            break
+          case 'flag':
+            color = colors.flag
+            break
+          case 'op':
+            color = colors.op
+            break
+          case 'path':
+            color = colors.path
+            break
+          default: // 'cmd'
+            color = idx === 0 ? colors.cmd : colors.cmd
+        }
+
         return color + tk.v + reset
       })
       .join('')

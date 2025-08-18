@@ -20,10 +20,10 @@ export class AwsModule extends BaseModule {
     )
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const profile = context.environment.AWS_PROFILE || 'default'
-    const region = context.environment.AWS_REGION
-      || context.environment.AWS_DEFAULT_REGION
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    const profile = _context.environment.AWS_PROFILE || 'default'
+    const region = _context.environment.AWS_REGION
+      || _context.environment.AWS_DEFAULT_REGION
       || this.getRegionFromConfig(profile)
 
     const symbol = '☁️'
@@ -90,14 +90,14 @@ export class AzureModule extends BaseModule {
   name = 'azure'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return !!(
-      context.environment.AZURE_CONFIG_DIR
+      _context.environment.AZURE_CONFIG_DIR
       || this.getAzureProfile()
     )
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const profile = this.getAzureProfile()
     if (!profile)
       return null
@@ -131,18 +131,18 @@ export class GcloudModule extends BaseModule {
   name = 'gcloud'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return !!(
-      context.environment.CLOUDSDK_CONFIG
-      || context.environment.CLOUDSDK_CORE_PROJECT
-      || context.environment.CLOUDSDK_ACTIVE_CONFIG_NAME
+      _context.environment.CLOUDSDK_CONFIG
+      || _context.environment.CLOUDSDK_CORE_PROJECT
+      || _context.environment.CLOUDSDK_ACTIVE_CONFIG_NAME
       || this.getGcloudConfig()
     )
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const project = context.environment.CLOUDSDK_CORE_PROJECT || this.getActiveProject()
-    const config = context.environment.CLOUDSDK_ACTIVE_CONFIG_NAME || this.getActiveConfig()
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    const project = _context.environment.CLOUDSDK_CORE_PROJECT || this.getActiveProject()
+    const config = _context.environment.CLOUDSDK_ACTIVE_CONFIG_NAME || this.getActiveConfig()
 
     if (!project && !config)
       return null

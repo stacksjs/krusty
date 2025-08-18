@@ -2,6 +2,7 @@ import type { ModuleContext, ModuleResult } from '../types'
 import { existsSync } from 'node:fs'
 import { homedir, hostname, platform, userInfo } from 'node:os'
 import { join } from 'node:path'
+import process from 'node:process'
 import { BaseModule, ModuleUtils } from './index'
 
 // OS module
@@ -9,11 +10,11 @@ export class OsModule extends BaseModule {
   name = 'os'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const platformName = platform()
     const symbols: Record<string, string> = {
       darwin: '🍎',
@@ -55,13 +56,13 @@ export class HostnameModule extends BaseModule {
   name = 'hostname'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const host = hostname()
-    const isSSH = !!(context.environment.SSH_CONNECTION || context.environment.SSH_CLIENT)
+    const isSSH = !!(_context.environment.SSH_CONNECTION || _context.environment.SSH_CLIENT)
 
     // Only show hostname if in SSH session by default
     if (!isSSH)
@@ -77,12 +78,12 @@ export class DirectoryModule extends BaseModule {
   name = 'directory'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    let path = context.cwd
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    let path = _context.cwd
     const home = homedir()
 
     // Replace home directory with ~
@@ -129,13 +130,13 @@ export class UsernameModule extends BaseModule {
   name = 'username'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const user = userInfo().username
-    const isSSH = !!(context.environment.SSH_CONNECTION || context.environment.SSH_CLIENT)
+    const isSSH = !!(_context.environment.SSH_CONNECTION || _context.environment.SSH_CLIENT)
     const isRoot = process.getuid?.() === 0
 
     // Only show username if in SSH session or root by default
@@ -154,12 +155,12 @@ export class ShellModule extends BaseModule {
   name = 'shell'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
-    return !!context.environment.SHELL
+  detect(_context: ModuleContext): boolean {
+    return !!_context.environment.SHELL
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const shell = context.environment.SHELL
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    const shell = _context.environment.SHELL
     if (!shell)
       return null
 
@@ -190,11 +191,11 @@ export class BatteryModule extends BaseModule {
   name = 'battery'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return this.hasBattery()
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const batteryInfo = await this.getBatteryInfo()
     if (!batteryInfo)
       return null
@@ -250,12 +251,12 @@ export class CmdDurationModule extends BaseModule {
   name = 'cmd_duration'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
-    return !!(context.environment.CMD_DURATION_MS || context.environment.STARSHIP_DURATION)
+  detect(_context: ModuleContext): boolean {
+    return !!(_context.environment.CMD_DURATION_MS || _context.environment.STARSHIP_DURATION)
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const durationMs = Number.parseInt(context.environment.CMD_DURATION_MS || context.environment.STARSHIP_DURATION || '0', 10)
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    const durationMs = Number.parseInt(_context.environment.CMD_DURATION_MS || _context.environment.STARSHIP_DURATION || '0', 10)
 
     if (durationMs < 2000)
       return null // Only show for commands > 2s
@@ -282,11 +283,11 @@ export class MemoryUsageModule extends BaseModule {
   name = 'memory_usage'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const memInfo = this.getMemoryInfo()
     if (!memInfo)
       return null
@@ -338,11 +339,11 @@ export class TimeModule extends BaseModule {
   name = 'time'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
+  detect(_context: ModuleContext): boolean {
     return true // Always available
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
     const now = new Date()
     const timeString = now.toLocaleTimeString('en-US', {
       hour12: false,
@@ -361,13 +362,13 @@ export class NixShellModule extends BaseModule {
   name = 'nix_shell'
   enabled = true
 
-  detect(context: ModuleContext): boolean {
-    return !!(context.environment.IN_NIX_SHELL || context.environment.NIX_SHELL_PACKAGES)
+  detect(_context: ModuleContext): boolean {
+    return !!(_context.environment.IN_NIX_SHELL || _context.environment.NIX_SHELL_PACKAGES)
   }
 
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const inNixShell = context.environment.IN_NIX_SHELL
-    const packages = context.environment.NIX_SHELL_PACKAGES
+  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+    const inNixShell = _context.environment.IN_NIX_SHELL
+    const packages = _context.environment.NIX_SHELL_PACKAGES
 
     if (!inNixShell && !packages)
       return null

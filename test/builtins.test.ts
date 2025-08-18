@@ -1,14 +1,14 @@
-import type { krustyConfig } from '../src/types'
+import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rmdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { krustyShell } from '../src/shell'
+import { KrustyShell } from '../src/shell'
 
 describe('Builtin Commands', () => {
-  let shell: krustyShell
-  let testConfig: krustyConfig
+  let shell: KrustyShell
+  let testConfig: KrustyConfig
   let tempDir: string
 
   beforeEach(async () => {
@@ -20,7 +20,7 @@ describe('Builtin Commands', () => {
         file: `/tmp/test_history_builtin_${Math.random().toString(36).substr(2, 9)}`,
       },
     }
-    shell = new krustyShell(testConfig)
+    shell = new KrustyShell(testConfig)
     tempDir = await mkdtemp(join(tmpdir(), 'krusty-test-'))
   })
 
@@ -100,7 +100,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_display_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new krustyShell(historyConfig)
+      const historyShell = new KrustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')
@@ -124,7 +124,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_number_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new krustyShell(historyConfig)
+      const historyShell = new KrustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')
@@ -147,7 +147,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_limit_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new krustyShell(historyConfig)
+      const historyShell = new KrustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')

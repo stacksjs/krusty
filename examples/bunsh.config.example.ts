@@ -1,4 +1,4 @@
-import type { krustyConfig } from '../src/types'
+import type { KrustyConfig } from '../src/types'
 
 /**
  * Example krusty Configuration
@@ -9,7 +9,7 @@ import type { krustyConfig } from '../src/types'
  * - Custom modules
  * - Themes and styling
  */
-const exampleConfig: krustyConfig = {
+const exampleConfig: KrustyConfig = {
   verbose: true,
 
   // Prompt configuration
