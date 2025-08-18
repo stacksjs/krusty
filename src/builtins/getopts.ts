@@ -6,6 +6,10 @@ export const getoptsCommand: BuiltinCommand = {
   name: 'getopts',
   description: 'Parse positional parameters as options',
   usage: 'getopts optstring name [args...]',
+  examples: [
+    'getopts "ab:" opt -a -b val',
+    'getopts "f:" opt -f file.txt',
+  ],
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
     if (args.length < 2)
@@ -16,6 +20,9 @@ export const getoptsCommand: BuiltinCommand = {
     const params = args.slice(2)
     const env = shell.environment
     const optind = Number.parseInt(env.OPTIND || '1', 10) || 1
+
+    if (shell.config.verbose)
+      shell.log.debug('[getopts] start', { optstring, name, OPTIND: env.OPTIND ?? '1', params })
 
     if (optind > params.length) {
       env[name] = '?'
@@ -51,6 +58,9 @@ export const getoptsCommand: BuiltinCommand = {
       env.OPTARG = ''
       env.OPTIND = String(optind + 1)
     }
+
+    if (shell.config.verbose)
+      shell.log.debug('[getopts] parsed', { flag, expectsArg, OPTARG: env.OPTARG, OPTIND: env.OPTIND })
 
     return { exitCode: 0, stdout: '', stderr: '', duration: performance.now() - start }
   },

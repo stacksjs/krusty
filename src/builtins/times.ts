@@ -5,6 +5,9 @@ export const timesCommand: BuiltinCommand = {
   name: 'times',
   description: 'Print accumulated user and system times',
   usage: 'times',
+  examples: [
+    'times',
+  ],
   async execute(): Promise<CommandResult> {
     const start = performance.now()
     const up = process.uptime() // seconds

@@ -19,6 +19,11 @@ export const printfCommand: BuiltinCommand = {
   name: 'printf',
   description: 'Format and print data',
   usage: 'printf format [arguments...]',
+  examples: [
+    'printf "%s %d" hello 42',
+    'printf %q "a b"',
+    'printf "%%s is literal"',
+  ],
   async execute(args: string[]): Promise<CommandResult> {
     const start = performance.now()
     if (args.length === 0)
