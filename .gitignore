@@ -10,4 +10,4 @@ logs
 node_modules
 temp
 docs/.vitepress/cache
-bin/bunsh
+bin/krusty

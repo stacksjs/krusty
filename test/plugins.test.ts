@@ -1,29 +1,29 @@
-import type { BunshConfig } from '../src/types'
+import type { krustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PluginManager } from '../src/plugins'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
 describe('Plugin System', () => {
-  let shell: BunshShell
+  let shell: krustyShell
   let pluginManager: PluginManager
   let tempDir: string
   let pluginPath: string
 
   beforeEach(() => {
-    const config: BunshConfig = {
+    const config: krustyConfig = {
       verbose: false,
       plugins: [],
       hooks: {},
     }
 
-    shell = new BunshShell(config)
+    shell = new krustyShell(config)
     pluginManager = new PluginManager(shell, config)
 
     // Create temporary directory for test plugin
-    tempDir = mkdtempSync(join(tmpdir(), 'bunsh-plugin-test-'))
+    tempDir = mkdtempSync(join(tmpdir(), 'krusty-plugin-test-'))
     pluginPath = join(tempDir, 'test-plugin.js')
 
     // Write test plugin to file
@@ -111,9 +111,9 @@ describe('Plugin System', () => {
 
     await pluginManager.loadPlugin(config)
 
-    const result = await shell.execute('test-plugin:hello Bunsh')
+    const result = await shell.execute('test-plugin:hello krusty')
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toBe('Hello, Bunsh!\n')
+    expect(result.stdout).toBe('Hello, krusty!\n')
   })
 
   it('should unload plugins', async () => {
@@ -150,7 +150,7 @@ describe('Plugin System', () => {
       enabled: false,
     }
 
-    const shellConfig: BunshConfig = {
+    const shellConfig: krustyConfig = {
       verbose: false,
       plugins: [config],
       hooks: {},

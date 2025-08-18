@@ -1,15 +1,15 @@
-import type { BunshConfig } from '../src/types'
+import type { krustyConfig } from '../src/types'
 
 /**
- * Example Bunsh Configuration
+ * Example krusty Configuration
  *
- * This file demonstrates how to configure Bunsh with:
+ * This file demonstrates how to configure krusty with:
  * - Plugins
  * - Hooks
  * - Custom modules
  * - Themes and styling
  */
-const exampleConfig: BunshConfig = {
+const exampleConfig: krustyConfig = {
   verbose: true,
 
   // Prompt configuration
@@ -27,7 +27,7 @@ const exampleConfig: BunshConfig = {
   // History settings
   history: {
     maxEntries: 50000,
-    file: '~/.bunsh_history',
+    file: '~/.krusty_history',
     ignoreDuplicates: true,
     ignoreSpace: true,
     searchMode: 'fuzzy',
@@ -86,7 +86,7 @@ const exampleConfig: BunshConfig = {
     },
     {
       name: 'docker-plugin',
-      path: '~/.bunsh/plugins/docker-plugin.js',
+      path: '~/.krusty/plugins/docker-plugin.js',
       enabled: true,
       config: {
         showContainerCount: true,
@@ -95,7 +95,7 @@ const exampleConfig: BunshConfig = {
     },
     {
       name: 'aws-plugin',
-      path: '~/.bunsh/plugins/aws-plugin.js',
+      path: '~/.krusty/plugins/aws-plugin.js',
       enabled: false, // Disabled by default
       config: {
         showProfile: true,
@@ -189,7 +189,7 @@ const exampleConfig: BunshConfig = {
     'shell:init': [
       {
         name: 'welcome-message',
-        command: 'echo "🚀 Welcome to Bunsh! Type \\"help\\" for available commands."',
+        command: 'echo "🚀 Welcome to krusty! Type \\"help\\" for available commands."',
         enabled: true,
         priority: 10,
       },
@@ -198,7 +198,7 @@ const exampleConfig: BunshConfig = {
     'shell:start': [
       {
         name: 'check-updates',
-        command: 'bunsh --check-updates',
+        command: 'krusty --check-updates',
         enabled: true,
         async: true,
         timeout: 5000,
@@ -206,7 +206,7 @@ const exampleConfig: BunshConfig = {
       },
       {
         name: 'load-custom-functions',
-        script: '~/.bunsh/scripts/load-functions.sh',
+        script: '~/.krusty/scripts/load-functions.sh',
         enabled: true,
         priority: 5,
       },
@@ -215,13 +215,13 @@ const exampleConfig: BunshConfig = {
     'shell:exit': [
       {
         name: 'cleanup-temp',
-        command: 'rm -rf /tmp/bunsh-*',
+        command: 'rm -rf /tmp/krusty-*',
         enabled: true,
         async: true,
       },
       {
         name: 'goodbye-message',
-        command: 'echo "👋 Goodbye from Bunsh!"',
+        command: 'echo "👋 Goodbye from krusty!"',
         enabled: true,
       },
     ],
@@ -235,14 +235,14 @@ const exampleConfig: BunshConfig = {
         conditions: [
           {
             type: 'env',
-            value: 'BUNSH_VERBOSE_COMMANDS',
+            value: 'krusty_VERBOSE_COMMANDS',
             operator: 'exists',
           },
         ],
       },
       {
         name: 'dangerous-command-warning',
-        script: '~/.bunsh/scripts/check-dangerous-commands.sh',
+        script: '~/.krusty/scripts/check-dangerous-commands.sh',
         enabled: true,
         conditions: [
           {
@@ -270,13 +270,13 @@ const exampleConfig: BunshConfig = {
     'command:error': [
       {
         name: 'error-logging',
-        script: '~/.bunsh/scripts/log-errors.sh',
+        script: '~/.krusty/scripts/log-errors.sh',
         enabled: true,
         async: true,
       },
       {
         name: 'suggest-corrections',
-        command: 'echo "💡 Try: bunsh --suggest \\"{command}\\""',
+        command: 'echo "💡 Try: krusty --suggest \\"{command}\\""',
         enabled: true,
         conditions: [
           {
@@ -296,14 +296,14 @@ const exampleConfig: BunshConfig = {
         conditions: [
           {
             type: 'env',
-            value: 'BUNSH_AUTO_LS',
+            value: 'krusty_AUTO_LS',
             operator: 'exists',
           },
         ],
       },
       {
         name: 'project-detection',
-        script: '~/.bunsh/scripts/detect-project.sh',
+        script: '~/.krusty/scripts/detect-project.sh',
         enabled: true,
         async: true,
       },
@@ -325,7 +325,7 @@ const exampleConfig: BunshConfig = {
     'prompt:before': [
       {
         name: 'update-window-title',
-        command: 'echo -ne "\\033]0;Bunsh - $(pwd)\\007"',
+        command: 'echo -ne "\\033]0;krusty - $(pwd)\\007"',
         enabled: true,
         async: true,
       },
@@ -335,7 +335,7 @@ const exampleConfig: BunshConfig = {
     'history:add': [
       {
         name: 'backup-important-commands',
-        script: '~/.bunsh/scripts/backup-command.sh',
+        script: '~/.krusty/scripts/backup-command.sh',
         enabled: true,
         conditions: [
           {
@@ -350,7 +350,7 @@ const exampleConfig: BunshConfig = {
     'completion:before': [
       {
         name: 'load-dynamic-completions',
-        script: '~/.bunsh/scripts/load-completions.sh',
+        script: '~/.krusty/scripts/load-completions.sh',
         enabled: true,
         async: true,
         timeout: 1000,

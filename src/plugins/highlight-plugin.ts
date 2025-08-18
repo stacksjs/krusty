@@ -9,8 +9,8 @@ class HighlightPlugin extends BasePlugin implements Plugin {
   name = 'highlight'
   version = '1.0.0'
   description = 'Simple command highlighting utilities'
-  author = 'Bunsh Team'
-  bunshVersion = '>=1.0.0'
+  author = 'krusty Team'
+  krustyVersion = '>=1.0.0'
 
   commands: Record<string, PluginCommand> = {
     demo: {

@@ -1,5 +1,5 @@
 /**
- * Theme configuration for the bunsh shell
+ * Theme configuration for the krusty shell
  */
 
 import { isBrowser, isNode } from './utils/environment'
@@ -502,7 +502,7 @@ export async function applyTheme(theme: Theme, targetElement?: HTMLElement): Pro
     // Apply any custom CSS
     if (theme.css) {
       const style = document.createElement('style')
-      style.id = `bunsh-theme-${theme.name}`
+      style.id = `krusty-theme-${theme.name}`
       style.textContent = `:root { ${theme.css} }`
 
       // Remove any existing theme style
@@ -516,7 +516,7 @@ export async function applyTheme(theme: Theme, targetElement?: HTMLElement): Pro
 
     // Save theme preference
     try {
-      localStorage.setItem('bunsh-theme', theme.name)
+      localStorage.setItem('krusty-theme', theme.name)
     }
     catch (error) {
       // Ignore localStorage errors (e.g., in private browsing)
@@ -545,7 +545,7 @@ export function initThemes(defaultThemeName?: string): Theme {
   // Try to load saved theme from localStorage if in browser
   if (isBrowser && typeof window !== 'undefined' && window.localStorage) {
     try {
-      savedTheme = window.localStorage.getItem('bunsh-theme')
+      savedTheme = window.localStorage.getItem('krusty-theme')
     }
     catch (error: unknown) {
       // Ignore localStorage errors

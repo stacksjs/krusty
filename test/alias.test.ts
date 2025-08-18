@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { defaultConfig } from '../src/config'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
 describe('Alias Support', () => {
-  let shell: BunshShell
+  let shell: krustyShell
 
   beforeEach(() => {
     // Create a new shell instance with test config
-    shell = new BunshShell({
+    shell = new krustyShell({
       ...defaultConfig,
       aliases: {
         'll': 'ls -la',
@@ -121,10 +121,10 @@ describe('Alias Support', () => {
 })
 
 describe('Alias Builtin Commands', () => {
-  let shell: BunshShell
+  let shell: krustyShell
 
   beforeEach(() => {
-    shell = new BunshShell({
+    shell = new krustyShell({
       ...defaultConfig,
       aliases: {
         'test1': 'echo one',
@@ -212,10 +212,10 @@ describe('Alias Builtin Commands', () => {
 })
 
 describe('Alias Edge Cases', () => {
-  let shell: BunshShell
+  let shell: krustyShell
 
   beforeEach(() => {
-    shell = new BunshShell({
+    shell = new krustyShell({
       ...defaultConfig,
       aliases: {},
     })

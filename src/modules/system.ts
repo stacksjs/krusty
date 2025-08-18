@@ -112,7 +112,9 @@ export class DirectoryModule extends BaseModule {
     try {
       // Try to check if directory is writable
       const testFile = join(path, `.write-test-${Date.now()}`)
+      // eslint-disable-next-line ts/no-require-imports
       require('node:fs').writeFileSync(testFile, '')
+      // eslint-disable-next-line ts/no-require-imports
       require('node:fs').unlinkSync(testFile)
       return false
     }
@@ -303,6 +305,7 @@ export class MemoryUsageModule extends BaseModule {
 
   private getMemoryInfo(): { used: number, total: number, percentage: number } | null {
     try {
+      // eslint-disable-next-line ts/no-require-imports
       const { totalmem, freemem } = require('node:os')
       const total = totalmem()
       const free = freemem()

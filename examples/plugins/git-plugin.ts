@@ -2,7 +2,7 @@ import type { CommandResult, HookContext, HookResult, PluginCommand, PluginConte
 import { BasePlugin } from '../../src/plugins'
 
 /**
- * Git Plugin - Extends Bunsh with additional Git functionality
+ * Git Plugin - Extends krusty with additional Git functionality
  *
  * This plugin demonstrates:
  * - Custom commands
@@ -13,9 +13,9 @@ import { BasePlugin } from '../../src/plugins'
 export class GitPlugin extends BasePlugin {
   name = 'git-plugin'
   version = '1.0.0'
-  description = 'Enhanced Git functionality for Bunsh'
-  author = 'Bunsh Team'
-  bunshVersion = '>=1.0.0'
+  description = 'Enhanced Git functionality for krusty'
+  author = 'krusty Team'
+  krustyVersion = '>=1.0.0'
 
   // Plugin commands
   commands: Record<string, PluginCommand> = {

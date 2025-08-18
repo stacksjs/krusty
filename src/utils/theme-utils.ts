@@ -10,7 +10,7 @@ export function detectPreferredColorScheme(): 'light' | 'dark' {
 
   // Check for localStorage preference first
   try {
-    const savedTheme = window.localStorage?.getItem('bunsh-theme')
+    const savedTheme = window.localStorage?.getItem('krusty-theme')
     if (savedTheme === 'dark' || savedTheme === 'light') {
       return savedTheme
     }

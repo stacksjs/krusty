@@ -3,7 +3,7 @@ import { getTheme, getThemeNames, getThemes, initThemes, isBrowser } from './the
 import { onColorSchemeChange, resolveAutoTheme } from './utils/theme-utils'
 
 /**
- * Manages themes for the bunsh shell
+ * Manages themes for the krusty shell
  */
 export class ThemeManager {
   private currentTheme: Theme
@@ -113,7 +113,7 @@ export class ThemeManager {
       // Save theme preference
       if (isBrowser && window.localStorage) {
         try {
-          window.localStorage.setItem('bunsh-theme', name)
+          window.localStorage.setItem('krusty-theme', name)
         }
         catch {
           // Ignore errors

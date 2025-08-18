@@ -9,8 +9,8 @@ class AutoSuggestPlugin extends BasePlugin implements Plugin {
   name = 'auto-suggest'
   version = '1.0.0'
   description = 'Inline-like auto suggestions from history and common typos'
-  author = 'Bunsh Team'
-  bunshVersion = '>=1.0.0'
+  author = 'krusty Team'
+  krustyVersion = '>=1.0.0'
 
   // Suggestions from history and common corrections
   completions: PluginCompletion[] = [

@@ -1,6 +1,6 @@
 import type { Logger } from './logger'
 
-export interface BunshConfig {
+export interface KrustyConfig {
   verbose: boolean
   streamOutput?: boolean
   prompt?: PromptConfig
@@ -155,7 +155,7 @@ export interface BuiltinCommand {
 }
 
 export interface Shell {
-  config: BunshConfig
+  config: KrustyConfig
   cwd: string
   environment: Record<string, string>
   history: string[]
@@ -584,12 +584,12 @@ export interface Plugin {
 
   // Plugin metadata
   dependencies?: string[]
-  bunshVersion?: string
+  krustyVersion?: string
 }
 
 export interface PluginContext {
   shell: Shell
-  config: BunshConfig
+  config: KrustyConfig
   pluginConfig?: Record<string, any>
   logger: PluginLogger
   utils: PluginUtils
@@ -681,7 +681,7 @@ export interface HookContext {
   shell: Shell
   event: string
   data: any
-  config: BunshConfig
+  config: KrustyConfig
   environment: Record<string, string>
   cwd: string
   timestamp: number

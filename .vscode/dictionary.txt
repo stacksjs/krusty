@@ -3,7 +3,7 @@ biomejs
 booleanish
 bumpp
 bunfig
-Bunsh
+krusty
 bunx
 changelogen
 changelogithub

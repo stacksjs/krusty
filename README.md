@@ -6,7 +6,7 @@
 <!-- [![npm downloads][npm-downloads-src]][npm-downloads-href] -->
 <!-- [![Codecov][codecov-src]][codecov-href] -->
 
-# bunsh
+# krusty
 
 This is an opinionated TypeScript Starter kit to help kick-start development of your next Bun package.
 
@@ -50,7 +50,7 @@ bun test
 
 ## Changelog
 
-Please see our [releases](https://github.com/stackjs/bunsh/releases) page for more information on what has changed recently.
+Please see our [releases](https://github.com/stackjs/krusty/releases) page for more information on what has changed recently.
 
 ## Contributing
 
@@ -86,8 +86,8 @@ The MIT License (MIT). Please see [LICENSE](LICENSE.md) for more information.
 Made with 💙
 
 <!-- Badges -->
-[npm-version-src]: https://img.shields.io/npm/v/bunsh?style=flat-square
-[npm-version-href]: https://npmjs.com/package/bunsh
+[npm-version-src]: https://img.shields.io/npm/v/krusty?style=flat-square
+[npm-version-href]: https://npmjs.com/package/krusty
 [github-actions-src]: https://img.shields.io/github/actions/workflow/status/stacksjs/ts-starter/ci.yml?style=flat-square&branch=main
 [github-actions-href]: https://github.com/stacksjs/ts-starter/actions?query=workflow%3Aci
 

@@ -39,7 +39,7 @@ export async function loadFont(
   }
 
   // Create a unique ID for the style element
-  const styleId = `bunsh-font-${fontFamily.toLowerCase().replace(/\s+/g, '-')}`
+  const styleId = `krusty-font-${fontFamily.toLowerCase().replace(/\s+/g, '-')}`
 
   // Check if style element already exists
   const existingStyle = document.getElementById(styleId)

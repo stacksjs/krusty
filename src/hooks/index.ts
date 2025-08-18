@@ -1,10 +1,10 @@
 import type {
-  BunshConfig,
   HookCondition,
   HookConfig,
   HookContext,
   HookHandler,
   HookResult,
+  krustyConfig,
   Shell,
 } from '../types'
 import { exec } from 'node:child_process'
@@ -21,7 +21,7 @@ export class HookManager {
   private hooks = new Map<string, RegisteredHook[]>()
   private executing = new Set<string>()
 
-  constructor(private shell: Shell, private config: BunshConfig) {
+  constructor(private shell: Shell, private config: krustyConfig) {
     this.loadHooks()
   }
 
@@ -143,9 +143,9 @@ export class HookManager {
         env: {
           ...process.env,
           ...context.environment,
-          BUNSH_HOOK_EVENT: context.event,
-          BUNSH_HOOK_DATA: JSON.stringify(context.data),
-          BUNSH_CWD: context.cwd,
+          krusty_HOOK_EVENT: context.event,
+          krusty_HOOK_DATA: JSON.stringify(context.data),
+          krusty_CWD: context.cwd,
         },
       })
 

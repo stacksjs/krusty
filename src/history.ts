@@ -10,7 +10,7 @@ export class HistoryManager {
   constructor(config?: HistoryConfig) {
     this.config = {
       maxEntries: 10000,
-      file: '~/.bunsh_history',
+      file: '~/.krusty_history',
       ignoreDuplicates: true,
       ignoreSpace: true,
       searchMode: 'fuzzy',

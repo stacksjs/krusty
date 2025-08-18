@@ -1,14 +1,14 @@
-import type { BunshConfig } from '../src/types'
+import type { krustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rmdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
 describe('Builtin Commands', () => {
-  let shell: BunshShell
-  let testConfig: BunshConfig
+  let shell: krustyShell
+  let testConfig: krustyConfig
   let tempDir: string
 
   beforeEach(async () => {
@@ -20,8 +20,8 @@ describe('Builtin Commands', () => {
         file: `/tmp/test_history_builtin_${Math.random().toString(36).substr(2, 9)}`,
       },
     }
-    shell = new BunshShell(testConfig)
-    tempDir = await mkdtemp(join(tmpdir(), 'bunsh-test-'))
+    shell = new krustyShell(testConfig)
+    tempDir = await mkdtemp(join(tmpdir(), 'krusty-test-'))
   })
 
   afterEach(async () => {
@@ -100,7 +100,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_display_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new BunshShell(historyConfig)
+      const historyShell = new krustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')
@@ -124,7 +124,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_number_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new BunshShell(historyConfig)
+      const historyShell = new krustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')
@@ -147,7 +147,7 @@ describe('Builtin Commands', () => {
           file: `/tmp/test_history_limit_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const historyShell = new BunshShell(historyConfig)
+      const historyShell = new krustyShell(historyConfig)
 
       historyShell.addToHistory('command1')
       historyShell.addToHistory('command2')

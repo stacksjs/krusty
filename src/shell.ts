@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import type { BuiltinCommand, BunshConfig, CommandResult, ParsedCommand, Plugin, Shell } from './types'
+import type { BuiltinCommand, CommandResult, krustyConfig, ParsedCommand, Plugin, Shell } from './types'
 import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -8,7 +8,7 @@ import process from 'node:process'
 import * as readline from 'node:readline'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
-import { defaultConfig, loadBunshConfig } from './config'
+import { defaultConfig, loadkrustyConfig } from './config'
 import { HistoryManager } from './history'
 import { HookManager } from './hooks'
 import { Logger } from './logger'
@@ -16,8 +16,8 @@ import { CommandParser } from './parser'
 import { PluginManager } from './plugins'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 
-export class BunshShell implements Shell {
-  public config: BunshConfig
+export class krustyShell implements Shell {
+  public config: krustyConfig
   public cwd: string
   public environment: Record<string, string>
   public history: string[]
@@ -37,7 +37,7 @@ export class BunshShell implements Shell {
   private running = false
   private lastExitCode = 0
 
-  constructor(config?: BunshConfig) {
+  constructor(config?: krustyConfig) {
     // Use defaultConfig from src/config to preserve exact equality in tests
     this.config = config || defaultConfig
     // Ensure plugins array exists
@@ -82,7 +82,7 @@ export class BunshShell implements Shell {
     const start = performance.now()
     try {
       // Load latest config from disk
-      const newConfig = await loadBunshConfig()
+      const newConfig = await loadkrustyConfig()
 
       // Apply environment: start from current process.env to keep runtime updates, then overlay new config
       this.environment = Object.fromEntries(
@@ -190,7 +190,7 @@ export class BunshShell implements Shell {
       const result = {
         exitCode: 1,
         stdout: '',
-        stderr: `bunsh: ${errorMessage}\n`,
+        stderr: `krusty: ${errorMessage}\n`,
         duration: performance.now() - start,
       }
 
@@ -557,7 +557,7 @@ export class BunshShell implements Shell {
     // Handle quoted numeric placeholders like "$1" so that quotes are preserved in output.
     // We replace them with internal markers before general substitution and remove the quotes,
     // then after tokenization we turn the markers back into literal quoted arguments.
-    const QUOTED_MARKER_PREFIX = '__BUNSH_QARG_'
+    const QUOTED_MARKER_PREFIX = '__krusty_QARG_'
     processedValue = processedValue.replace(/"\$(\d+)"/g, (_m, num) => `${QUOTED_MARKER_PREFIX}${num}__`)
     const hasArgs = command.args.length > 0
     const endsWithSpace = aliasValue.endsWith(' ')
@@ -642,9 +642,9 @@ export class BunshShell implements Shell {
       let finalArgs = tokens.slice(1)
 
       // Post-process quoted numeric placeholders to re-insert literal quotes
-      // Example: __BUNSH_QARG_1__ -> "<arg1>"
+      // Example: __krusty_QARG_1__ -> "<arg1>"
       finalArgs = finalArgs.map((arg) => {
-        const m = arg.match(/^__BUNSH_QARG_(\d+)__$/)
+        const m = arg.match(/^__krusty_QARG_(\d+)__$/)
         if (m) {
           const idx = Number.parseInt(m[1], 10) - 1
           const val = command.args[idx] !== undefined ? command.args[idx] : ''
@@ -868,7 +868,7 @@ export class BunshShell implements Shell {
         resolve({
           exitCode: this.lastExitCode,
           stdout: '',
-          stderr: `bunsh: ${command.name}: command not found\n`,
+          stderr: `krusty: ${command.name}: command not found\n`,
           duration: performance.now() - start,
         })
       })

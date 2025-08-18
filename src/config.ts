@@ -1,7 +1,7 @@
-import type { BunshConfig } from './types'
+import type { krustyConfig } from './types'
 import { loadConfig } from 'bunfig'
 
-export const defaultConfig: BunshConfig = {
+export const defaultConfig: krustyConfig = {
   verbose: false,
   streamOutput: true,
   logging: {
@@ -24,7 +24,7 @@ export const defaultConfig: BunshConfig = {
   },
   history: {
     maxEntries: 10000,
-    file: '~/.bunsh_history',
+    file: '~/.krusty_history',
     ignoreDuplicates: true,
     ignoreSpace: true,
     searchMode: 'fuzzy',
@@ -192,15 +192,15 @@ export const defaultConfig: BunshConfig = {
 }
 
 // eslint-disable-next-line antfu/no-top-level-await
-export const config: BunshConfig = await loadConfig({
-  name: 'bunsh',
+export const config: krustyConfig = await loadConfig({
+  name: 'krusty',
   defaultConfig,
 })
 
 // Provide a reusable loader that always fetches the latest config from disk
-export async function loadBunshConfig(): Promise<BunshConfig> {
+export async function loadkrustyConfig(): Promise<krustyConfig> {
   return await loadConfig({
-    name: 'bunsh',
+    name: 'krusty',
     defaultConfig,
   })
 }

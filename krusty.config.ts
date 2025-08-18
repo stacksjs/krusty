@@ -1,7 +1,7 @@
-import type { BunshConfig } from './src/types'
+import type { KrustyConfig } from './src/types'
 
 /**
- * Personal Bunsh Configuration for Chris Breuer
+ * Krusty Configuration
  *
  * This configuration provides a familiar zsh-like experience with:
  * - Starship-inspired prompt with dynamic modules
@@ -29,7 +29,7 @@ export default {
   // History settings - optimized for development workflow
   history: {
     maxEntries: 50000,
-    file: '~/.bunsh_history',
+    file: '~/.krusty_history',
     ignoreDuplicates: true,
     ignoreSpace: true,
     searchMode: 'fuzzy',
@@ -323,13 +323,13 @@ export default {
     'shell:init': [
       {
         name: 'welcome-message',
-        command: 'echo "🚀 Welcome to Bunsh! Type \\"help\\" for available commands."',
+        command: 'echo "🚀 Welcome to krusty! Type \\"help\\" for available commands."',
         enabled: true,
         priority: 10,
       },
       {
         name: 'load-dotfiles',
-        command: 'source ~/.dotfiles/.bunshrc 2>/dev/null || true',
+        command: 'source ~/.dotfiles/.krustyrc 2>/dev/null || true',
         enabled: true,
         priority: 5,
       },
@@ -360,13 +360,13 @@ export default {
     'shell:exit': [
       {
         name: 'cleanup-temp',
-        command: 'rm -rf /tmp/bunsh-* 2>/dev/null || true',
+        command: 'rm -rf /tmp/krusty-* 2>/dev/null || true',
         enabled: true,
         async: true,
       },
       {
         name: 'goodbye-message',
-        command: 'echo "👋 Goodbye from Bunsh!"',
+        command: 'echo "👋 Goodbye from krusty!"',
         enabled: false,
       },
     ],
@@ -380,7 +380,7 @@ export default {
         conditions: [
           {
             type: 'env',
-            value: 'BUNSH_VERBOSE_COMMANDS',
+            value: 'krusty_VERBOSE_COMMANDS',
             operator: 'exists',
           },
         ],
@@ -415,7 +415,7 @@ export default {
     'command:error': [
       {
         name: 'error-suggestions',
-        command: 'echo "💡 Try: bunsh --suggest \\"{command}\\""',
+        command: 'echo "💡 Try: krusty --suggest \\"{command}\\""',
         enabled: true,
         conditions: [
           {
@@ -435,7 +435,7 @@ export default {
         conditions: [
           {
             type: 'env',
-            value: 'BUNSH_AUTO_LS',
+            value: 'krusty_AUTO_LS',
             operator: 'exists',
           },
         ],
@@ -470,7 +470,7 @@ export default {
     'prompt:before': [
       {
         name: 'update-window-title',
-        command: 'echo -ne "\\033]0;Bunsh - $(pwd | sed "s|$HOME|~|g")\\007"',
+        command: 'echo -ne "\\033]0;krusty - $(pwd | sed "s|$HOME|~|g")\\007"',
         enabled: true,
         async: true,
       },
@@ -480,7 +480,7 @@ export default {
     'history:add': [
       {
         name: 'backup-important-commands',
-        command: 'echo "$(date): {command}" >> ~/.bunsh_important_commands.log',
+        command: 'echo "$(date): {command}" >> ~/.krusty_important_commands.log',
         enabled: true,
         conditions: [
           {
@@ -537,4 +537,4 @@ export default {
       },
     ],
   },
-} as BunshConfig
+} satisfies KrustyConfig

@@ -521,7 +521,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   // reload command
   builtins.set('reload', {
     name: 'reload',
-    description: 'Reload Bunsh configuration, aliases, env, and plugins',
+    description: 'Reload krusty configuration, aliases, env, and plugins',
     usage: 'reload',
     async execute(_args: string[], shell: Shell): Promise<CommandResult> {
       return await shell.reload()

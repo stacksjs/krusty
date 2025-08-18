@@ -3,9 +3,9 @@ import process from 'node:process'
 import { CAC } from 'cac'
 import { version } from '../package.json'
 import { config } from '../src/config'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
-const cli = new CAC('bunsh')
+const cli = new CAC('krusty')
 
 interface CliOptions {
   verbose?: boolean
@@ -14,13 +14,13 @@ interface CliOptions {
 
 // Default command - start the shell
 cli
-  .command('[...args]', 'Start the Bunsh shell', { allowUnknownOptions: true })
+  .command('[...args]', 'Start the krusty shell', { allowUnknownOptions: true })
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (args: string[], options: CliOptions) => {
     // If arguments are provided, execute them as a command
     if (args.length > 0) {
-      const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
       const command = args.join(' ')
       const result = await shell.execute(command)
 
@@ -33,10 +33,10 @@ cli
     }
     else {
       // Start interactive shell
-      const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
 
       // Welcome message
-      process.stdout.write(`Welcome to Bunsh v${version}\n`)
+      process.stdout.write(`Welcome to krusty v${version}\n`)
       process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
       // Graceful shutdown handlers
@@ -80,10 +80,10 @@ cli
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (options: CliOptions) => {
-    const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
 
     // Welcome message
-    process.stdout.write(`Welcome to Bunsh v${version}\n`)
+    process.stdout.write(`Welcome to krusty v${version}\n`)
     process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
     const onSigint = async () => {
@@ -124,7 +124,7 @@ cli
   .command('exec <command>', 'Execute a single command')
   .option('--verbose', 'Enable verbose logging')
   .action(async (command: string, options: CliOptions) => {
-    const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const shell = new krustyShell({ ...config, verbose: options.verbose ?? config.verbose })
     const result = await shell.execute(command)
 
     if (result.stdout)

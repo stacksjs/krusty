@@ -1,12 +1,12 @@
-import type { BunshConfig } from '../src/types'
+import type { krustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { homedir } from 'node:os'
 import { defaultConfig } from '../src/config'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
-describe('BunshShell', () => {
-  let shell: BunshShell
-  let testConfig: BunshConfig
+describe('krustyShell', () => {
+  let shell: krustyShell
+  let testConfig: krustyConfig
 
   beforeEach(() => {
     testConfig = {
@@ -17,7 +17,7 @@ describe('BunshShell', () => {
         file: `/tmp/test_history_${Math.random().toString(36).substr(2, 9)}`,
       },
     }
-    shell = new BunshShell(testConfig)
+    shell = new krustyShell(testConfig)
   })
 
   afterEach(() => {
@@ -26,7 +26,7 @@ describe('BunshShell', () => {
 
   describe('initialization', () => {
     it('should initialize with default config', () => {
-      const defaultShell = new BunshShell()
+      const defaultShell = new krustyShell()
       expect(defaultShell.config).toEqual(defaultConfig)
     })
 
@@ -208,7 +208,7 @@ describe('BunshShell', () => {
           file: `/tmp/test_history_limited_${Math.random().toString(36).substr(2, 9)}`,
         },
       }
-      const limitedShell = new BunshShell(limitedConfig)
+      const limitedShell = new krustyShell(limitedConfig)
 
       limitedShell.addToHistory('cmd1')
       limitedShell.addToHistory('cmd2')

@@ -1,6 +1,6 @@
 /* eslint-disable unused-imports/no-unused-vars */
 import type {
-  BunshConfig,
+  krustyConfig,
   Plugin,
   PluginConfig,
   PluginContext,
@@ -89,7 +89,7 @@ export class PluginManager {
   private pluginContexts = new Map<string, PluginContext>()
   private utils = new PluginUtilsImpl()
 
-  constructor(private shell: Shell, private config: BunshConfig) {}
+  constructor(private shell: Shell, private config: krustyConfig) {}
 
   // Load plugins from configuration (with default injection)
   async loadPlugins(): Promise<void> {
@@ -156,9 +156,9 @@ export class PluginManager {
       throw new Error('Plugin must have name and version')
     }
 
-    // Check Bunsh version compatibility
-    if (plugin.bunshVersion && !this.isVersionCompatible(plugin.bunshVersion)) {
-      throw new Error(`Plugin ${plugin.name} requires Bunsh version ${plugin.bunshVersion}`)
+    // Check krusty version compatibility
+    if (plugin.krustyVersion && !this.isVersionCompatible(plugin.krustyVersion)) {
+      throw new Error(`Plugin ${plugin.name} requires krusty version ${plugin.krustyVersion}`)
     }
 
     // Create plugin context
@@ -381,10 +381,10 @@ export class PluginManager {
 export class PluginDiscovery {
   static getPluginDirectories(): string[] {
     const pluginDirs = [
-      join(process.cwd(), 'node_modules', '@bunsh'),
-      join(process.cwd(), '..', '..', 'node_modules', '@bunsh'),
-      '/usr/local/share/bunsh/plugins',
-      '/opt/bunsh/plugins',
+      join(process.cwd(), 'node_modules', '@krusty'),
+      join(process.cwd(), '..', '..', 'node_modules', '@krusty'),
+      '/usr/local/share/krusty/plugins',
+      '/opt/krusty/plugins',
     ]
     return pluginDirs
   }
@@ -405,7 +405,7 @@ export class PluginDiscovery {
             if (existsSync(packageJsonPath)) {
               try {
                 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
-                if (packageJson.bunshPlugin) {
+                if (packageJson.krustyPlugin) {
                   plugins.push({
                     name: packageJson.name,
                     path: pluginPath,
@@ -437,7 +437,7 @@ export abstract class BasePlugin implements Plugin {
   abstract description?: string
   author?: string
   dependencies?: string[]
-  bunshVersion?: string
+  krustyVersion?: string
 
   async initialize(_context: PluginContext): Promise<void> {}
 

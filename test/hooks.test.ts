@@ -1,28 +1,28 @@
-import type { BunshConfig, HookConfig } from '../src/types'
+import type { HookConfig, krustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookManager, HookUtils } from '../src/hooks'
-import { BunshShell } from '../src/shell'
+import { krustyShell } from '../src/shell'
 
 describe('Hooks System', () => {
-  let shell: BunshShell
+  let shell: krustyShell
   let hookManager: HookManager
   let tempDir: string
 
   beforeEach(() => {
-    const config: BunshConfig = {
+    const config: krustyConfig = {
       verbose: false,
       plugins: [],
       hooks: {},
     }
 
-    shell = new BunshShell(config)
+    shell = new krustyShell(config)
     hookManager = new HookManager(shell, config)
 
     // Create temporary directory for test scripts
-    tempDir = mkdtempSync(join(tmpdir(), 'bunsh-hooks-test-'))
+    tempDir = mkdtempSync(join(tmpdir(), 'krusty-hooks-test-'))
   })
 
   afterEach(() => {
