@@ -52,7 +52,9 @@ export const aliasCommand: BuiltinCommand = {
     }
 
     // Reconstruct and parse definitions: support spaces and '=' in values.
-    // We keep the value exactly as parsed by the tokenizer to preserve quotes/newlines verbatim.
+    // Tokenizer removes quotes for quoted segments after '=', so we heuristically
+    // restore quotes around tokens that need them (contain whitespace or shell specials)
+    // when the value is split across multiple tokens.
 
     let i = 0
     while (i < args.length) {
@@ -105,12 +107,21 @@ export const aliasCommand: BuiltinCommand = {
         i++
       }
 
-      // Build alias value preserving exact content as provided by tokenizer
-      let aliasValue = [valuePart, ...extraParts].join(' ')
-      // If the entire value is wrapped in matching quotes, strip them
-      if ((aliasValue.startsWith('"') && aliasValue.endsWith('"'))
-        || (aliasValue.startsWith('\'') && aliasValue.endsWith('\''))) {
-        aliasValue = aliasValue.slice(1, -1)
+      // Build alias value preserving semantics
+      // If the entire value was quoted as a single token (no extra parts), keep it verbatim
+      // Otherwise, re-quote tokens that contain unsafe characters
+      const needsQuoting = (s: string) => /[\s!@#$%^&*(){}[\]|;:<>,?`~]/.test(s)
+      let aliasValue: string
+      if (extraParts.length === 0) {
+        aliasValue = valuePart
+      }
+      else {
+        const parts = [valuePart, ...extraParts].map((p, idx) => {
+          if (idx === 0)
+            return p // first token (e.g., command) typically safe
+          return needsQuoting(p) ? `'${p.replace(/'/g, '\'\\\'\'')}'` : p
+        })
+        aliasValue = parts.join(' ')
       }
 
       // If the alias name is quoted, remove the quotes
