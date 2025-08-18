@@ -163,6 +163,11 @@ export interface Shell {
   builtins: Map<string, BuiltinCommand>
   log: Logger
 
+  // Optional state used by some builtins
+  hashTable?: Map<string, string>
+  signalHandlers?: Map<string, string | null>
+  umask?: number
+
   // Core methods
   execute: (command: string) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>

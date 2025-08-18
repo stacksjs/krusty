@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from '../types'
 
 /**
  * Trap command - handle signals and other events

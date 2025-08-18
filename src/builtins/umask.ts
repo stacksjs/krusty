@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from '../types'
 
 /**
  * Umask command - set or display the file mode creation mask
@@ -84,7 +84,7 @@ export const umaskCommand: BuiltinCommand = {
         }
       }
 
-      if (isNaN(newUmask) || newUmask < 0 || newUmask > 0o777) {
+      if (Number.isNaN(newUmask) || newUmask < 0 || newUmask > 0o777) {
         return {
           exitCode: 1,
           stdout: '',

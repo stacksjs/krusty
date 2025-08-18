@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from '../types'
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 

@@ -100,11 +100,11 @@ export class DirectoryModule extends BaseModule {
       }
     }
 
-    const isReadonly = this.isReadonlyDirectory(context.cwd)
+    const isReadonly = this.isReadonlyDirectory(_context.cwd)
     const symbol = isReadonly ? '🔒' : ''
 
     const content = `${symbol}${path}`
-    const color = context.gitInfo?.isRepo ? '#a855f7' : '#3b82f6'
+    const color = _context.gitInfo?.isRepo ? '#a855f7' : '#3b82f6'
 
     return this.formatResult(content, { color, bold: true })
   }

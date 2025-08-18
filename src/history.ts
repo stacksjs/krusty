@@ -1,8 +1,9 @@
 import type { Interface } from 'node:readline'
 import type { HistoryConfig } from './types'
-import { existsSync, promises as fs } from 'node:fs'
+import { existsSync, promises as fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
+import { cwd, stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline'
 
 export class HistoryManager {
@@ -22,7 +23,7 @@ export class HistoryManager {
     }
 
     // Resolve the history file path
-    this.historyPath = this.resolvePath(this.config.file)
+    this.historyPath = this.resolvePath(this.config.file || '~/.bunsh_history')
 
     // Initialize asynchronously
     this.initialize().catch(console.error)
@@ -98,7 +99,6 @@ export class HistoryManager {
 
   // For readline integration
   getReadlineInterface(): Interface {
-    const { stdin, stdout } = require('node:process')
     return createInterface({
       input: stdin,
       output: stdout,
@@ -140,16 +140,16 @@ export class HistoryManager {
 
   load(): void {
     try {
-      const filePath = this.resolvePath(this.config.file!)
+      const filePath = this.resolvePath(this.config.file || '~/.bunsh_history')
 
       if (!existsSync(filePath)) {
         return
       }
 
-      const content = require('node:fs').readFileSync(filePath, 'utf-8')
+      const content = readFileSync(filePath, 'utf-8')
       this.history = content
         .split('\n')
-        .filter(line => line.trim())
+        .filter((line: string) => line.trim())
         .slice(-this.config.maxEntries!)
     }
     catch {
@@ -157,18 +157,18 @@ export class HistoryManager {
     }
   }
 
-  save(): void {
+  saveSync(): void {
     try {
-      const filePath = this.resolvePath(this.config.file!)
+      const filePath = this.resolvePath(this.config.file || '~/.bunsh_history')
       const dir = dirname(filePath)
 
       // Ensure directory exists
       if (!existsSync(dir)) {
-        require('node:fs').mkdirSync(dir, { recursive: true })
+        mkdirSync(dir, { recursive: true })
       }
 
       const content = this.history.join('\n')
-      require('node:fs').writeFileSync(filePath, content, 'utf-8')
+      writeFileSync(filePath, content, 'utf-8')
     }
     catch {
       // Silently fail - history saving is not critical
@@ -179,7 +179,6 @@ export class HistoryManager {
     if (path.startsWith('~')) {
       return resolve(homedir(), path.slice(1))
     }
-    const { cwd } = require('node:process')
     return resolve(cwd(), path)
   }
 
