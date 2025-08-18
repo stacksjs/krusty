@@ -23,27 +23,26 @@ export class KrustyShell implements Shell {
   public historyManager: HistoryManager
   public aliases: Record<string, string>
   public builtins: Map<string, BuiltinCommand>
+  public history: string[] = []
+  public jobs: Array<{
+    id: number
+    pid: number
+    command: string
+    status: 'running' | 'stopped' | 'done'
+  }> = []
+  private nextJobId = 1
+  private lastExitCode: number = 0
 
   private parser: CommandParser
   private promptRenderer: PromptRenderer
   private systemInfoProvider: SystemInfoProvider
   private gitInfoProvider: GitInfoProvider
-  private historyManager: HistoryManager
   private completionProvider: CompletionProvider
   private pluginManager: PluginManager
   private hookManager: HookManager
   public log: Logger
   private rl: readline.Interface | null = null
   private running = false
-  private lastExitCode = 0
-  private jobs: Array<{
-    id: number
-    pid: number
-    command: string
-    status: 'running' | 'stopped' | 'done'
-  }> = []
-
-  private nextJobId = 1
 
   constructor(config?: KrustyConfig) {
     // Use defaultConfig from src/config to preserve exact equality in tests
@@ -82,6 +81,63 @@ export class KrustyShell implements Shell {
 
     // Load history
     this.loadHistory()
+  }
+
+  private loadHistory(): void {
+    try {
+      this.history = this.historyManager.getHistory()
+    } catch (error) {
+      if (this.config.verbose) {
+        this.log.warn('Failed to load history:', error)
+      }
+    }
+  }
+
+  private saveHistory(): void {
+    try {
+      this.historyManager.save()
+    } catch (error) {
+      if (this.config.verbose) {
+        this.log.warn('Failed to save history:', error)
+      }
+    }
+  }
+
+  // Job management methods
+  addJob(command: string, pid?: number): number {
+    const jobId = this.nextJobId++
+    const processId = pid ?? process.pid
+    this.jobs.push({
+      id: jobId,
+      pid: processId,
+      command,
+      status: 'running'
+    })
+    return jobId
+  }
+
+  removeJob(pid: number): void {
+    const index = this.jobs.findIndex(job => job.pid === pid)
+    if (index !== -1) {
+      this.jobs.splice(index, 1)
+    }
+  }
+
+  getJob(id: number): { id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' } | undefined {
+    return this.jobs.find(job => job.id === id)
+  }
+
+  getJobs(): Array<{ id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' }> {
+    return [...this.jobs]
+  }
+
+  setJobStatus(id: number, status: 'running' | 'stopped' | 'done'): boolean {
+    const job = this.jobs.find(job => job.id === id)
+    if (job) {
+      job.status = status
+      return true
+    }
+    return false
   }
 
   // Public proxies for plugin operations (for tests and external callers)
@@ -403,19 +459,44 @@ export class KrustyShell implements Shell {
   }
 
   getCompletions(input: string, cursor: number): string[] {
-    // Execute completion:before hooks
-    this.hookManager.executeHooks('completion:before', { input, cursor }).catch(err => this.log.error('completion:before hook error:', err))
+    try {
+      // Execute completion:before hooks
+      this.hookManager.executeHooks('completion:before', { input, cursor })
+        .catch(err => this.log.error('completion:before hook error:', err))
 
-    const completions = this.completionProvider.getCompletions(input, cursor)
+      // Get completions from the completion provider
+      let completions: string[] = []
+      
+      try {
+        completions = this.completionProvider.getCompletions(input, cursor)
+      } catch (error) {
+        this.log.error('Error in completion provider:', error)
+      }
 
-    // Add plugin completions
-    const pluginCompletions = this.pluginManager.getPluginCompletions(input, cursor)
-    completions.push(...pluginCompletions)
+      // Add plugin completions if available
+      if (this.pluginManager?.getPluginCompletions) {
+        try {
+          const pluginCompletions = this.pluginManager.getPluginCompletions(input, cursor) || []
+          completions = [...new Set([...completions, ...pluginCompletions])] // Remove duplicates
+        } catch (error) {
+          this.log.error('Error getting plugin completions:', error)
+        }
+      }
 
-    // Execute completion:after hooks
-    this.hookManager.executeHooks('completion:after', { input, cursor, completions }).catch(err => this.log.error('completion:after hook error:', err))
+      // Filter out empty strings and sort
+      completions = completions
+        .filter(c => c && c.trim().length > 0)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
-    return completions
+      // Execute completion:after hooks
+      this.hookManager.executeHooks('completion:after', { input, cursor, completions })
+        .catch(err => this.log.error('completion:after hook error:', err))
+
+      return completions
+    } catch (error) {
+      this.log.error('Error in getCompletions:', error)
+      return []
+    }
   }
 
   private async executeCommandChain(parsed: ParsedCommand): Promise<CommandResult> {
@@ -736,107 +817,81 @@ export class KrustyShell implements Shell {
       env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-
-    // Use the common streaming process handler
-    return this.setupStreamingProcess(child, start, command)
-  }
-
-  private async executeWithInput(command: any, input: string): Promise<CommandResult> {
-    const start = performance.now()
-
-    // Create a clean environment object without undefined values
-    const cleanEnv = Object.fromEntries(
-      Object.entries({
-        ...this.environment,
-        FORCE_COLOR: '3',
-        COLORTERM: 'truecolor',
-        TERM: 'xterm-256color',
-        BUN_FORCE_COLOR: '3', // Specifically for bun commands
-      }).filter(([_, value]) => value !== undefined) as [string, string][],
-    )
-
-    const child = spawn(command.name, command.args, {
-      cwd: this.cwd,
-      env: cleanEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-
-    // Use the common streaming process handler with input
-    return this.setupStreamingProcess(child, start, command, input)
-  }
-
-  private async readLine(prompt: string): Promise<string> {
     return new Promise((resolve) => {
-      const rl = this.historyManager.getReadlineInterface()
-      rl.question(prompt, (answer) => {
-        rl.close()
-        if (answer.trim()) {
-          this.historyManager.add(answer).catch(console.error)
-      }
-
-      // Set up error handler for the readline interface
-      const errorHandler = (error: any) => {
-        if (error.message?.includes('readline was closed') || error.code === 'ERR_USE_AFTER_CLOSE') {
-          resolve(null)
-        }
-        else {
-          this.log.error('Readline error:', error)
-          resolve(null)
-        }
-      }
-
-      // Add temporary error listener
-      this.rl.once('error', errorHandler)
-
-      try {
-        this.rl.question(prompt, (answer) => {
-          // Remove error listener on successful completion
-          this.rl?.removeListener('error', errorHandler)
-          resolve(answer)
+      if (!this.rl) {
+        this.rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: true,
+          prompt: '',
+          history: this.history,
         })
       }
-      catch (error: any) {
-        // Remove error listener on catch
-        this.rl?.removeListener('error', errorHandler)
 
-        if (error instanceof Error && (
-          error.message.includes('readline was closed')
-          || (error as any).code === 'ERR_USE_AFTER_CLOSE'
-        )) {
-          resolve(null)
-        }
-        else {
-          this.log.error('Error in readline:', error)
-          resolve(null)
-        }
+      const rl = this.rl
+      
+      // Set up completion handler
+      const completer = (line: string) => {
+        const completions = this.getCompletions(line, line.length)
+        return [completions, line] // Return completions and the current line
       }
+
+      // @ts-ignore - The completer property exists on the InterfaceConstructor
+      rl.constructor.completer = completer
+
+      rl.question(prompt, (answer) => {
+        const trimmed = answer.trim()
+        if (trimmed) {
+          this.historyManager.add(trimmed).catch(console.error)
+          this.history.push(trimmed)
+        }
+        resolve(trimmed || null)
+      })
     })
   }
 
-  private loadHistory(): void {
-    try {
-      this.history = this.historyManager.getHistory()
-    }
-    catch (error) {
-      // Ignore history loading errors
+  // ... (rest of the code remains the same)
+
+  private setupStreamingProcess(
+    child: ChildProcess,
+    start: number,
+    command: string,
+    input?: string | Buffer | NodeJS.ReadableStream | null
+  ): Promise<number> {
+    return new Promise((resolve) => {
+      if (input) {
+        if (child.stdin) {
+          if (typeof input === 'string' || Buffer.isBuffer(input)) {
+            child.stdin.end(input)
+          } else if (typeof (input as NodeJS.ReadableStream).pipe === 'function') {
+            (input as NodeJS.ReadableStream).pipe(child.stdin)
+          }
+        }
+      }
+
+      child.on('close', (code) => {
+        const end = Date.now()
+        const duration = end - start
+        this.lastExitCode = code ?? 0
+        
+        if (this.config.verbose) {
+          this.log.debug(`Command '${command}' exited with code ${code} (${duration}ms)`)
+        }
+        
+        resolve(this.lastExitCode)
+      })
+    }).catch((error) => {
       if (this.config.verbose) {
         this.log.warn('Failed to load history:', error)
       }
-    }
-  }
-
   private saveHistory(): void {
     try {
       this.historyManager.save()
-    }
-    catch (error) {
-      // Ignore history saving errors
+    } catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to save history:', error)
       }
     }
-  }
-
   /**
    * Job management methods
    */
