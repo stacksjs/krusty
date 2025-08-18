@@ -185,20 +185,29 @@ export interface Shell {
   getCompletions: (input: string, cursor: number) => string[]
 
   // Job management methods
-  addJob: (pid: number, command: string) => number
-  removeJob: (pid: number) => void
-  getJobs: () => Array<{
+  jobs: Array<{
     id: number
-    pid: number
     command: string
+    pid?: number
     status: 'running' | 'stopped' | 'done'
+    fg?: boolean
   }>
+  addJob: (command: string, pid?: number) => number
+  removeJob: (id: number) => void
   getJob: (id: number) => {
     id: number
-    pid: number
     command: string
+    pid?: number
     status: 'running' | 'stopped' | 'done'
+    fg?: boolean
   } | undefined
+  getJobs: () => Array<{
+    id: number
+    command: string
+    pid?: number
+    status: 'running' | 'stopped' | 'done'
+    fg?: boolean
+  }>
   setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => void
 }
 

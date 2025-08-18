@@ -7,7 +7,10 @@ import process from 'node:process'
 export function createBuiltins(): Map<string, BuiltinCommand> {
   const builtins = new Map<string, BuiltinCommand>()
 
-  // Define source command first since it's used by others
+  /**
+   * Source command - executes commands from a file in the current shell context
+   * This is a core shell builtin that allows for script execution
+   */
   const sourceCommand: BuiltinCommand = {
     name: 'source',
     description: 'Execute commands from a file in the current shell context',
@@ -15,6 +18,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
 
+      // Validate arguments
       if (args.length === 0) {
         return {
           exitCode: 1,
@@ -27,27 +31,27 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       const filePath = args[0]
       const scriptArgs = args.slice(1)
       let fullPath: string | null = null
+      
+      // Lazy load dependencies
       const fs = await import('node:fs/promises')
       const path = await import('node:path')
 
       try {
         // Resolve the file path
-        if (filePath.startsWith('/') || filePath.startsWith('./') || filePath.startsWith('../')) {
+        if (path.isAbsolute(filePath) || filePath.startsWith('./') || filePath.startsWith('../')) {
           fullPath = path.resolve(shell.cwd, filePath)
-        }
-        else {
+        } else {
           // Search in PATH if not a relative/absolute path
-          const pathDirs = (shell.environment.PATH || '').split(':')
+          const pathDirs = (shell.environment.PATH || process.env.PATH || '').split(path.delimiter)
           for (const dir of pathDirs) {
-            if (!dir)
-              continue // Skip empty PATH entries
+            if (!dir) continue // Skip empty PATH entries
+            
             const testPath = path.join(dir, filePath)
             try {
               await fs.access(testPath)
               fullPath = testPath
               break
-            }
-            catch {
+            } catch {
               continue
             }
           }
@@ -62,7 +66,18 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
           }
         }
 
-        // Read the file
+        // Verify the file is not a directory
+        const stats = await fs.stat(fullPath)
+        if (stats.isDirectory()) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `source: ${filePath}: is a directory\n`,
+            duration: performance.now() - start,
+          }
+        }
+
+        // Read the file content
         const content = await fs.readFile(fullPath, 'utf8')
 
         // Save current args and set the script arguments
@@ -70,7 +85,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
         process.argv = [process.argv[0], fullPath, ...scriptArgs]
 
         try {
-          // Execute each line
+          // Execute each non-empty, non-comment line
           const lines = content.split('\n')
           let lastResult: CommandResult = {
             exitCode: 0,
@@ -81,6 +96,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
           for (const line of lines) {
             const trimmed = line.trim()
+            
             // Skip comments and empty lines
             if (!trimmed || trimmed.startsWith('#')) {
               continue
@@ -88,7 +104,12 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
             // Execute the command
             const result = await shell.execute(trimmed)
-            lastResult = result
+            lastResult = {
+              ...result,
+              // Accumulate output for better error reporting
+              stdout: lastResult.stdout + (result.stdout || ''),
+              stderr: lastResult.stderr + (result.stderr || ''),
+            }
 
             // Stop on error if we're not in a script
             if (result.exitCode !== 0) {
@@ -121,121 +142,210 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('source', sourceCommand)
   builtins.set('.', { ...sourceCommand, name: '.' }) // POSIX alias for source
 
-  // cd command
-  builtins.set('cd', {
+  /**
+   * CD (Change Directory) command - changes the current working directory
+   * Supports tilde expansion, relative paths, and proper error handling
+   */
+  const cdCommand: BuiltinCommand = {
     name: 'cd',
-    description: 'Change the current directory',
+    description: 'Change the current working directory',
     usage: 'cd [directory]',
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
-
+      
+      // Default to home directory if no argument is provided
+      const targetArg = args[0] || '~'
+      
       try {
-        let targetDir = args[0] || homedir()
+        // Handle tilde expansion for home directory
+        let targetDir = targetArg.startsWith('~')
+          ? targetArg.replace('~', homedir())
+          : targetArg
 
-        // Handle tilde expansion
-        if (targetDir.startsWith('~')) {
-          targetDir = targetDir.replace('~', homedir())
-        }
-
-        // Handle relative paths
+        // Resolve relative paths against current working directory
         if (!targetDir.startsWith('/')) {
           targetDir = resolve(shell.cwd, targetDir)
+        } else {
+          // For absolute paths, resolve to handle any '..' or '.'
+          targetDir = resolve(targetDir)
         }
 
+        // Check if target exists
         if (!existsSync(targetDir)) {
           return {
             exitCode: 1,
             stdout: '',
-            stderr: `cd: ${args[0]}: No such file or directory\n`,
+            stderr: `cd: ${targetArg}: No such file or directory\n`,
             duration: performance.now() - start,
           }
         }
 
+        // Verify it's actually a directory
         const stat = statSync(targetDir)
         if (!stat.isDirectory()) {
           return {
             exitCode: 1,
             stdout: '',
-            stderr: `cd: ${args[0]}: Not a directory\n`,
+            stderr: `cd: ${targetArg}: Not a directory\n`,
             duration: performance.now() - start,
           }
         }
 
+        // Attempt to change directory using shell's method
         const success = shell.changeDirectory(targetDir)
-        return {
-          exitCode: success ? 0 : 1,
-          stdout: '',
-          stderr: success ? '' : `cd: ${args[0]}: Permission denied\n`,
-          duration: performance.now() - start,
+        
+        if (!success) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `cd: ${targetArg}: Permission denied\n`,
+            duration: performance.now() - start,
+          }
         }
-      }
-      catch (error) {
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: `cd: ${error instanceof Error ? error.message : 'Unknown error'}\n`,
-          duration: performance.now() - start,
-        }
-      }
-    },
-  })
 
-  // pwd command
-  builtins.set('pwd', {
-    name: 'pwd',
-    description: 'Print the current working directory',
-    usage: 'pwd',
-    async execute(_args: string[], shell: Shell): Promise<CommandResult> {
-      const start = performance.now()
-      return {
-        exitCode: 0,
-        stdout: `${shell.cwd}\n`,
-        stderr: '',
-        duration: performance.now() - start,
-      }
-    },
-  })
-
-  // history command
-  builtins.set('history', {
-    name: 'history',
-    description: 'Display command history',
-    usage: 'history [-c] [-n number]',
-    async execute(args: string[], shell: Shell): Promise<CommandResult> {
-      const start = performance.now()
-
-      if (args.includes('-c')) {
-        shell.history.length = 0
         return {
           exitCode: 0,
           stdout: '',
           stderr: '',
           duration: performance.now() - start,
         }
-      }
-
-      let limit = shell.history.length
-      const nIndex = args.indexOf('-n')
-      if (nIndex !== -1 && args[nIndex + 1]) {
-        const parsed = Number.parseInt(args[nIndex + 1], 10)
-        if (!Number.isNaN(parsed) && parsed > 0) {
-          limit = parsed
+      } catch (error) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `cd: ${error instanceof Error ? error.message : 'Failed to change directory'}\n`,
+          duration: performance.now() - start,
         }
       }
+    },
+  }
+  
+  // Add cd command to builtins
+  builtins.set('cd', cdCommand)
 
-      const historyToShow = shell.history.slice(-limit)
-      const output = historyToShow
-        .map((cmd, index) => `${String(shell.history.length - limit + index + 1).padStart(5)} ${cmd}`)
-        .join('\n')
-
-      return {
-        exitCode: 0,
-        stdout: output ? `${output}\n` : '',
-        stderr: '',
-        duration: performance.now() - start,
+  /**
+   * PWD (Print Working Directory) command - outputs the current working directory
+   * This is a simple command but includes error handling for consistency
+   */
+  const pwdCommand: BuiltinCommand = {
+    name: 'pwd',
+    description: 'Print the current working directory',
+    usage: 'pwd',
+    async execute(_args: string[], shell: Shell): Promise<CommandResult> {
+      const start = performance.now()
+      
+      try {
+        // Verify we have a valid working directory
+        if (!shell.cwd || typeof shell.cwd !== 'string') {
+          throw new Error('Invalid working directory')
+        }
+        
+        // Ensure the directory still exists and is accessible
+        if (!existsSync(shell.cwd)) {
+          throw new Error('Current working directory no longer exists')
+        }
+        
+        return {
+          exitCode: 0,
+          stdout: `${shell.cwd}\n`,
+          stderr: '',
+          duration: performance.now() - start,
+        }
+      } catch (error) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `pwd: ${error instanceof Error ? error.message : 'Failed to get working directory'}\n`,
+          duration: performance.now() - start,
+        }
       }
     },
-  })
+  }
+  
+  // Add pwd command to builtins
+  builtins.set('pwd', pwdCommand)
+
+  /**
+   * HISTORY command - displays or manipulates the command history
+   * Supports clearing history and limiting output
+   */
+  const historyCommand: BuiltinCommand = {
+    name: 'history',
+    description: 'Display or manipulate the command history',
+    usage: 'history [-c] [-n number]',
+    async execute(args: string[], shell: Shell): Promise<CommandResult> {
+      const start = performance.now()
+      
+      try {
+        // Handle clear history flag
+        if (args.includes('-c')) {
+          const originalLength = shell.history.length
+          shell.history.length = 0
+          return {
+            exitCode: 0,
+            stdout: `History cleared (${originalLength} entries removed)\n`,
+            stderr: '',
+            duration: performance.now() - start,
+          }
+        }
+
+        // Default to showing all history
+        let limit = shell.history.length
+        
+        // Check for -n flag to limit output
+        const nIndex = args.indexOf('-n')
+        if (nIndex !== -1 && args[nIndex + 1]) {
+          const parsed = Number.parseInt(args[nIndex + 1], 10)
+          if (!Number.isNaN(parsed) && parsed > 0) {
+            limit = Math.min(parsed, shell.history.length)
+          } else {
+            return {
+              exitCode: 1,
+              stdout: '',
+              stderr: 'history: -n requires a positive integer argument\n',
+              duration: performance.now() - start,
+            }
+          }
+        }
+
+        // Handle negative or zero limit
+        if (limit <= 0) {
+          return {
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            duration: performance.now() - start,
+          }
+        }
+
+        // Get the slice of history to display
+        const historyToShow = shell.history.slice(-limit)
+        const output = historyToShow
+          .map((cmd, index) => {
+            const lineNum = shell.history.length - limit + index + 1
+            return `${String(lineNum).padStart(5)}  ${cmd}`
+          })
+          .join('\n')
+
+        return {
+          exitCode: 0,
+          stdout: output ? `${output}\n` : '',
+          stderr: '',
+          duration: performance.now() - start,
+        }
+      } catch (error) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: `history: ${error instanceof Error ? error.message : 'Failed to access command history'}\n`,
+          duration: performance.now() - start,
+        }
+      }
+    },
+  }
+
+  // Add history command to builtins
+  builtins.set('history', historyCommand)
 
   // alias command
   builtins.set('alias', {
