@@ -88,6 +88,12 @@ export class CompletionProvider {
         const keys = Object.keys(this.shell.environment || {})
         return keys.filter(k => k.startsWith(last) || last === '')
       }
+      case 'type':
+      case 'which':
+      case 'hash': {
+        // Complete command names for these utilities
+        return this.getCommandCompletions(last)
+      }
       case 'kill':
       case 'trap': {
         // Common POSIX signals
