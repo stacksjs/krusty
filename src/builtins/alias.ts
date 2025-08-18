@@ -58,9 +58,11 @@ export const aliasCommand: BuiltinCommand = {
     const quoteIfNeeded = (s: string): string => {
       // Needs quoting if contains whitespace or shell-special characters
       const needs = /[\s"'!@#$%^&*()[\]|;<>?]/.test(s)
-      if (!needs) return s
-      // Prefer single quotes, escape internal single quotes by closing/opening
-      return `'${s.replace(/'/g, '\'\\'\'')}'`
+      if (!needs)
+        return s
+      // Prefer single quotes for shell; escape internal single quotes as '\''
+      const escaped = s.replace(/'/g, '\'\\\'\'')
+      return `'${escaped}'`
     }
 
     let i = 0

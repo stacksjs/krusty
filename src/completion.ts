@@ -1,4 +1,4 @@
-import type { Shell } from './types'
+import type { CompletionItem, Shell } from './types'
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -23,8 +23,30 @@ export class CompletionProvider {
     return allCommands.filter(cmd =>
       caseSensitive
         ? cmd.startsWith(prefix)
-        : cmd.toLowerCase().startsWith(prefix.toLowerCase())
+        : cmd.toLowerCase().startsWith(prefix.toLowerCase()),
     )
+  }
+
+  /**
+   * Public API used by the shell to get completions at a cursor position
+   */
+  public getCompletions(input: string, cursor: number): string[] {
+    try {
+      if (!this.shell.config.completion?.enabled)
+        return []
+      const before = input.slice(0, Math.max(0, cursor))
+      const tokens = this.tokenize(before)
+      if (tokens.length === 0)
+        return []
+      const last = tokens[tokens.length - 1]
+      const isFirst = tokens.length === 1
+      return isFirst
+        ? this.getCommandCompletions(last)
+        : this.getFileCompletions(last)
+    }
+    catch {
+      return []
+    }
   }
 
   /**
@@ -51,12 +73,14 @@ export class CompletionProvider {
               if (isExecutable) {
                 commands.add(file.name)
               }
-            } catch {
+            }
+            catch {
               // Skip files we can't stat
             }
           }
         }
-      } catch {
+      }
+      catch {
         // Skip directories we can't read
       }
     }
@@ -90,13 +114,14 @@ export class CompletionProvider {
             : join(dirname(prefix), file.name)
 
           completions.push(
-            file.isDirectory() ? `${displayPath}/` : displayPath
+            file.isDirectory() ? `${displayPath}/` : displayPath,
           )
         }
       }
 
       return completions
-    } catch (error) {
+    }
+    catch {
       return []
     }
   }
@@ -104,93 +129,6 @@ export class CompletionProvider {
   /**
    * Tokenize input string into command line arguments
    */
-      const entries = readdirSync(searchPath)
-      const completions: string[] = []
-      const caseSensitive = this.shell.config.completion?.caseSensitive ?? false
-
-      for (const entry of entries) {
-        // Skip hidden files unless prefix starts with dot
-        if (entry.startsWith('.') && !prefix.startsWith('.')) {
-          continue
-        }
-
-        const matches = caseSensitive
-          ? entry.startsWith(prefix)
-          : entry.toLowerCase().startsWith(prefix.toLowerCase())
-
-        if (matches) {
-          const fullPath = join(searchPath, entry)
-          try {
-            const stat = statSync(fullPath)
-            const completion = stat.isDirectory() ? `${entry}/` : entry
-
-            // If partial contained a path, include the directory part
-            if (partial.includes('/')) {
-              const dirPart = dirname(partial)
-              completions.push(join(dirPart, completion))
-            }
-            else {
-              completions.push(completion)
-            }
-          }
-          catch {
-            // Skip entries we can't stat
-          }
-        }
-      }
-
-      return this.sortAndLimit(completions, prefix)
-    }
-    catch {
-      return []
-    }
-  }
-
-  private getPathCommands(): string[] {
-    const now = Date.now()
-    if (this.commandCache.size > 0 && now - this.lastCacheUpdate < this.cacheTimeout) {
-      return Array.from(this.commandCache.keys())
-    }
-
-    this.commandCache.clear()
-    const commands = new Set<string>()
-    const pathEnv = this.shell.environment.PATH || process.env.PATH || ''
-    const paths = pathEnv.split(':').filter(p => p.length > 0)
-
-    for (const pathDir of paths) {
-      try {
-        if (!existsSync(pathDir))
-          continue
-
-        const entries = readdirSync(pathDir)
-        for (const entry of entries) {
-          try {
-            const fullPath = join(pathDir, entry)
-            const stat = statSync(fullPath)
-
-            // Check if file is executable
-            if (stat.isFile() && (stat.mode & 0o111)) {
-              commands.add(entry)
-            }
-          }
-          catch {
-            // Skip entries we can't access
-          }
-        }
-      }
-      catch {
-        // Skip directories we can't read
-      }
-    }
-
-    // Cache the results
-    for (const command of commands) {
-      this.commandCache.set(command, [])
-    }
-    this.lastCacheUpdate = now
-
-    return Array.from(commands)
-  }
 
   private tokenize(input: string): string[] {
     // Improved tokenizer that handles quoted strings and escaped characters

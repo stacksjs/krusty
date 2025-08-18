@@ -83,13 +83,15 @@ export class HistoryManager {
   }
 
   async save(): Promise<void> {
-    if (!this.isInitialized) return
-    
+    if (!this.isInitialized)
+      return
+
     try {
       // Ensure we don't have duplicate commands
       const uniqueHistory = [...new Set(this.history)]
       await fs.writeFile(this.historyPath, `${uniqueHistory.join('\n')}\n`, 'utf-8')
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to save history:', error)
     }
   }

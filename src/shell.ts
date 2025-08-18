@@ -817,129 +817,56 @@ export class KrustyShell implements Shell {
       env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+
+    // Stream output and await completion
+    return this.setupStreamingProcess(child, start, command)
+  }
+
+  // Read a single line with completion, returns null on EOF (Ctrl+D)
+  private async readLine(prompt: string): Promise<string | null> {
     return new Promise((resolve) => {
-      if (!this.rl) {
-        this.rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-          terminal: true,
-          prompt: '',
-          history: this.history,
-        })
-      }
-
       const rl = this.rl
-      
-      // Set up completion handler
-      const completer = (line: string) => {
-        const completions = this.getCompletions(line, line.length)
-        return [completions, line] // Return completions and the current line
-      }
-
-      // @ts-ignore - The completer property exists on the InterfaceConstructor
-      rl.constructor.completer = completer
+      if (!rl) return resolve(null)
 
       rl.question(prompt, (answer) => {
         const trimmed = answer.trim()
         if (trimmed) {
           this.historyManager.add(trimmed).catch(console.error)
-          this.history.push(trimmed)
+          this.history = this.historyManager.getHistory()
         }
         resolve(trimmed || null)
       })
     })
   }
 
-  // ... (rest of the code remains the same)
+  // Execute a command providing stdin input (used for pipes)
+  private async executeWithInput(command: any, input: string): Promise<CommandResult> {
+    const start = performance.now()
 
-  private setupStreamingProcess(
-    child: ChildProcess,
-    start: number,
-    command: string,
-    input?: string | Buffer | NodeJS.ReadableStream | null
-  ): Promise<number> {
-    return new Promise((resolve) => {
-      if (input) {
-        if (child.stdin) {
-          if (typeof input === 'string' || Buffer.isBuffer(input)) {
-            child.stdin.end(input)
-          } else if (typeof (input as NodeJS.ReadableStream).pipe === 'function') {
-            (input as NodeJS.ReadableStream).pipe(child.stdin)
-          }
-        }
-      }
+    // Clean env
+    const cleanEnv = Object.fromEntries(
+      Object.entries({
+        ...this.environment,
+        FORCE_COLOR: '3',
+        COLORTERM: 'truecolor',
+        TERM: 'xterm-256color',
+        BUN_FORCE_COLOR: '3',
+      }).filter(([_, value]) => value !== undefined) as [string, string][],
+    )
 
-      child.on('close', (code) => {
-        const end = Date.now()
-        const duration = end - start
-        this.lastExitCode = code ?? 0
-        
-        if (this.config.verbose) {
-          this.log.debug(`Command '${command}' exited with code ${code} (${duration}ms)`)
-        }
-        
-        resolve(this.lastExitCode)
-      })
-    }).catch((error) => {
-      if (this.config.verbose) {
-        this.log.warn('Failed to load history:', error)
-      }
-  private saveHistory(): void {
-    try {
-      this.historyManager.save()
-    } catch (error) {
-      if (this.config.verbose) {
-        this.log.warn('Failed to save history:', error)
-      }
-    }
-  /**
-   * Job management methods
-   */
-  addJob(pid: number, command: string): number {
-    const jobId = this.nextJobId++
-    this.jobs.push({
-      id: jobId,
-      pid,
-      command,
-      status: 'running',
+    const child = spawn(command.name, command.args, {
+      cwd: this.cwd,
+      env: cleanEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    // Clean up done jobs
-    this.jobs = this.jobs.filter(job => job.status !== 'done')
-
-    return jobId
+    // Pass input to child's stdin and stream
+    return this.setupStreamingProcess(child, start, command, input)
   }
 
-  removeJob(pid: number): void {
-    const index = this.jobs.findIndex(job => job.pid === pid)
-    if (index !== -1) {
-      this.jobs.splice(index, 1)
-    }
-  }
+  // ... (rest of the code remains the same)
 
-  getJobs(): Array<{ id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' }> {
-    // Clean up done jobs first
-    this.jobs = this.jobs.filter(job => job.status !== 'done')
-    return [...this.jobs]
-  }
-
-  getJob(id: number): { id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' } | undefined {
-    return this.jobs.find(job => job.id === id)
-  }
-
-  setJobStatus(id: number, status: 'running' | 'stopped' | 'done'): void {
-    const job = this.jobs.find(j => j.id === id)
-    if (job) {
-      job.status = status
-    }
-
-    // Clean up done jobs
-    if (status === 'done') {
-      setTimeout(() => {
-        this.jobs = this.jobs.filter(j => j.id !== id)
-      }, 1000) // Give some time for the job to be queried one last time
-    }
-  }
+  /* Removed malformed duplicate setupStreamingProcess and stray methods here */
 
   /**
    * Helper method to set up streaming for a child process

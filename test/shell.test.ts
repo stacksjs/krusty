@@ -20,6 +20,15 @@ describe('KrustyShell', () => {
     shell = new KrustyShell(testConfig)
   })
 
+  describe('alias expanding into pipeline', () => {
+    it('should execute pipeline created by alias expansion', async () => {
+      shell.aliases.pipeit = 'printf "a\n" | wc -l'
+      const result = await shell.execute('pipeit')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout.trim()).toBe('1')
+    })
+  })
+
   afterEach(() => {
     shell.stop()
   })
@@ -106,6 +115,19 @@ describe('KrustyShell', () => {
     it('should measure execution duration', async () => {
       const result = await shell.execute('echo test')
       expect(result.duration).toBeGreaterThan(0)
+    })
+
+    it('should execute simple pipeline', async () => {
+      const result = await shell.execute('printf "a\n b\n c\n" | wc -l')
+      expect(result.exitCode).toBe(0)
+      // wc -l usually prints with leading spaces; trim to compare numeric
+      expect(result.stdout.trim()).toBe('3')
+    })
+
+    it('should pipe output between processes', async () => {
+      const result = await shell.execute('printf foo | tr a-z A-Z')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('FOO')
     })
 
     it('should add successful commands to history', async () => {
@@ -240,6 +262,12 @@ describe('KrustyShell', () => {
       // let's check that we get some completions starting with 'l'
       expect(completions.length).toBeGreaterThan(0)
       expect(completions.every(c => c.startsWith('l'))).toBe(true)
+    })
+
+    it('should return sorted completions', () => {
+      const completions = shell.getCompletions('c', 1)
+      const sorted = [...completions].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      expect(completions).toEqual(sorted)
     })
 
     it('should provide builtin completions', () => {

@@ -172,6 +172,14 @@ describe('Alias Builtin Commands', () => {
     expect(shell.aliases.test5).toBe('echo \'quoted value\'')
   })
 
+  // Alias with single quote inside double-quoted value executes correctly
+  test('should execute alias containing single quotes in value', async () => {
+    await shell.execute('alias a="echo it\'s ok"')
+    expect(shell.aliases.a).toBe("echo it's ok")
+    const result = await shell.execute('a')
+    expect(result.stdout.trim()).toBe("it's ok")
+  })
+
   // Unset alias
   test('should unset alias', async () => {
     await shell.execute('unalias test1')
