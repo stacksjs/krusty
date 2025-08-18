@@ -128,6 +128,12 @@ export interface CommandResult {
   stdout: string
   stderr: string
   duration: number
+  /**
+   * Indicates whether the command's output was already streamed live.
+   * If true, callers should avoid re-printing stdout/stderr to prevent duplicates.
+   * Builtins typically set this to false/undefined and return buffered output.
+   */
+  streamed?: boolean
 }
 
 export interface Command {

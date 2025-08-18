@@ -27,10 +27,12 @@ cli
       const command = args.join(' ')
       const result = await shell.execute(command)
 
-      if (result.stdout)
-        process.stdout.write(result.stdout)
-      if (result.stderr)
-        process.stderr.write(result.stderr)
+      if (!result.streamed) {
+        if (result.stdout)
+          process.stdout.write(result.stdout)
+        if (result.stderr)
+          process.stderr.write(result.stderr)
+      }
 
       process.exit(result.exitCode)
     }
@@ -130,10 +132,12 @@ cli
     const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
     const result = await shell.execute(command)
 
-    if (result.stdout)
-      process.stdout.write(result.stdout)
-    if (result.stderr)
-      process.stderr.write(result.stderr)
+    if (!result.streamed) {
+      if (result.stdout)
+        process.stdout.write(result.stdout)
+      if (result.stderr)
+        process.stderr.write(result.stderr)
+    }
 
     process.exit(result.exitCode)
   })

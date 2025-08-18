@@ -374,9 +374,8 @@ export class KrustyShell implements Shell {
           if (input.trim()) {
             const result = await this.execute(input)
 
-            // If streaming is disabled, print buffered output here.
-            // Otherwise, child output has already been streamed live.
-            if (this.config.streamOutput === false) {
+            // Print buffered output only if it wasn't already streamed live
+            if (!result.streamed) {
               if (result.stdout) {
                 process.stdout.write(result.stdout)
               }
@@ -602,6 +601,7 @@ export class KrustyShell implements Shell {
             stdout: (aggregate.stdout || '') + (res.stdout || ''),
             stderr: (aggregate.stderr || '') + (res.stderr || ''),
             duration: (aggregate.duration || 0) + (res.duration || 0),
+            streamed: (aggregate.streamed === true) || (res.streamed === true),
           }
         }
 
@@ -688,6 +688,7 @@ export class KrustyShell implements Shell {
           stdout: result.stdout,
           stderr: lastResult.stderr + result.stderr,
           duration: lastResult.duration + result.duration,
+          streamed: (lastResult.streamed === true) || (result.streamed === true),
         }
       }
 
@@ -1070,6 +1071,7 @@ export class KrustyShell implements Shell {
           stdout: '',
           stderr: `krusty: ${command.name}: command not found\n`,
           duration: performance.now() - start,
+          streamed: false,
         })
       })
 
@@ -1090,6 +1092,8 @@ export class KrustyShell implements Shell {
           stdout,
           stderr,
           duration: performance.now() - start,
+          // If we streamed during execution, signal that callers shouldn't re-print
+          streamed: shouldStream,
         })
       })
 
@@ -1142,6 +1146,7 @@ export class KrustyShell implements Shell {
           stdout: '',
           stderr: '',
           duration: performance.now() - start,
+          streamed: shouldStream,
         })
       }
     })
