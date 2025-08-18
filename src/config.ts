@@ -38,8 +38,9 @@ export const defaultConfig: KrustyConfig = {
   aliases: {
     // Stage all changes and open a commit message prompt
     commit: 'git add .; git commit -m',
-    // Work-in-progress: use the commit alias to create a WIP commit and then push
-    wip: "commit 'chore: wip'; push",
+    // Work-in-progress: create a WIP commit and push with styled, informative output
+    // Uses printf (builtin) for ANSI styling and forces git color output
+    wip: "printf '\\x1b[2m\\x1b[36m─── WIP start ───\\x1b[0m\\n'; git -c color.ui=always add -A; git -c color.ui=always commit -m 'chore: wip'; printf '\\x1b[2mcommit summary (last)\\x1b[0m\\n'; git --no-pager -c color.ui=always log -1 --stat --oneline; printf '\\x1b[2m\\x1b[36m─── pushing ───\\x1b[0m\\n'; git -c color.ui=always push; printf '\\x1b[2m\\x1b[32m─── done ───\\x1b[0m\\n'",
     // Push current branch
     push: 'git push',
   },

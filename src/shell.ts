@@ -374,12 +374,15 @@ export class KrustyShell implements Shell {
           if (input.trim()) {
             const result = await this.execute(input)
 
-            if (result.stdout) {
-              process.stdout.write(result.stdout)
-            }
-
-            if (result.stderr) {
-              process.stderr.write(result.stderr)
+            // If streaming is disabled, print buffered output here.
+            // Otherwise, child output has already been streamed live.
+            if (this.config.streamOutput === false) {
+              if (result.stdout) {
+                process.stdout.write(result.stdout)
+              }
+              if (result.stderr) {
+                process.stderr.write(result.stderr)
+              }
             }
           }
         }
