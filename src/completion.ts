@@ -93,11 +93,55 @@ export class CompletionProvider {
         const keys = Object.keys(this.shell.environment || {})
         return keys.filter(k => k.startsWith(last) || last === '')
       }
+      case 'alias': {
+        // Suggest existing alias names
+        const names = Object.keys(this.shell.aliases || {})
+        return names.filter(n => n.startsWith(last) || last === '')
+      }
+      case 'unalias': {
+        const names = Object.keys(this.shell.aliases || {})
+        return names.filter(n => n.startsWith(last) || last === '')
+      }
       case 'type':
       case 'which':
       case 'hash': {
         // Complete command names for these utilities
         return this.getCommandCompletions(last)
+      }
+      case 'exec': {
+        // First arg is a command to exec
+        if (tokens.length >= 2)
+          return this.getCommandCompletions(last)
+        return []
+      }
+      case 'bg':
+      case 'fg': {
+        // Suggest job specs like %1 from current jobs
+        const jobs = this.shell.getJobs ? this.shell.getJobs() : (this.shell.jobs || [])
+        const specs = jobs.map(j => `%${j.id}`)
+        return specs.filter(s => s.startsWith(last) || last === '')
+      }
+      case 'jobs': {
+        // Common flags for jobs
+        const flags = ['-l', '-p', '-r', '-s']
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'pushd':
+      case 'popd': {
+        // Suggest +N/-N and directories
+        const stackIdx: string[] = []
+        for (let i = 0; i <= 9; i++) {
+          stackIdx.push(`+${i}`)
+          stackIdx.push(`-${i}`)
+        }
+        const idxMatches = stackIdx.filter(s => s.startsWith(last) || last === '')
+        const dirs = this.getFileCompletions(last).filter(f => f.endsWith('/'))
+        return [...idxMatches, ...dirs]
+      }
+      case 'umask': {
+        // Suggest common umask values and -S flag
+        const masks = ['-S', '000', '002', '022', '027', '077']
+        return masks.filter(m => m.startsWith(last) || last === '')
       }
       case 'kill':
       case 'trap': {
@@ -236,6 +280,9 @@ export class CompletionProvider {
           continue
         }
         for (const file of files) {
+          // Hide dotfiles unless the user started with '.' explicitly
+          if (!attempt.base.startsWith('.') && file.name.startsWith('.'))
+            continue
           if (file.name.startsWith(attempt.base)) {
             const displayBase = rawPrefix.endsWith('/')
               ? file.name
@@ -282,7 +329,8 @@ export class CompletionProvider {
         continue
       }
 
-      if (char === '\\' && !inQuotes) {
+      // Allow escapes outside quotes and inside double quotes
+      if (char === '\\' && (!inQuotes || (inQuotes && quoteChar === '"'))) {
         escapeNext = true
         continue
       }
