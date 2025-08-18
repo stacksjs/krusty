@@ -8,6 +8,7 @@ interface WipOptions {
   forceColor?: boolean
   noColor?: boolean
   verbose?: boolean
+  quiet?: boolean
 }
 
 function parseArgs(args: string[]): { opts: WipOptions, rest: string[] } {
@@ -33,6 +34,9 @@ function parseArgs(args: string[]): { opts: WipOptions, rest: string[] } {
     }
     else if (a === '--verbose' || a === '-v') {
       opts.verbose = true
+    }
+    else if (a === '--quiet' || a === '-q') {
+      opts.quiet = true
     }
     else if (a === '--message' || a === '-m') {
       opts.message = args[i + 1]
@@ -64,38 +68,43 @@ export const wipCommand: BuiltinCommand = {
     const start = performance.now()
     const { opts } = parseArgs(args)
 
-    // Ensure we are in a git repo
+    // Suppress streaming of internal git command outputs to avoid redundant logs
+    const out: string[] = []
+    const prevStream = shell.config.streamOutput
+    shell.config.streamOutput = false
+
+    // Ensure we are in a git repo (no streaming)
     const isRepo = await inGitRepo(shell)
     if (!isRepo) {
       const msg = banner('wip: not a git repository', 'yellow', { forceColor: opts.forceColor, noColor: opts.noColor })
+      // Restore streaming setting before returning
+      shell.config.streamOutput = prevStream
       return { exitCode: 1, stdout: '', stderr: `${msg}\n`, duration: performance.now() - start }
     }
 
     // Pre-commit banners
-    const out: string[] = []
-    // Suppress streaming of internal git command outputs to avoid redundant logs
-    const prevStream = shell.config.streamOutput
-    shell.config.streamOutput = false
     try {
-      out.push(banner('WIP start', 'cyan', { forceColor: opts.forceColor, noColor: opts.noColor }))
+      if (!opts.quiet)
+        out.push(banner('WIP start', 'cyan', { forceColor: opts.forceColor, noColor: opts.noColor }))
 
       // Show concise status and staged diff summary
       const status = await shell.executeCommand('git', ['-c', 'color.ui=always', 'status', '-sb'])
-      if (status.stdout) out.push(status.stdout.trimEnd())
+      if (!opts.quiet && status.stdout) out.push(status.stdout.trimEnd())
 
       // Stage all changes like the alias
       await shell.executeCommand('git', ['-c', 'color.ui=always', 'add', '-A'])
 
       // Show staged summary like the alias
-      out.push(banner('staged summary', 'none', { forceColor: opts.forceColor, noColor: opts.noColor }))
+      if (!opts.quiet)
+        out.push(banner('staged summary', 'none', { forceColor: opts.forceColor, noColor: opts.noColor }))
       const diff = await shell.executeCommand('git', ['-c', 'color.ui=always', 'diff', '--cached', '--stat'])
-      if (diff.stdout) out.push(diff.stdout.trimEnd())
+      if (!opts.quiet && diff.stdout) out.push(diff.stdout.trimEnd())
 
       // Check if there are staged changes
       const staged = await shell.executeCommand('git', ['diff', '--cached', '--quiet'])
       if (staged.exitCode !== 0) {
         // There are staged changes; commit
-        const msg = opts.message ?? 'wip: save point'
+        const msg = opts.message ?? 'chore: wip'
         // Disable environment-dependent settings to keep tests deterministic:
         // - disable GPG signing
         // - disable hooks (core.hooksPath)
@@ -121,19 +130,22 @@ export const wipCommand: BuiltinCommand = {
         }
         else {
           // Commit failed; include error details but continue
-          if (commit.stdout) out.push(commit.stdout.trimEnd())
-          if (commit.stderr) out.push(commit.stderr.trimEnd())
+          if (!opts.quiet && commit.stdout) out.push(commit.stdout.trimEnd())
+          if (!opts.quiet && commit.stderr) out.push(commit.stderr.trimEnd())
         }
       }
       else {
         // Match alias wording
-        out.push(banner('no changes to commit; skipping push', 'yellow', { forceColor: opts.forceColor, noColor: opts.noColor }))
+        if (!opts.quiet)
+          out.push(banner('no changes to commit; skipping push', 'yellow', { forceColor: opts.forceColor, noColor: opts.noColor }))
       }
 
       // Push if requested
       if (opts.push) {
-        const pushing = banner('pushing', 'cyan', { forceColor: opts.forceColor, noColor: opts.noColor })
-        out.push(pushing)
+        if (!opts.quiet) {
+          const pushing = banner('pushing', 'cyan', { forceColor: opts.forceColor, noColor: opts.noColor })
+          out.push(pushing)
+        }
         const push = await shell.executeCommand('git', ['-c', 'color.ui=always', 'push', '-u', 'origin', 'HEAD'])
         if (opts.verbose && push.stdout)
           out.push(push.stdout.trimEnd())
@@ -141,12 +153,15 @@ export const wipCommand: BuiltinCommand = {
     }
     catch (err) {
       // Surface any unexpected errors but keep exit code 0 per test expectations
-      out.push(banner('wip error (ignored for test)', 'red', { forceColor: opts.forceColor, noColor: opts.noColor }))
-      out.push(String(err))
+      if (!opts.quiet) {
+        out.push(banner('wip error (ignored for test)', 'red', { forceColor: opts.forceColor, noColor: opts.noColor }))
+        out.push(String(err))
+      }
     }
     finally {
       // Final banner (always)
-      out.push(banner('done', 'green', { forceColor: opts.forceColor, noColor: opts.noColor }))
+      if (!opts.quiet)
+        out.push(banner('done', 'green', { forceColor: opts.forceColor, noColor: opts.noColor }))
       // Restore streaming setting
       shell.config.streamOutput = prevStream
     }
