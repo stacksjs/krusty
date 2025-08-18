@@ -1,5 +1,5 @@
 import type { CompletionItem, Shell } from './types'
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
@@ -41,6 +41,20 @@ export class CompletionProvider {
     return result
   }
 
+  private listDirectories(dir: string): string[] {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true })
+      const out: string[] = []
+      for (const e of entries) {
+        if (e.isDirectory())
+          out.push(`${e.name}/`)
+      }
+      return out
+    }
+    catch {
+      return []
+    }
+  }
   /**
    * Provide simple argument completions for selected builtins
    */
@@ -290,6 +304,15 @@ export class CompletionProvider {
     const formatVals = ['esm', 'cjs', 'iife']
     const installVals = ['auto', 'force', 'fallback']
 
+    // Directory-only values
+    if (prev === '--cwd' || prev === '--public-dir') {
+      // For empty prefix, suggest only directories in current cwd to avoid noise
+      if (!last)
+        return this.listDirectories(this.shell.cwd)
+      // If a path prefix is provided, fall back to path-based directory filtering
+      return this.getFileCompletions(last).filter(x => x.endsWith('/'))
+    }
+
     // Value-bearing flags
     if (prev === '--jsx-runtime')
       return suggest(...jsxRuntime)
@@ -301,6 +324,19 @@ export class CompletionProvider {
       return suggest(...formatVals)
     if (prev === '--install' || prev === '-i')
       return suggest(...installVals)
+    if (prev === '--backend')
+      return suggest('clonefile', 'copyfile', 'hardlink', 'symlink')
+    if (prev === '--loader' || prev === '-l') {
+      const loaders = ['js', 'jsx', 'ts', 'tsx', 'json', 'toml', 'text', 'file', 'wasm', 'napi', 'css']
+      // Support either bare loader names or .ext:loader format
+      if (last.includes(':')) {
+        const [ext, suf] = last.split(':')
+        return loaders
+          .map(l => `${ext}:${l}`)
+          .filter(v => v.startsWith(`${ext}:${suf}`) || suf === '')
+      }
+      return loaders.filter(l => l.startsWith(last) || last === '')
+    }
 
     // Subcommand-specific flags and fallbacks
     switch (sub) {
@@ -359,7 +395,20 @@ export class CompletionProvider {
         ]
         if (last.startsWith('-'))
           return flags.filter(f => f.startsWith(last))
-        return this.getFileCompletions(last)
+
+        // Suggest package.json scripts and files
+        const cwdFlagIdx = tokens.findIndex(t => t === '--cwd')
+        const cwdValueRaw = cwdFlagIdx !== -1 ? tokens[cwdFlagIdx + 1] : undefined
+        const unquote = (s?: string) => s?.replace(/^['"]|['"]$/g, '')
+        const effectiveCwd = unquote(cwdValueRaw) || this.shell.cwd
+        const scripts = this.getPackageJsonScripts(effectiveCwd)
+        const scriptMatches = scripts.filter(s => s.startsWith(last) || last === '')
+        // Prioritize scripts; only include files when user typed a path-like prefix
+        const looksLikePath = /[/.]/.test(last)
+        if (scriptMatches.length && !looksLikePath)
+          return scriptMatches
+        const files = this.getFileCompletions(last)
+        return [...scriptMatches, ...files]
       }
       case 'build': {
         const flags = [
@@ -378,6 +427,21 @@ export class CompletionProvider {
         if (last.startsWith('-'))
           return flags.filter(f => f.startsWith(last))
         return this.getFileCompletions(last)
+      }
+      case 'pm': {
+        const flags = [
+          '--config', '-c', '--yarn', '-y', '--production', '-p', '--no-save', '--dry-run',
+          '--frozen-lockfile', '--latest', '--force', '-f', '--cache-dir', '--no-cache', '--silent',
+          '--verbose', '--no-progress', '--no-summary', '--no-verify', '--ignore-scripts', '--global',
+          '-g', '--cwd', '--backend', '--link-native-bins', '--help',
+        ]
+        const subSubs = ['bin', 'ls', 'cache', 'hash', 'hash-print', 'hash-string', 'version']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        // If completing the first arg after 'pm', suggest sub-commands
+        if (tokens.length <= 3)
+          return subSubs.filter(s => s.startsWith(last) || last === '')
+        return []
       }
       case 'test': {
         const flags = [
@@ -479,7 +543,7 @@ export class CompletionProvider {
       case 'unlink':
       case 'update':
       case 'outdated':
-      case 'pm': {
+      {
         const flags = [
           '--config',
           '-c',
@@ -514,10 +578,41 @@ export class CompletionProvider {
         const flags = ['--canary']
         return flags.filter(f => f.startsWith(last) || last === '')
       }
+      case 'init': {
+        const flags = ['-y', '--yes']
+        return flags.filter(f => f.startsWith(last) || last === '')
+      }
+      case 'create': {
+        const flags = ['--force', '--no-install', '--help', '--no-git', '--verbose', '--no-package-json', '--open']
+        const templates = ['next', 'react']
+        const pool = last.startsWith('-') ? flags : [...templates, ...flags]
+        return pool.filter(x => x.startsWith(last) || last === '')
+      }
+      case 'bun': {
+        const flags = ['--version', '-V', '--cwd', '--help', '-h', '--use']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
+        return this.getFileCompletions(last)
+      }
       default: {
         const gen = last.startsWith('-') ? globalFlags.filter(f => f.startsWith(last)) : []
         return gen.length ? gen : this.getFileCompletions(last)
       }
+    }
+  }
+
+  private getPackageJsonScripts(cwd: string): string[] {
+    try {
+      const pkgPath = resolve(cwd, 'package.json')
+      const raw = readFileSync(pkgPath, 'utf8')
+      const json = JSON.parse(raw)
+      const scripts = json && typeof json === 'object' && json.scripts && typeof json.scripts === 'object'
+        ? Object.keys(json.scripts as Record<string, string>)
+        : []
+      return scripts
+    }
+    catch {
+      return []
     }
   }
 

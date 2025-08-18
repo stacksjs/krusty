@@ -67,4 +67,68 @@ describe('Bun CLI completions', () => {
     const out = shell.getCompletions(input, input.length)
     expect(out).toContain('--version')
   })
+
+  it('suggests package.json scripts for bun run', () => {
+    const input = 'bun run '
+    const out = shell.getCompletions(input, input.length)
+    // Uses this repo's package.json scripts
+    expect(out).toContain('build')
+    expect(out).toContain('test')
+  })
+
+  it('suggests loader values for --loader', () => {
+    const input = 'bun run --loader '
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('js')
+    expect(out).toContain('tsx')
+  })
+
+  it('suggests loader pair with extension like .js:jsx', () => {
+    const input = 'bun run --loader .js:'
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('.js:jsx')
+    expect(out).toContain('.js:ts')
+  })
+
+  it('suggests backend values for --backend', () => {
+    const input = 'bun run --backend '
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('clonefile')
+    expect(out).toContain('symlink')
+  })
+
+  it('suggests pm subcommands after bun pm', () => {
+    const input = 'bun pm '
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('bin')
+    expect(out).toContain('ls')
+  })
+
+  it('suggests flags for bun init', () => {
+    const input = 'bun init -'
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('-y')
+    expect(out).toContain('--yes')
+  })
+
+  it('suggests flags and templates for bun create', () => {
+    const input = 'bun create '
+    const out = shell.getCompletions(input, input.length)
+    expect(out).toContain('next')
+    expect(out).toContain('--no-install')
+  })
+
+  it('completes directories for --cwd', () => {
+    const input = 'bun run --cwd '
+    const out = shell.getCompletions(input, input.length)
+    // repo directories
+    expect(out.find(x => x.endsWith('/'))).toBeTruthy()
+    expect(out).toContain('docs/')
+  })
+
+  it('completes directories for --public-dir', () => {
+    const input = 'bun build --public-dir '
+    const out = shell.getCompletions(input, input.length)
+    expect(out.find(x => x.endsWith('/'))).toBeTruthy()
+  })
 })
