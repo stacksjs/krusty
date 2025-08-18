@@ -1,5 +1,6 @@
-import type { BunshConfig, CommandResult } from '../src/types'
+import type { BunshConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { homedir } from 'node:os'
 import { defaultConfig } from '../src/config'
 import { BunshShell } from '../src/shell'
 
@@ -174,7 +175,7 @@ describe('BunshShell', () => {
     it('should expand tilde in path', () => {
       const success = shell.changeDirectory('~')
       expect(success).toBe(true)
-      expect(shell.cwd).toBe(process.env.HOME)
+      expect(shell.cwd).toBe(homedir())
     })
   })
 

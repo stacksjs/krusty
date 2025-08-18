@@ -2,6 +2,7 @@ import type { CompletionItem, Shell } from './types'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import process from 'node:process'
 
 export class CompletionProvider {
   private commandCache = new Map<string, string[]>()

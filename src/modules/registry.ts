@@ -6,7 +6,7 @@ import {
 } from './cloud'
 
 // Custom modules
-import { createCustomModule, createEnvVarModule } from './custom'
+import { createCustomModules } from './custom'
 
 // Git modules
 import {
@@ -110,20 +110,9 @@ export function registerDefaultModules(): void {
 
 // Register custom modules from config
 export function registerCustomModules(config: any): void {
-  // Register environment variable modules
-  if (config.env_var) {
-    for (const [name, envConfig] of Object.entries(config.env_var)) {
-      const module = createEnvVarModule(name, envConfig)
-      moduleRegistry.register(module)
-    }
-  }
-
-  // Register custom command modules
-  if (config.custom) {
-    for (const [name, customConfig] of Object.entries(config.custom)) {
-      const module = createCustomModule(name, customConfig)
-      moduleRegistry.register(module)
-    }
+  const customModules = createCustomModules(config)
+  for (const module of customModules) {
+    moduleRegistry.register(module)
   }
 }
 

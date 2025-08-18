@@ -2,7 +2,7 @@ import type { ModuleContext, ModuleResult } from '../types'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { BaseModule, ModuleUtils } from './index'
+import { BaseModule } from './index'
 
 // AWS module
 export class AwsModule extends BaseModule {

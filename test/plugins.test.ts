@@ -1,48 +1,10 @@
-import type { BunshConfig, CommandResult, PluginContext } from '../src/types'
+import type { BunshConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, PluginManager } from '../src/plugins'
+import { PluginManager } from '../src/plugins'
 import { BunshShell } from '../src/shell'
-
-// Test plugin implementation
-class TestPlugin extends BasePlugin {
-  name = 'test-plugin'
-  version = '1.0.0'
-  description = 'A test plugin'
-
-  commands = {
-    hello: {
-      description: 'Say hello',
-      execute: async (args: string[], context: PluginContext): Promise<CommandResult> => {
-        const name = args[0] || 'World'
-        return {
-          exitCode: 0,
-          stdout: `Hello, ${name}!\n`,
-          stderr: '',
-          duration: 0,
-        }
-      },
-    },
-  }
-
-  aliases = {
-    hi: 'test-plugin:hello',
-  }
-
-  async initialize(context: PluginContext): Promise<void> {
-    context.logger.info('Test plugin initialized')
-  }
-
-  async activate(context: PluginContext): Promise<void> {
-    context.logger.info('Test plugin activated')
-  }
-
-  async deactivate(context: PluginContext): Promise<void> {
-    context.logger.info('Test plugin deactivated')
-  }
-}
 
 describe('Plugin System', () => {
   let shell: BunshShell
@@ -66,9 +28,7 @@ describe('Plugin System', () => {
 
     // Write test plugin to file
     const pluginCode = `
-      const { BasePlugin } = require('${process.cwd()}/dist/src/plugins/index.js')
-
-      class TestPlugin extends BasePlugin {
+      class TestPlugin {
         name = 'test-plugin'
         version = '1.0.0'
         description = 'A test plugin'
@@ -90,6 +50,14 @@ describe('Plugin System', () => {
 
         async initialize(context) {
           context.logger.info('Test plugin initialized')
+        }
+
+        async activate(context) {
+          context.logger.info('Test plugin activated')
+        }
+
+        async deactivate(context) {
+          context.logger.info('Test plugin deactivated')
         }
       }
 

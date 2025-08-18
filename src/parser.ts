@@ -1,4 +1,4 @@
-import type { ParsedCommand, Command } from './types'
+import type { Command, ParsedCommand } from './types'
 
 export class CommandParser {
   parse(input: string): ParsedCommand {
@@ -53,7 +53,7 @@ export class CommandParser {
         continue
       }
 
-      if (!inQuotes && (char === '"' || char === "'")) {
+      if (!inQuotes && (char === '"' || char === '\'')) {
         inQuotes = true
         quoteChar = char
         current += char
@@ -81,6 +81,68 @@ export class CommandParser {
     }
 
     return segments.filter(s => s.length > 0)
+  }
+
+  /**
+   * Tokenizes a string into an array of arguments, handling quotes and escape sequences
+   * @param input The input string to tokenize
+   * @returns An array of tokens
+   */
+  public tokenize(input: string): string[] {
+    const tokens: string[] = []
+    let current = ''
+    let inQuotes = false
+    let quoteChar = ''
+    let escaped = false
+
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i]
+
+      if (escaped) {
+        // Handle escaped characters
+        if (char === '$' || char === quoteChar || char === '\\') {
+          current += char // Add the escaped character without the backslash
+        }
+        else {
+          current += `\\${char}` // Keep the backslash for other characters
+        }
+        escaped = false
+        continue
+      }
+
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+
+      if (!inQuotes && (char === '"' || char === '\'')) {
+        inQuotes = true
+        quoteChar = char
+        continue
+      }
+
+      if (inQuotes && char === quoteChar) {
+        inQuotes = false
+        quoteChar = ''
+        continue
+      }
+
+      if (!inQuotes && /\s/.test(char)) {
+        if (current) {
+          tokens.push(current)
+          current = ''
+        }
+        continue
+      }
+
+      current += char
+    }
+
+    if (current) {
+      tokens.push(current)
+    }
+
+    return tokens
   }
 
   private parseSegment(segment: string): {
@@ -147,62 +209,6 @@ export class CommandParser {
     }
   }
 
-  private tokenize(input: string): string[] {
-    const tokens: string[] = []
-    let current = ''
-    let inQuotes = false
-    let quoteChar = ''
-    let escaped = false
-
-    for (let i = 0; i < input.length; i++) {
-      const char = input[i]
-
-      if (escaped) {
-        // Handle escaped characters
-        if (char === '$' || char === quoteChar || char === '\\') {
-          current += char // Add the escaped character without the backslash
-        } else {
-          current += '\\' + char // Keep the backslash for other characters
-        }
-        escaped = false
-        continue
-      }
-
-      if (char === '\\') {
-        escaped = true
-        continue
-      }
-
-      if (!inQuotes && (char === '"' || char === "'")) {
-        inQuotes = true
-        quoteChar = char
-        continue
-      }
-
-      if (inQuotes && char === quoteChar) {
-        inQuotes = false
-        quoteChar = ''
-        continue
-      }
-
-      if (!inQuotes && /\s/.test(char)) {
-        if (current) {
-          tokens.push(current)
-          current = ''
-        }
-        continue
-      }
-
-      current += char
-    }
-
-    if (current) {
-      tokens.push(current)
-    }
-
-    return tokens
-  }
-
   private isInQuotes(input: string, position: number): boolean {
     let inQuotes = false
     let quoteChar = ''
@@ -221,7 +227,7 @@ export class CommandParser {
         continue
       }
 
-      if (!inQuotes && (char === '"' || char === "'")) {
+      if (!inQuotes && (char === '"' || char === '\'')) {
         inQuotes = true
         quoteChar = char
         continue

@@ -1,16 +1,17 @@
-/* eslint-disable no-console */
-import type { BuiltinCommand, BunshConfig, CommandResult, CompletionItem, ParsedCommand, Shell } from './types'
-import { exec, spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import type { BuiltinCommand, BunshConfig, CommandResult, ParsedCommand, Plugin, Shell } from './types'
+import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import process from 'node:process'
 import * as readline from 'node:readline'
-import { promisify } from 'node:util'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
+import { defaultConfig, loadBunshConfig } from './config'
 import { HistoryManager } from './history'
 import { HookManager } from './hooks'
+import { Logger } from './logger'
 import { CommandParser } from './parser'
 import { PluginManager } from './plugins'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
@@ -31,86 +32,24 @@ export class BunshShell implements Shell {
   private completionProvider: CompletionProvider
   private pluginManager: PluginManager
   private hookManager: HookManager
+  public log: Logger
   private rl: readline.Interface | null = null
   private running = false
   private lastExitCode = 0
 
   constructor(config?: BunshConfig) {
-    // Use a default config if none provided to avoid top-level await issues
-    const fallbackConfig: BunshConfig = {
-      verbose: false,
-      prompt: {
-        format: '{user}@{host} {path}{git} {symbol} ',
-        showGit: true,
-        showTime: false,
-        showUser: true,
-        showHost: true,
-        showPath: true,
-        showExitCode: true,
-        transient: false,
-      },
-      history: {
-        maxEntries: 10000,
-        file: '~/.bunsh_history',
-        ignoreDuplicates: true,
-        ignoreSpace: true,
-        searchMode: 'fuzzy',
-      },
-      completion: {
-        enabled: true,
-        caseSensitive: false,
-        showDescriptions: true,
-        maxSuggestions: 10,
-      },
-      aliases: {},
-      environment: {},
-      plugins: [],
-      theme: {
-        colors: {
-          primary: '#00D9FF',
-          secondary: '#FF6B9D',
-          success: '#00FF88',
-          warning: '#FFD700',
-          error: '#FF4757',
-          info: '#74B9FF',
-        },
-        symbols: {
-          prompt: '❯',
-          continuation: '…',
-          git: {
-            branch: '',
-            ahead: '⇡',
-            behind: '⇣',
-            staged: '●',
-            unstaged: '○',
-            untracked: '?',
-          },
-        },
-      },
-      hooks: {
-        'shell:init': [],
-        'shell:start': [],
-        'shell:stop': [],
-        'shell:exit': [],
-        'command:before': [],
-        'command:after': [],
-        'command:error': [],
-        'prompt:before': [],
-        'prompt:after': [],
-        'prompt:render': [],
-        'directory:change': [],
-        'directory:enter': [],
-        'directory:leave': [],
-        'history:add': [],
-        'history:search': [],
-        'completion:before': [],
-        'completion:after': [],
-      },
-    }
+    // Use defaultConfig from src/config to preserve exact equality in tests
+    this.config = config || defaultConfig
+    // Ensure plugins array exists
+    if (!this.config.plugins)
+      this.config.plugins = []
 
-    this.config = config || fallbackConfig
+    // Default plugins are injected by PluginManager at load time.
     this.cwd = process.cwd()
-    this.environment = { ...process.env }
+    // Convert process.env to Record<string, string> by filtering out undefined values
+    this.environment = Object.fromEntries(
+      Object.entries(process.env).filter(([_, value]) => value !== undefined),
+    ) as Record<string, string>
     this.history = []
     this.aliases = { ...this.config.aliases }
     this.builtins = createBuiltins()
@@ -123,9 +62,86 @@ export class BunshShell implements Shell {
     this.completionProvider = new CompletionProvider(this)
     this.pluginManager = new PluginManager(this, this.config)
     this.hookManager = new HookManager(this, this.config)
+    this.log = new Logger(this.config.verbose, 'shell')
 
     // Load history
     this.loadHistory()
+  }
+
+  // Public proxies for plugin operations (for tests and external callers)
+  async loadPlugins(): Promise<void> {
+    await this.pluginManager.loadPlugins()
+  }
+
+  getPlugin(name: string): Plugin | undefined {
+    return this.pluginManager.getPlugin(name)
+  }
+
+  // Reload configuration, hooks, and plugins at runtime
+  public async reload(): Promise<CommandResult> {
+    const start = performance.now()
+    try {
+      // Load latest config from disk
+      const newConfig = await loadBunshConfig()
+
+      // Apply environment: start from current process.env to keep runtime updates, then overlay new config
+      this.environment = Object.fromEntries(
+        Object.entries(process.env).filter(([_, v]) => v !== undefined),
+      ) as Record<string, string>
+      if (newConfig.environment) {
+        for (const [k, v] of Object.entries(newConfig.environment)) {
+          if (v === undefined)
+            continue
+          this.environment[k] = v
+          process.env[k] = v
+        }
+      }
+
+      // Replace config and dependent components
+      this.config = newConfig
+      this.aliases = { ...this.config.aliases }
+      this.promptRenderer = new PromptRenderer(this.config)
+
+      // Recreate history manager with new settings but keep in-memory history
+      this.historyManager = new HistoryManager(this.config.history)
+      this.loadHistory()
+
+      // Recreate hooks with new config
+      this.hookManager = new HookManager(this, this.config)
+
+      // Restart plugins to reflect new config
+      await this.pluginManager.shutdown()
+      this.pluginManager = new PluginManager(this, this.config)
+      await this.pluginManager.loadPlugins()
+
+      // Reinitialize modules using new config
+      try {
+        const { initializeModules } = await import('./modules/registry')
+        initializeModules(this.config.modules)
+      }
+      catch (e) {
+        this.log.warn('Module reinitialization failed:', e)
+      }
+
+      // Execute a reload hook event if configured
+      await this.hookManager.executeHooks('shell:reload', {})
+
+      return {
+        exitCode: 0,
+        stdout: 'Configuration reloaded successfully\n',
+        stderr: '',
+        duration: performance.now() - start,
+      }
+    }
+    catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `reload: ${msg}\n`,
+        duration: performance.now() - start,
+      }
+    }
   }
 
   async execute(command: string): Promise<CommandResult> {
@@ -227,6 +243,10 @@ export class BunshShell implements Shell {
     if (this.running)
       return
 
+    // Initialize modules
+    const { initializeModules } = await import('./modules/registry')
+    initializeModules(this.config.modules)
+
     // Execute shell:init hooks
     await this.hookManager.executeHooks('shell:init', {})
 
@@ -238,69 +258,97 @@ export class BunshShell implements Shell {
     // Execute shell:start hooks
     await this.hookManager.executeHooks('shell:start', {})
 
-    // Setup readline interface
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      completer: (line: string) => {
-        const completions = this.getCompletions(line, line.length)
-        return [completions, line]
-      },
-    })
+    try {
+      // Setup readline interface
+      this.rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        completer: (line: string) => {
+          const completions = this.getCompletions(line, line.length)
+          return [completions, line]
+        },
+      })
 
-    // Handle Ctrl+C
-    this.rl.on('SIGINT', () => {
-      console.log('\n(To exit, press Ctrl+D or type "exit")')
-      this.rl?.prompt()
-    })
-
-    // Main REPL loop
-    while (this.running) {
-      try {
-        const prompt = await this.renderPrompt()
-        const input = await this.readLine(prompt)
-
-        if (input === null) {
-          // EOF (Ctrl+D)
-          break
-        }
-
-        if (input.trim()) {
-          const result = await this.execute(input)
-
-          if (result.stdout) {
-            process.stdout.write(result.stdout)
+      // Handle Ctrl+C
+      this.rl.on('SIGINT', () => {
+        this.log.info('(To exit, press Ctrl+D or type "exit")')
+        if (this.rl) {
+          try {
+            this.rl.prompt()
           }
-
-          if (result.stderr) {
-            process.stderr.write(result.stderr)
+          catch (error) {
+            this.log.error('Error prompting after SIGINT:', error)
           }
         }
-      }
-      catch (error) {
-        console.error('Shell error:', error)
+      })
+
+      // Main REPL loop
+      while (this.running) {
+        try {
+          const prompt = await this.renderPrompt()
+          const input = await this.readLine(prompt)
+
+          if (input === null) {
+            // EOF (Ctrl+D)
+            break
+          }
+
+          if (input.trim()) {
+            const result = await this.execute(input)
+
+            if (result.stdout) {
+              process.stdout.write(result.stdout)
+            }
+
+            if (result.stderr) {
+              process.stderr.write(result.stderr)
+            }
+          }
+        }
+        catch (error) {
+          this.log.error('Shell error:', error)
+          if (error instanceof Error && error.message.includes('readline was closed')) {
+            break // Exit the loop if readline was closed
+          }
+        }
       }
     }
-
-    this.stop()
+    catch (error) {
+      this.log.error('Fatal shell error:', error)
+    }
+    finally {
+      this.stop()
+    }
   }
 
   stop(): void {
     this.running = false
-    if (this.rl) {
-      this.rl.close()
-      this.rl = null
+
+    try {
+      if (this.rl) {
+        this.rl.close()
+        this.rl = null
+      }
     }
-    this.saveHistory()
+    catch (error) {
+      this.log.error('Error closing readline interface:', error)
+    }
+
+    try {
+      this.saveHistory()
+    }
+    catch (error) {
+      this.log.error('Error saving history:', error)
+    }
 
     // Execute shell:stop hooks
-    this.hookManager.executeHooks('shell:stop', {}).catch(console.error)
+    this.hookManager.executeHooks('shell:stop', {}).catch(err => this.log.error('shell:stop hook error:', err))
 
     // Shutdown plugins
-    this.pluginManager.shutdown().catch(console.error)
+    this.pluginManager.shutdown().catch(err => this.log.error('plugin shutdown error:', err))
 
     // Execute shell:exit hooks
-    this.hookManager.executeHooks('shell:exit', {}).catch(console.error)
+    this.hookManager.executeHooks('shell:exit', {}).catch(err => this.log.error('shell:exit hook error:', err))
   }
 
   async renderPrompt(): Promise<string> {
@@ -322,19 +370,19 @@ export class BunshShell implements Shell {
     this.history = this.historyManager.getHistory()
 
     // Execute history:add hooks
-    this.hookManager.executeHooks('history:add', { command }).catch(console.error)
+    this.hookManager.executeHooks('history:add', { command }).catch(err => this.log.error('history:add hook error:', err))
   }
 
   searchHistory(query: string): string[] {
     // Execute history:search hooks
-    this.hookManager.executeHooks('history:search', { query }).catch(console.error)
+    this.hookManager.executeHooks('history:search', { query }).catch(err => this.log.error('history:search hook error:', err))
 
     return this.historyManager.search(query)
   }
 
   getCompletions(input: string, cursor: number): string[] {
     // Execute completion:before hooks
-    this.hookManager.executeHooks('completion:before', { input, cursor }).catch(console.error)
+    this.hookManager.executeHooks('completion:before', { input, cursor }).catch(err => this.log.error('completion:before hook error:', err))
 
     const completions = this.completionProvider.getCompletions(input, cursor)
 
@@ -343,23 +391,66 @@ export class BunshShell implements Shell {
     completions.push(...pluginCompletions)
 
     // Execute completion:after hooks
-    this.hookManager.executeHooks('completion:after', { input, cursor, completions }).catch(console.error)
+    this.hookManager.executeHooks('completion:after', { input, cursor, completions }).catch(err => this.log.error('completion:after hook error:', err))
 
     return completions
   }
 
   private async executeCommandChain(parsed: ParsedCommand): Promise<CommandResult> {
     if (parsed.commands.length === 1) {
-      return this.executeSingleCommand(parsed.commands[0], parsed.redirects)
+      return this.executeSingleCommand(parsed.commands[0])
     }
 
     // Handle piped commands
-    return this.executePipedCommands(parsed.commands, parsed.redirects)
+    return this.executePipedCommands(parsed.commands)
   }
 
-  private async executeSingleCommand(command: any, redirects?: ParsedCommand['redirects']): Promise<CommandResult> {
-    // Expand aliases
-    const expandedCommand = this.expandAlias(command)
+  private async executeSingleCommand(command: any): Promise<CommandResult> {
+    if (!command?.name) {
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        duration: 0,
+      }
+    }
+
+    // Expand aliases with cycle detection
+    const expandedCommand = this.expandAliasWithCycleDetection(command)
+
+    // If the expanded command represents a pipeline constructed by alias expansion
+    if ((expandedCommand as any).pipe && Array.isArray((expandedCommand as any).pipeCommands)) {
+      const commands = [
+        { name: expandedCommand.name, args: expandedCommand.args },
+        ...((expandedCommand as any).pipeCommands as any[]).map(c => ({ name: c.name, args: c.args })),
+      ]
+      return this.executePipedCommands(commands)
+    }
+
+    // If the expanded command is a chain of sequential commands (separated by ;) from alias expansion
+    if ((expandedCommand as any).next) {
+      let current: any = expandedCommand
+      let aggregate: CommandResult | null = null
+
+      while (current) {
+        const res = await this.executeSingleCommand({ name: current.name, args: current.args })
+        if (!aggregate) {
+          aggregate = { ...res }
+        }
+        else {
+          aggregate = {
+            exitCode: res.exitCode,
+            stdout: (aggregate.stdout || '') + (res.stdout || ''),
+            stderr: (aggregate.stderr || '') + (res.stderr || ''),
+            duration: (aggregate.duration || 0) + (res.duration || 0),
+          }
+        }
+
+        current = current.next?.command
+      }
+
+      return aggregate || { exitCode: 0, stdout: '', stderr: '', duration: 0 }
+    }
 
     // Check if it's a builtin command
     if (this.builtins.has(expandedCommand.name)) {
@@ -368,10 +459,35 @@ export class BunshShell implements Shell {
     }
 
     // Execute external command
-    return this.executeExternalCommand(expandedCommand, redirects)
+    return this.executeExternalCommand(expandedCommand)
   }
 
-  private async executePipedCommands(commands: any[], redirects?: ParsedCommand['redirects']): Promise<CommandResult> {
+  /**
+   * Expands aliases with cycle detection to prevent infinite recursion
+   */
+  private expandAliasWithCycleDetection(command: any, visited: Set<string> = new Set()): any {
+    if (!command?.name)
+      return command
+
+    // Check for cycles
+    if (visited.has(command.name)) {
+      this.log.error(`Alias cycle detected: ${Array.from(visited).join(' -> ')} -> ${command.name}`)
+      return command
+    }
+
+    const expanded = this.expandAlias(command)
+
+    // If the command wasn't an alias, we're done
+    if (expanded === command) {
+      return command
+    }
+
+    // Continue expanding aliases in the expanded command
+    visited.add(command.name)
+    return this.expandAliasWithCycleDetection(expanded, visited)
+  }
+
+  private async executePipedCommands(commands: any[]): Promise<CommandResult> {
     // For now, implement simple pipe execution
     // This is a simplified version - full pipe implementation would be more complex
 
@@ -409,116 +525,222 @@ export class BunshShell implements Shell {
     return lastResult
   }
 
+  /**
+   * Expands a command if it matches a defined alias
+   * @param command The command to potentially expand
+   * @returns The expanded command or the original command if no alias was found
+   */
   private expandAlias(command: any): any {
-    if (this.aliases[command.name]) {
-      const aliasValue = this.aliases[command.name]
-      const aliasTokens = aliasValue.split(' ')
-      return {
-        ...command,
-        name: aliasTokens[0],
-        args: [...aliasTokens.slice(1), ...command.args],
+    if (!command?.name) {
+      return command
+    }
+
+    const aliasValue = this.aliases[command.name]
+    if (aliasValue === undefined) {
+      return command
+    }
+
+    // Handle empty alias
+    if (aliasValue === '') {
+      if (command.args.length > 0) {
+        return {
+          ...command,
+          name: command.args[0],
+          args: command.args.slice(1),
+        }
+      }
+      return { ...command, name: 'true', args: [] }
+    }
+
+    // Process the alias value
+    let processedValue = aliasValue.trim()
+    // Handle quoted numeric placeholders like "$1" so that quotes are preserved in output.
+    // We replace them with internal markers before general substitution and remove the quotes,
+    // then after tokenization we turn the markers back into literal quoted arguments.
+    const QUOTED_MARKER_PREFIX = '__BUNSH_QARG_'
+    processedValue = processedValue.replace(/"\$(\d+)"/g, (_m, num) => `${QUOTED_MARKER_PREFIX}${num}__`)
+    const hasArgs = command.args.length > 0
+    const endsWithSpace = aliasValue.endsWith(' ')
+    const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
+
+    // Handle environment variables first
+    processedValue = processedValue.replace(/\$([A-Z_]\w*)/gi, (_, varName) => {
+      return this.environment[varName] || ''
+    })
+
+    // Handle argument substitution
+    if (hasArgs) {
+      // Replace $@ with all arguments, properly quoted (to preserve grouping when tokenized later)
+      if (processedValue.includes('$@')) {
+        const quotedArgs = command.args.map((arg: string) =>
+          arg.includes(' ') ? `"${arg}"` : arg,
+        )
+        processedValue = processedValue.replace(/\$@/g, quotedArgs.join(' '))
+      }
+
+      // Replace $1, $2, etc. with specific arguments
+      processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
+        const index = Number.parseInt(num, 10) - 1
+        return command.args[index] !== undefined ? command.args[index] : ''
+      })
+
+      // If alias ends with space OR it doesn't contain placeholders, append remaining args
+      if (command.args.length > 0 && (endsWithSpace || !hasPlaceholders)) {
+        processedValue += ` ${command.args.join(' ')}`
       }
     }
-    return command
+    else {
+      // If no args but alias expects them, replace with empty string
+      processedValue = processedValue.replace(/\$@|\$\d+/g, '')
+    }
+
+    // Handle multiple commands separated by ;
+    const commandStrings = processedValue
+      .split(';')
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    if (commandStrings.length === 0) {
+      return command
+    }
+
+    // Process each command in the sequence
+    const processCommand = (cmdStr: string, isFirst: boolean = true) => {
+      // Handle pipes in the command
+      if (cmdStr.includes('|')) {
+        const pipeParts = cmdStr.split('|').map(part => part.trim())
+
+        // Process each part of the pipe
+        const pipeCommands = pipeParts.map((part) => {
+          const tokens = this.parser.tokenize(part)
+          const cmd = {
+            name: tokens[0] || '',
+            args: tokens.slice(1),
+          }
+
+          return cmd
+        })
+
+        // Return the first command with the rest as pipe commands
+        return {
+          ...pipeCommands[0],
+          pipe: true,
+          pipeCommands: pipeCommands.slice(1),
+        }
+      }
+
+      // No pipes, just a simple command
+      const tokens = this.parser.tokenize(cmdStr)
+      if (tokens.length === 0) {
+        return null
+      }
+
+      // For the first command, include the original command's context only for metadata
+      const baseCommand = isFirst ? { ...command } : {}
+
+      // Use only the tokens derived from processedValue; original args were appended above if needed
+      let finalArgs = tokens.slice(1)
+
+      // Post-process quoted numeric placeholders to re-insert literal quotes
+      // Example: __BUNSH_QARG_1__ -> "<arg1>"
+      finalArgs = finalArgs.map((arg) => {
+        const m = arg.match(/^__BUNSH_QARG_(\d+)__$/)
+        if (m) {
+          const idx = Number.parseInt(m[1], 10) - 1
+          const val = command.args[idx] !== undefined ? command.args[idx] : ''
+          // Only inject literal quotes if the argument requires quoting
+          const needsQuoting = /[^\w./:=\-]/.test(val) || /\s/.test(val)
+          return needsQuoting ? `"${val}"` : val
+        }
+        return arg
+      })
+
+      return {
+        ...baseCommand,
+        name: tokens[0],
+        args: finalArgs.filter(arg => arg !== ''),
+      }
+    }
+
+    // Process all commands in the sequence
+    const processedCommands = []
+    for (let i = 0; i < commandStrings.length; i++) {
+      const cmd = processCommand(commandStrings[i], i === 0)
+      if (cmd) {
+        processedCommands.push(cmd)
+      }
+    }
+
+    if (processedCommands.length === 0) {
+      return command
+    }
+
+    // If there's only one command, return it directly
+    if (processedCommands.length === 1) {
+      return processedCommands[0]
+    }
+
+    // For multiple commands, chain them together with ;
+    const result = { ...processedCommands[0] }
+    let current = result
+
+    for (let i = 1; i < processedCommands.length; i++) {
+      current.next = {
+        type: ';',
+        command: processedCommands[i],
+      }
+      current = current.next.command
+    }
+
+    return result
   }
 
-  private async executeExternalCommand(command: any, redirects?: ParsedCommand['redirects']): Promise<CommandResult> {
+  private async executeExternalCommand(command: any): Promise<CommandResult> {
     const start = performance.now()
 
-    return new Promise((resolve) => {
-      const child = spawn(command.name, command.args, {
-        cwd: this.cwd,
-        env: { ...this.environment },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+    // Set environment variables to ensure colors are preserved
+    const env = {
+      ...this.environment,
+      FORCE_COLOR: '3',
+      COLORTERM: 'truecolor',
+      TERM: 'xterm-256color',
+      CI: undefined, // Ensure CI is not set which would disable colors
+      BUN_FORCE_COLOR: '3', // Specifically for bun commands
+      NO_COLOR: undefined, // Ensure NO_COLOR is not set
+    }
 
-      let stdout = ''
-      let stderr = ''
-
-      child.stdout?.on('data', (data) => {
-        stdout += data.toString()
-      })
-
-      child.stderr?.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      child.on('error', (error) => {
-        resolve({
-          exitCode: 127,
-          stdout: '',
-          stderr: `bunsh: ${command.name}: command not found\n`,
-          duration: performance.now() - start,
-        })
-      })
-
-      child.on('close', (code) => {
-        resolve({
-          exitCode: code || 0,
-          stdout,
-          stderr,
-          duration: performance.now() - start,
-        })
-      })
-
-      // Handle background processes
-      if (command.background) {
-        console.log(`[${child.pid}] ${command.raw}`)
-        resolve({
-          exitCode: 0,
-          stdout: '',
-          stderr: '',
-          duration: performance.now() - start,
-        })
-      }
+    const child = spawn(command.name, command.args, {
+      cwd: this.cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+
+    // Use the common streaming process handler
+    return this.setupStreamingProcess(child, start, command)
   }
 
   private async executeWithInput(command: any, input: string): Promise<CommandResult> {
     const start = performance.now()
 
-    return new Promise((resolve) => {
-      const child = spawn(command.name, command.args, {
-        cwd: this.cwd,
-        env: { ...this.environment },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+    // Set environment variables to ensure colors are preserved
+    const env = {
+      ...this.environment,
+      FORCE_COLOR: '3',
+      COLORTERM: 'truecolor',
+      TERM: 'xterm-256color',
+      CI: undefined, // Ensure CI is not set which would disable colors
+      BUN_FORCE_COLOR: '3', // Specifically for bun commands
+      NO_COLOR: undefined, // Ensure NO_COLOR is not set
+    }
 
-      let stdout = ''
-      let stderr = ''
-
-      child.stdout?.on('data', (data) => {
-        stdout += data.toString()
-      })
-
-      child.stderr?.on('data', (data) => {
-        stderr += data.toString()
-      })
-
-      child.on('error', (error) => {
-        resolve({
-          exitCode: 127,
-          stdout: '',
-          stderr: `bunsh: ${command.name}: command not found\n`,
-          duration: performance.now() - start,
-        })
-      })
-
-      child.on('close', (code) => {
-        resolve({
-          exitCode: code || 0,
-          stdout,
-          stderr,
-          duration: performance.now() - start,
-        })
-      })
-
-      // Send input to the command
-      if (child.stdin) {
-        child.stdin.write(input)
-        child.stdin.end()
-      }
+    const child = spawn(command.name, command.args, {
+      cwd: this.cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+
+    // Use the common streaming process handler with input
+    return this.setupStreamingProcess(child, start, command, input)
   }
 
   private readLine(prompt: string): Promise<string | null> {
@@ -528,9 +750,52 @@ export class BunshShell implements Shell {
         return
       }
 
-      this.rl.question(prompt, (answer) => {
-        resolve(answer)
-      })
+      // Check if readline is in a usable state
+      try {
+        // Try to call a method to see if it's still valid
+        this.rl.getPrompt()
+      }
+      catch {
+        resolve(null)
+        return
+      }
+
+      // Set up error handler for the readline interface
+      const errorHandler = (error: any) => {
+        if (error.message?.includes('readline was closed') || error.code === 'ERR_USE_AFTER_CLOSE') {
+          resolve(null)
+        }
+        else {
+          this.log.error('Readline error:', error)
+          resolve(null)
+        }
+      }
+
+      // Add temporary error listener
+      this.rl.once('error', errorHandler)
+
+      try {
+        this.rl.question(prompt, (answer) => {
+          // Remove error listener on successful completion
+          this.rl?.removeListener('error', errorHandler)
+          resolve(answer)
+        })
+      }
+      catch (error: any) {
+        // Remove error listener on catch
+        this.rl?.removeListener('error', errorHandler)
+
+        if (error instanceof Error && (
+          error.message.includes('readline was closed')
+          || (error as any).code === 'ERR_USE_AFTER_CLOSE'
+        )) {
+          resolve(null)
+        }
+        else {
+          this.log.error('Error in readline:', error)
+          resolve(null)
+        }
+      }
     })
   }
 
@@ -541,7 +806,7 @@ export class BunshShell implements Shell {
     catch (error) {
       // Ignore history loading errors
       if (this.config.verbose) {
-        console.warn('Failed to load history:', error)
+        this.log.warn('Failed to load history:', error)
       }
     }
   }
@@ -553,8 +818,105 @@ export class BunshShell implements Shell {
     catch (error) {
       // Ignore history saving errors
       if (this.config.verbose) {
-        console.warn('Failed to save history:', error)
+        this.log.warn('Failed to save history:', error)
       }
     }
+  }
+
+  /**
+   * Helper method to set up streaming for a child process
+   * This ensures consistent handling of output streams across all command executions
+   */
+  private setupStreamingProcess(
+    child: ChildProcess,
+    start: number,
+    command: any,
+    input?: string,
+  ): Promise<CommandResult> {
+    return new Promise((resolve) => {
+      let stdout = ''
+      let stderr = ''
+
+      // Stream output in real-time by default, unless explicitly disabled or running in background
+      const shouldStream = !command.background && this.config.streamOutput !== false
+
+      // Handle stdout
+      child.stdout?.on('data', (data) => {
+        const dataStr = data.toString()
+        stdout += dataStr
+
+        // Stream output to console in real-time
+        if (shouldStream) {
+          process.stdout.write(dataStr)
+        }
+      })
+
+      // Handle stderr
+      child.stderr?.on('data', (data) => {
+        const dataStr = data.toString()
+        stderr += dataStr
+
+        // Stream error output in real-time
+        if (shouldStream) {
+          process.stderr.write(dataStr)
+        }
+      })
+
+      // Handle errors
+      child.on('error', (_error) => {
+        this.lastExitCode = 127
+        resolve({
+          exitCode: this.lastExitCode,
+          stdout: '',
+          stderr: `bunsh: ${command.name}: command not found\n`,
+          duration: performance.now() - start,
+        })
+      })
+
+      // Handle process completion
+      child.on('close', (code, signal) => {
+        // Update the shell's last exit code
+        let exitCode = code || 0
+
+        // Handle signals (like SIGTERM, SIGKILL)
+        if (signal) {
+          exitCode = signal === 'SIGTERM' ? 143 : 130
+        }
+
+        this.lastExitCode = exitCode
+
+        resolve({
+          exitCode: this.lastExitCode,
+          stdout,
+          stderr,
+          duration: performance.now() - start,
+        })
+      })
+
+      // Handle input if provided
+      if (input && child.stdin) {
+        try {
+          child.stdin?.setDefaultEncoding('utf-8')
+          child.stdin?.write(input)
+          child.stdin?.end()
+        }
+        catch (err) {
+          this.log.error('Error writing to stdin:', err)
+        }
+      }
+
+      // Handle background processes
+      if (command.background) {
+        this.log.info(`[${child.pid}] ${command.raw}`)
+        // For background processes, we don't wait for completion
+        this.lastExitCode = 0
+        resolve({
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          duration: performance.now() - start,
+        })
+      }
+    })
   }
 }

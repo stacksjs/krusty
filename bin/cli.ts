@@ -20,7 +20,7 @@ cli
   .action(async (args: string[], options: CliOptions) => {
     // If arguments are provided, execute them as a command
     if (args.length > 0) {
-      const shell = new BunshShell({ ...config, verbose: options.verbose })
+      const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
       const command = args.join(' ')
       const result = await shell.execute(command)
 
@@ -33,12 +33,44 @@ cli
     }
     else {
       // Start interactive shell
-      const shell = new BunshShell({ ...config, verbose: options.verbose })
+      const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
 
-      console.log(`Welcome to Bunsh v${version}`)
-      console.log('Type "help" for available commands or "exit" to quit.\n')
+      // Welcome message
+      process.stdout.write(`Welcome to Bunsh v${version}\n`)
+      process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
-      await shell.start()
+      // Graceful shutdown handlers
+      const onSigint = async () => {
+        try {
+          shell.stop()
+        }
+        finally {
+          process.stdout.write('\n')
+          process.exit(130) // 128 + SIGINT
+        }
+      }
+      const onSigterm = async () => {
+        try {
+          shell.stop()
+        }
+        finally {
+          process.exit(143) // 128 + SIGTERM
+        }
+      }
+      process.on('SIGINT', onSigint)
+      process.on('SIGTERM', onSigterm)
+
+      try {
+        await shell.start()
+      }
+      catch (err: any) {
+        process.stderr.write(`Shell error: ${err?.message ?? String(err)}\n`)
+        process.exitCode = 1
+      }
+      finally {
+        process.off('SIGINT', onSigint)
+        process.off('SIGTERM', onSigterm)
+      }
     }
   })
 
@@ -48,12 +80,43 @@ cli
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (options: CliOptions) => {
-    const shell = new BunshShell({ ...config, verbose: options.verbose })
+    const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
 
-    console.log(`Welcome to Bunsh v${version}`)
-    console.log('Type "help" for available commands or "exit" to quit.\n')
+    // Welcome message
+    process.stdout.write(`Welcome to Bunsh v${version}\n`)
+    process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
-    await shell.start()
+    const onSigint = async () => {
+      try {
+        shell.stop()
+      }
+      finally {
+        process.stdout.write('\n')
+        process.exit(130)
+      }
+    }
+    const onSigterm = async () => {
+      try {
+        shell.stop()
+      }
+      finally {
+        process.exit(143)
+      }
+    }
+    process.on('SIGINT', onSigint)
+    process.on('SIGTERM', onSigterm)
+
+    try {
+      await shell.start()
+    }
+    catch (err: any) {
+      process.stderr.write(`Shell error: ${err?.message ?? String(err)}\n`)
+      process.exitCode = 1
+    }
+    finally {
+      process.off('SIGINT', onSigint)
+      process.off('SIGTERM', onSigterm)
+    }
   })
 
 // Execute a single command
@@ -61,7 +124,7 @@ cli
   .command('exec <command>', 'Execute a single command')
   .option('--verbose', 'Enable verbose logging')
   .action(async (command: string, options: CliOptions) => {
-    const shell = new BunshShell({ ...config, verbose: options.verbose })
+    const shell = new BunshShell({ ...config, verbose: options.verbose ?? config.verbose })
     const result = await shell.execute(command)
 
     if (result.stdout)
@@ -74,7 +137,7 @@ cli
 
 // Version command
 cli.command('version', 'Show the version').action(() => {
-  console.log(version)
+  process.stdout.write(`${version}\n`)
 })
 
 cli.version(version)

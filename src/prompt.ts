@@ -30,7 +30,14 @@ export class PromptRenderer {
     result = result.replace(/\{user\}/g, this.renderUser(systemInfo))
     result = result.replace(/\{host\}/g, this.renderHost(systemInfo))
     result = result.replace(/\{path\}/g, this.renderPath(cwd))
-    result = result.replace(/\{git\}/g, this.renderGit(gitInfo))
+
+    // Render git asynchronously since it now uses modules
+    const gitContent = await this.renderGit(gitInfo, cwd)
+    result = result.replace(/\{git\}/g, gitContent)
+
+    const modulesContent = this.renderModules(systemInfo, gitInfo)
+    result = result.replace(/\{modules\}/g, modulesContent)
+
     result = result.replace(/\{symbol\}/g, this.renderSymbol(exitCode))
     result = result.replace(/\{exitcode\}/g, this.renderExitCode(exitCode))
     result = result.replace(/\{time\}/g, this.renderTime())
@@ -73,58 +80,62 @@ export class PromptRenderer {
     return this.colorize(displayPath, this.config.theme?.colors?.primary || '#00D9FF')
   }
 
-  private renderGit(gitInfo: GitInfo): string {
+  private async renderGit(gitInfo: GitInfo, _cwd: string): Promise<string> {
     if (!this.config.prompt?.showGit || !gitInfo.isRepo)
       return ''
 
     const segments: string[] = []
-    const symbols = this.config.theme?.symbols?.git || {}
 
-    // Branch name
+    // Add branch name with custom symbol if available
+    const branchSymbol = this.config.theme?.symbols?.git?.branch || '⎇'
     if (gitInfo.branch) {
-      const branchSymbol = symbols.branch || ''
-      const branchColor = gitInfo.isDirty
-        ? this.config.theme?.colors?.warning || '#FFD700'
-        : this.config.theme?.colors?.success || '#00FF88'
-
-      segments.push(this.colorize(`${branchSymbol}${gitInfo.branch}`, branchColor))
+      segments.push(this.colorize(`${branchSymbol} ${gitInfo.branch}`, '#a855f7'))
     }
 
-    // Ahead/behind indicators
-    if (gitInfo.ahead && gitInfo.ahead > 0) {
-      const aheadSymbol = symbols.ahead || '⇡'
-      segments.push(this.colorize(`${aheadSymbol}${gitInfo.ahead}`, this.config.theme?.colors?.info || '#74B9FF'))
-    }
+    // Add status indicators in a compact format
+    const statusParts: string[] = []
 
-    if (gitInfo.behind && gitInfo.behind > 0) {
-      const behindSymbol = symbols.behind || '⇣'
-      segments.push(this.colorize(`${behindSymbol}${gitInfo.behind}`, this.config.theme?.colors?.warning || '#FFD700'))
-    }
-
-    // Status indicators
+    // Staged changes in green
     if (gitInfo.staged && gitInfo.staged > 0) {
-      const stagedSymbol = symbols.staged || '●'
-      segments.push(this.colorize(`${stagedSymbol}${gitInfo.staged}`, this.config.theme?.colors?.success || '#00FF88'))
+      statusParts.push(this.colorize(`●${gitInfo.staged}`, '#00FF88'))
     }
 
+    // Unstaged changes in yellow
     if (gitInfo.unstaged && gitInfo.unstaged > 0) {
-      const unstagedSymbol = symbols.unstaged || '○'
-      segments.push(this.colorize(`${unstagedSymbol}${gitInfo.unstaged}`, this.config.theme?.colors?.warning || '#FFD700'))
+      statusParts.push(this.colorize(`○${gitInfo.unstaged}`, '#FFD700'))
     }
 
+    // Untracked files in red
     if (gitInfo.untracked && gitInfo.untracked > 0) {
-      const untrackedSymbol = symbols.untracked || '?'
-      segments.push(this.colorize(`${untrackedSymbol}${gitInfo.untracked}`, this.config.theme?.colors?.error || '#FF4757'))
+      statusParts.push(this.colorize(`?${gitInfo.untracked}`, '#FF4757'))
     }
 
-    return segments.length > 0 ? ` (${segments.join(' ')})` : ''
+    // Add status indicators if any
+    if (statusParts.length > 0) {
+      segments.push(`[${statusParts.join('')}]`)
+    }
+
+    // Add ahead/behind information if available
+    if (gitInfo.ahead || gitInfo.behind) {
+      const aheadBehind = []
+      if (gitInfo.ahead)
+        aheadBehind.push(this.colorize(`⇡${gitInfo.ahead}`, '#00FF88'))
+      if (gitInfo.behind)
+        aheadBehind.push(this.colorize(`⇣${gitInfo.behind}`, '#FFD700'))
+      if (aheadBehind.length > 0) {
+        segments.push(`(${aheadBehind.join(' ')})`)
+      }
+    }
+
+    return segments.length > 0 ? ` ${segments.join(' ')}` : ''
   }
 
   private renderSymbol(exitCode: number): string {
     const symbol = this.config.theme?.symbols?.prompt || '❯'
+    // Use different colors based on exit code
     const color = exitCode === 0
-      ? this.config.theme?.colors?.success || '#00FF88'
-      : this.config.theme?.colors?.error || '#FF4757'
+      ? this.config.theme?.colors?.primary || '#00D9FF' // Success: turquoise
+      : this.config.theme?.colors?.error || '#FF4757' // Error: red
 
     return this.colorize(symbol, color)
   }
@@ -141,6 +152,94 @@ export class PromptRenderer {
     const now = new Date()
     const timeString = now.toLocaleTimeString('en-US', { hour12: false })
     return this.colorize(timeString, this.config.theme?.colors?.info || '#74B9FF')
+  }
+
+  private renderModules(systemInfo: SystemInfo, _gitInfo: GitInfo): string {
+    const modules = []
+
+    // Add bun version if available
+    if (systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
+      modules.push(this.colorize(`🧅 ${systemInfo.bunVersion}`, this.config.theme?.colors?.primary || '#00D9FF'))
+    }
+
+    // Detect project type - prioritize Bun over Node.js
+    if (this.hasFile('package.json')) {
+      const packageJson = this.readPackageJson()
+
+      // Check if it's a Bun project
+      if (this.isBunProject(packageJson)) {
+        // Don't show bun module again if we already showed the version above
+        if (!systemInfo.bunVersion || systemInfo.bunVersion === 'unknown') {
+          modules.push(this.colorize('🧅 bun', this.config.theme?.colors?.primary || '#00D9FF'))
+        }
+      }
+      else {
+        // It's a Node.js project
+        modules.push(this.colorize('⬢ node', this.config.theme?.colors?.success || '#00FF88'))
+      }
+    }
+
+    // Detect Python projects
+    if (this.hasFile('requirements.txt') || this.hasFile('pyproject.toml') || this.hasFile('setup.py')) {
+      modules.push(this.colorize('🐍 python', this.config.theme?.colors?.warning || '#FFD700'))
+    }
+
+    // Detect Go projects
+    if (this.hasFile('go.mod') || this.hasFile('go.sum')) {
+      modules.push(this.colorize('🐹 go', this.config.theme?.colors?.info || '#74B9FF'))
+    }
+
+    // Detect Rust projects
+    if (this.hasFile('Cargo.toml')) {
+      modules.push(this.colorize('🦀 rust', this.config.theme?.colors?.error || '#FF4757'))
+    }
+
+    // Detect Docker projects
+    if (this.hasFile('Dockerfile') || this.hasFile('docker-compose.yml')) {
+      modules.push(this.colorize('🐳 docker', this.config.theme?.colors?.info || '#74B9FF'))
+    }
+
+    return modules.length > 0 ? modules.join(' ') : ''
+  }
+
+  private hasFile(filename: string): boolean {
+    try {
+      return existsSync(join(process.cwd(), filename))
+    }
+    catch {
+      return false
+    }
+  }
+
+  private readPackageJson(): any {
+    try {
+      const packageJsonPath = join(process.cwd(), 'package.json')
+      if (existsSync(packageJsonPath)) {
+        // eslint-disable-next-line ts/no-require-imports
+        const { readFileSync } = require('node:fs')
+        return JSON.parse(readFileSync(packageJsonPath, 'utf-8'))
+      }
+    }
+    catch {
+      // Ignore errors
+    }
+    return null
+  }
+
+  private isBunProject(packageJson: any): boolean {
+    if (!packageJson)
+      return false
+
+    // Check for Bun-specific indicators
+    return !!(
+      packageJson.type === 'module'
+      || packageJson.scripts?.bun
+      || packageJson.dependencies?.bun
+      || packageJson.devDependencies?.bun
+      || packageJson.peerDependencies?.bun
+      || this.hasFile('bun.lockb')
+      || this.hasFile('bunfig.toml')
+    )
   }
 
   colorize(text: string, color: string): string {
@@ -211,7 +310,7 @@ export class SystemInfoProvider {
     const platformName = platform()
     const architecture = arch()
 
-    let nodeVersion = process.version
+    const nodeVersion = process.version
     let bunVersion = 'unknown'
 
     try {

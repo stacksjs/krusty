@@ -14,6 +14,7 @@ export class ModuleUtils {
 
   static hasExtensions(context: ModuleContext, extensions: string[]): boolean {
     try {
+      // eslint-disable-next-line ts/no-require-imports
       const entries = require('node:fs').readdirSync(context.cwd)
       return entries.some((entry: string) =>
         extensions.some(ext => entry.endsWith(ext)),
@@ -60,7 +61,8 @@ export class ModuleUtils {
 export abstract class BaseModule implements Module {
   abstract name: string
   abstract enabled: boolean
-  abstract config?: Record<string, any>
+  // Optional config that modules may use; not abstract to avoid forcing implementation in subclasses
+  config?: Record<string, any>
 
   abstract detect(context: ModuleContext): boolean
   abstract render(context: ModuleContext): Promise<ModuleResult | null>
@@ -114,4 +116,4 @@ export class ModuleRegistry {
 }
 
 // Create default module registry
-export const moduleRegistry = new ModuleRegistry()
+export const moduleRegistry: ModuleRegistry = new ModuleRegistry()

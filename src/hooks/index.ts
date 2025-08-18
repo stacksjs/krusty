@@ -5,7 +5,6 @@ import type {
   HookContext,
   HookHandler,
   HookResult,
-  HooksConfig,
   Shell,
 } from '../types'
 import { exec } from 'node:child_process'
@@ -43,7 +42,7 @@ export class HookManager {
           this.registerHook(event, hookConfig)
         }
         catch (error) {
-          console.error(`Failed to register hook for ${event}:`, error)
+          this.shell.log.error(`Failed to register hook for ${event}:`, error)
         }
       }
     }
@@ -236,36 +235,43 @@ export class HookManager {
     let result = false
 
     switch (type) {
-      case 'env':
+      case 'env': {
         const envValue = context.environment[value]
         result = !!envValue
         break
+      }
 
-      case 'file':
+      case 'file': {
         const filePath = this.expandPath(value)
         result = existsSync(filePath) && statSync(filePath).isFile()
         break
+      }
 
-      case 'directory':
+      case 'directory': {
         const dirPath = this.expandPath(value)
         result = existsSync(dirPath) && statSync(dirPath).isDirectory()
         break
+      }
 
-      case 'command':
+      case 'command': {
         // For command conditions, we check if the command exists
         try {
-          require('node:child_process').execSync(`which ${value}`, { stdio: 'ignore' })
+          // eslint-disable-next-line ts/no-require-imports
+          const { execSync } = require('node:child_process')
+          execSync(`which ${value}`, { stdio: 'ignore' })
           result = true
         }
         catch {
           result = false
         }
         break
+      }
 
-      case 'custom':
+      case 'custom': {
         // Custom conditions can be implemented by plugins
         result = this.evaluateCustomCondition(value, context)
         break
+      }
     }
 
     // Apply operator
@@ -280,6 +286,7 @@ export class HookManager {
   private evaluateCustomCondition(condition: string, context: HookContext): boolean {
     try {
       // Simple expression evaluation - in production, use a proper expression parser
+      // eslint-disable-next-line no-new-func
       const func = new Function('context', `return ${condition}`)
       return !!func(context)
     }
@@ -309,30 +316,39 @@ export class HookManager {
         event,
         data,
         config: this.config,
-        environment: { ...process.env, ...this.shell.environment },
+        environment: Object.fromEntries(
+          Object.entries({ ...process.env, ...this.shell.environment })
+            .filter(([_, value]) => value !== undefined),
+        ) as Record<string, string>,
         cwd: this.shell.cwd,
         timestamp: Date.now(),
       }
 
       const results: HookResult[] = []
-      let preventDefault = false
+      let _preventDefault = false
       let stopPropagation = false
 
       for (const hook of hooks) {
         if (stopPropagation)
           break
 
+        // Check conditions before executing
+        if (hook.config.conditions && !this.checkConditions(hook.config.conditions, context)) {
+          continue
+        }
+
         try {
           const timeout = hook.config.timeout || 5000
+          const handlerResult = hook.handler(context)
           const result = await this.executeWithTimeout(
-            hook.handler(context),
+            Promise.resolve(handlerResult),
             timeout,
           )
 
           results.push(result)
 
           if (result.preventDefault) {
-            preventDefault = true
+            _preventDefault = true
           }
 
           if (result.stopPropagation) {

@@ -1,5 +1,8 @@
+import type { Logger } from './logger'
+
 export interface BunshConfig {
   verbose: boolean
+  streamOutput?: boolean
   prompt?: PromptConfig
   history?: HistoryConfig
   completion?: CompletionConfig
@@ -9,6 +12,7 @@ export interface BunshConfig {
   theme?: ThemeConfig
   modules?: ModuleConfig
   hooks?: HooksConfig
+  logging?: LoggingConfig
 }
 
 export interface PromptConfig {
@@ -38,7 +42,51 @@ export interface CompletionConfig {
   maxSuggestions?: number
 }
 
+export interface LoggingConfig {
+  prefixes?: {
+    debug?: string
+    info?: string
+    warn?: string
+    error?: string
+  }
+}
+
+export interface ThemeFontConfig {
+  /**
+   * Font family for the terminal
+   * @example '"JetBrains Mono", monospace'
+   */
+  family?: string
+
+  /**
+   * Base font size in pixels
+   * @default 14
+   */
+  size?: number
+
+  /**
+   * Font weight (100-900)
+   * @default 400
+   */
+  weight?: 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 'normal' | 'bold' | 'lighter' | 'bolder'
+
+  /**
+   * Line height as a multiplier of font size
+   * @default 1.4
+   */
+  lineHeight?: number
+
+  /**
+   * Enable/disable ligatures
+   * @default false
+   */
+  ligatures?: boolean
+}
+
 export interface ThemeConfig {
+  /**
+   * Color scheme configuration
+   */
   colors?: {
     primary?: string
     secondary?: string
@@ -47,6 +95,10 @@ export interface ThemeConfig {
     error?: string
     info?: string
   }
+
+  /**
+   * Terminal symbols configuration
+   */
   symbols?: {
     prompt?: string
     continuation?: string
@@ -59,6 +111,16 @@ export interface ThemeConfig {
       untracked?: string
     }
   }
+
+  /**
+   * Font configuration
+   */
+  font?: ThemeFontConfig
+
+  /**
+   * CSS to inject when this theme is active
+   */
+  css?: string
 }
 
 export interface CommandResult {
@@ -99,11 +161,13 @@ export interface Shell {
   history: string[]
   aliases: Record<string, string>
   builtins: Map<string, BuiltinCommand>
+  log: Logger
 
   // Core methods
   execute: (command: string) => Promise<CommandResult>
   parseCommand: (input: string) => ParsedCommand
   changeDirectory: (path: string) => boolean
+  reload: () => Promise<CommandResult>
 
   // REPL methods
   start: () => Promise<void>
@@ -164,6 +228,13 @@ export interface ModuleContext {
   environment: Record<string, string>
   gitInfo?: GitInfo
   systemInfo?: SystemInfo
+  config?: ModuleConfig
+  logger: {
+    debug: (message: string, ...args: any[]) => void
+    info: (message: string, ...args: any[]) => void
+    warn: (message: string, ...args: any[]) => void
+    error: (message: string, ...args: any[]) => void
+  }
 }
 
 export interface ModuleResult {
@@ -207,6 +278,13 @@ export interface ModuleConfig {
     detect_extensions?: string[]
   }
   deno?: {
+    enabled?: boolean
+    format?: string
+    symbol?: string
+    detect_files?: string[]
+    detect_extensions?: string[]
+  }
+  nodejs?: {
     enabled?: boolean
     format?: string
     symbol?: string
@@ -361,79 +439,64 @@ export interface ModuleConfig {
     enabled?: boolean
     format?: string
     commit_hash_length?: number
-    only_detached?: boolean
   }
   git_state?: {
     enabled?: boolean
     format?: string
+    cherry_pick?: string
     rebase?: string
     merge?: string
     revert?: string
-    cherry_pick?: string
     bisect?: string
     am?: string
-    am_or_rebase?: string
+    progress_format?: string
   }
   git_status?: {
     enabled?: boolean
     format?: string
     ahead?: string
     behind?: string
-    diverged?: string
     conflicted?: string
     deleted?: string
-    renamed?: string
+    diverged?: string
     modified?: string
+    renamed?: string
     staged?: string
+    stashed?: string
     untracked?: string
+    typechanged?: string
   }
   git_metrics?: {
     enabled?: boolean
     format?: string
-    added_style?: string
-    deleted_style?: string
   }
 
   // System modules
   os?: {
     enabled?: boolean
     format?: string
-    symbols?: Record<string, string>
+    symbol?: string
   }
   hostname?: {
     enabled?: boolean
     format?: string
     ssh_only?: boolean
-    trim_at?: string
   }
   directory?: {
     enabled?: boolean
     format?: string
     truncation_length?: number
     truncate_to_repo?: boolean
-    fish_style_pwd_dir_length?: number
-    use_logical_path?: boolean
     home_symbol?: string
   }
   username?: {
     enabled?: boolean
     format?: string
     show_always?: boolean
-    aliases?: Record<string, string>
   }
   shell?: {
     enabled?: boolean
     format?: string
-    bash_indicator?: string
-    fish_indicator?: string
-    zsh_indicator?: string
-    powershell_indicator?: string
-    ion_indicator?: string
-    elvish_indicator?: string
-    tcsh_indicator?: string
-    nu_indicator?: string
-    xonsh_indicator?: string
-    cmd_indicator?: string
   }
   battery?: {
     enabled?: boolean
@@ -443,17 +506,12 @@ export interface ModuleConfig {
     discharging_symbol?: string
     unknown_symbol?: string
     empty_symbol?: string
-    display?: Array<{
-      threshold: number
-      style: string
-    }>
   }
   cmd_duration?: {
     enabled?: boolean
     format?: string
     min_time?: number
     show_milliseconds?: boolean
-    show_notifications?: boolean
   }
   memory_usage?: {
     enabled?: boolean
@@ -464,9 +522,6 @@ export interface ModuleConfig {
   time?: {
     enabled?: boolean
     format?: string
-    time_format?: string
-    utc_time_offset?: string
-    time_range?: string
   }
   nix_shell?: {
     enabled?: boolean
@@ -476,6 +531,7 @@ export interface ModuleConfig {
     pure_msg?: string
     unknown_msg?: string
   }
+
   env_var?: Record<string, {
     enabled?: boolean
     format?: string
@@ -512,20 +568,20 @@ export interface Plugin {
   version: string
   description?: string
   author?: string
-  
+
   // Plugin lifecycle methods
-  initialize?(context: PluginContext): Promise<void> | void
-  activate?(context: PluginContext): Promise<void> | void
-  deactivate?(context: PluginContext): Promise<void> | void
-  destroy?(context: PluginContext): Promise<void> | void
-  
+  initialize?: (context: PluginContext) => Promise<void> | void
+  activate?: (context: PluginContext) => Promise<void> | void
+  deactivate?: (context: PluginContext) => Promise<void> | void
+  destroy?: (context: PluginContext) => Promise<void> | void
+
   // Plugin capabilities
   commands?: Record<string, PluginCommand>
   modules?: Module[]
   hooks?: Record<string, HookHandler>
   completions?: PluginCompletion[]
   aliases?: Record<string, string>
-  
+
   // Plugin metadata
   dependencies?: string[]
   bunshVersion?: string
@@ -552,19 +608,19 @@ export interface PluginCompletion {
 }
 
 export interface PluginLogger {
-  debug(message: string, ...args: any[]): void
-  info(message: string, ...args: any[]): void
-  warn(message: string, ...args: any[]): void
-  error(message: string, ...args: any[]): void
+  debug: (message: string, ...args: any[]) => void
+  info: (message: string, ...args: any[]) => void
+  warn: (message: string, ...args: any[]) => void
+  error: (message: string, ...args: any[]) => void
 }
 
 export interface PluginUtils {
-  exec(command: string, options?: any): Promise<{ stdout: string, stderr: string, exitCode: number }>
-  readFile(path: string): Promise<string>
-  writeFile(path: string, content: string): Promise<void>
-  exists(path: string): boolean
-  expandPath(path: string): string
-  formatTemplate(template: string, variables: Record<string, string>): string
+  exec: (command: string, options?: any) => Promise<{ stdout: string, stderr: string, exitCode: number }>
+  readFile: (path: string) => Promise<string>
+  writeFile: (path: string, content: string) => Promise<void>
+  exists: (path: string) => boolean
+  expandPath: (path: string) => string
+  formatTemplate: (template: string, variables: Record<string, string>) => string
 }
 
 // Hooks system types
@@ -574,30 +630,30 @@ export interface HooksConfig {
   'shell:start'?: HookConfig[]
   'shell:stop'?: HookConfig[]
   'shell:exit'?: HookConfig[]
-  
+
   // Command hooks
   'command:before'?: HookConfig[]
   'command:after'?: HookConfig[]
   'command:error'?: HookConfig[]
-  
+
   // Prompt hooks
   'prompt:before'?: HookConfig[]
   'prompt:after'?: HookConfig[]
   'prompt:render'?: HookConfig[]
-  
+
   // Directory hooks
   'directory:change'?: HookConfig[]
   'directory:enter'?: HookConfig[]
   'directory:leave'?: HookConfig[]
-  
+
   // History hooks
   'history:add'?: HookConfig[]
   'history:search'?: HookConfig[]
-  
+
   // Completion hooks
   'completion:before'?: HookConfig[]
   'completion:after'?: HookConfig[]
-  
+
   // Custom hooks
   [key: string]: HookConfig[] | undefined
 }

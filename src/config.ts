@@ -3,6 +3,15 @@ import { loadConfig } from 'bunfig'
 
 export const defaultConfig: BunshConfig = {
   verbose: false,
+  streamOutput: true,
+  logging: {
+    prefixes: {
+      debug: 'DEBUG',
+      info: 'INFO',
+      warn: 'WARN',
+      error: 'ERROR',
+    },
+  },
   prompt: {
     format: '{user}@{host} {path}{git} {symbol} ',
     showGit: true,
@@ -37,6 +46,14 @@ export const defaultConfig: BunshConfig = {
       warning: '#FFD700',
       error: '#FF4757',
       info: '#74B9FF',
+    },
+    font: {
+      // Default to system monospace font stack with fallbacks
+      family: 'ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace',
+      size: 14,
+      weight: 'normal',
+      lineHeight: 1.4,
+      ligatures: false,
     },
     symbols: {
       prompt: '❯',
@@ -179,3 +196,11 @@ export const config: BunshConfig = await loadConfig({
   name: 'bunsh',
   defaultConfig,
 })
+
+// Provide a reusable loader that always fetches the latest config from disk
+export async function loadBunshConfig(): Promise<BunshConfig> {
+  return await loadConfig({
+    name: 'bunsh',
+    defaultConfig,
+  })
+}

@@ -38,7 +38,8 @@ describe('PromptRenderer', () => {
       testConfig.prompt!.format = '{user}@{host} {symbol} '
       const prompt = await renderer.render('/home/user', mockSystemInfo, mockGitInfo, 0)
       // Remove ANSI color codes for testing
-      const cleanPrompt = prompt.replace(/\x1b\[[0-9;]*m/g, '')
+      // eslint-disable-next-line no-control-regex
+      const cleanPrompt = prompt.replace(/\x1B\[[0-9;]*m/g, '')
       expect(cleanPrompt).toContain('testuser@testhost')
       expect(cleanPrompt).toContain('❯')
     })
@@ -124,7 +125,8 @@ describe('PromptRenderer', () => {
       testConfig.prompt!.format = '{exitcode}{symbol} '
       testConfig.prompt!.showExitCode = true
       const prompt = await renderer.render('/home/user', mockSystemInfo, mockGitInfo, 0)
-      const cleanPrompt = prompt.replace(/\x1b\[[0-9;]*m/g, '')
+      // eslint-disable-next-line no-control-regex
+      const cleanPrompt = prompt.replace(/\x1B\[[0-9;]*m/g, '')
       expect(cleanPrompt).not.toContain('0')
     })
 

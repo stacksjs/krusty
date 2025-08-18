@@ -91,7 +91,7 @@ export class HistoryManager {
         .filter(line => line.trim())
         .slice(-this.config.maxEntries!)
     }
-    catch (error) {
+    catch {
       // Silently fail - history is not critical
     }
   }
@@ -109,7 +109,7 @@ export class HistoryManager {
       const content = this.history.join('\n')
       writeFileSync(filePath, content, 'utf-8')
     }
-    catch (error) {
+    catch {
       // Silently fail - history saving is not critical
     }
   }

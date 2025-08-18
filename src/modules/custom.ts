@@ -1,41 +1,117 @@
 import type { ModuleContext, ModuleResult } from '../types'
-import { exec } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
 import { BaseModule, ModuleUtils } from './index'
 
-const execAsync = promisify(exec)
+// Custom module for user-defined modules
+export class CustomModule extends BaseModule {
+  name: string
+  enabled: boolean
+  config: Record<string, any>
 
-// Environment variable module
-export class EnvVarModule extends BaseModule {
-  name = 'env_var'
-  enabled = true
-
-  constructor(
-    private varName: string,
-    private config: {
-      enabled?: boolean
-      format?: string
-      symbol?: string
-      variable?: string
-      default?: string
-    } = {},
-  ) {
+  constructor(name: string, config: Record<string, any>) {
     super()
+    this.name = name
+    this.enabled = config.enabled !== false
+    this.config = config
   }
 
   detect(context: ModuleContext): boolean {
-    if (!this.isEnabled(this.config))
-      return false
+    const { when, files, extensions, directories } = this.config
 
-    const variable = this.config.variable || this.varName
-    return !!(context.environment[variable] || this.config.default)
+    // Check custom condition
+    if (typeof when === 'string') {
+      try {
+        const func = new Function('context', `return ${when}`)
+        if (!func(context))
+          return false
+      }
+      catch {
+        return false
+      }
+    }
+    else if (when === false) {
+      return false
+    }
+
+    // Check for specific files
+    if (Array.isArray(files) && files.length > 0) {
+      if (!ModuleUtils.hasFiles(context, files))
+        return false
+    }
+
+    // Check for file extensions
+    if (Array.isArray(extensions) && extensions.length > 0) {
+      if (!ModuleUtils.hasExtensions(context, extensions))
+        return false
+    }
+
+    // Check for directories
+    if (Array.isArray(directories) && directories.length > 0) {
+      if (!ModuleUtils.hasDirectories(context, directories))
+        return false
+    }
+
+    return true
   }
 
   async render(context: ModuleContext): Promise<ModuleResult | null> {
-    const variable = this.config.variable || this.varName
-    const value = context.environment[variable] || this.config.default
+    const { format, symbol, command } = this.config
+
+    // If command is provided, execute it and use output
+    if (command) {
+      try {
+        const output = await ModuleUtils.getCommandOutput(command)
+        if (!output)
+          return null
+
+        const content = format
+          ? ModuleUtils.formatTemplate(format, { symbol: symbol || '', output })
+          : output
+
+        return this.formatResult(content, {
+          color: this.config.color || '#6b7280',
+          bold: this.config.bold,
+          italic: this.config.italic,
+        })
+      }
+      catch {
+        return null
+      }
+    }
+
+    // Otherwise use static content
+    const content = format
+      ? ModuleUtils.formatTemplate(format, { symbol: symbol || '' })
+      : symbol || this.name
+
+    return this.formatResult(content, {
+      color: this.config.color || '#6b7280',
+      bold: this.config.bold,
+      italic: this.config.italic,
+    })
+  }
+}
+
+// Environment variable module
+export class EnvVarModule extends BaseModule {
+  name: string
+  enabled: boolean
+  config: Record<string, any>
+
+  constructor(name: string, config: Record<string, any>) {
+    super()
+    this.name = name
+    this.enabled = config.enabled !== false
+    this.config = config
+  }
+
+  detect(context: ModuleContext): boolean {
+    const varName = this.config.variable || this.name.replace('env_var.', '')
+    return !!context.environment[varName]
+  }
+
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    const varName = this.config.variable || this.name.replace('env_var.', '')
+    const value = context.environment[varName] || this.config.default
 
     if (!value)
       return null
@@ -46,129 +122,34 @@ export class EnvVarModule extends BaseModule {
     const content = ModuleUtils.formatTemplate(format, {
       symbol,
       value,
-      variable,
+      name: varName,
     })
 
-    return this.formatResult(content, { color: '#6b7280' })
+    return this.formatResult(content, {
+      color: this.config.color || '#6b7280',
+      bold: this.config.bold,
+      italic: this.config.italic,
+    })
   }
 }
 
-// Custom command module
-export class CustomModule extends BaseModule {
-  name = 'custom'
-  enabled = true
+// Factory function to create custom modules from config
+export function createCustomModules(config: Record<string, any>): BaseModule[] {
+  const modules: BaseModule[] = []
 
-  constructor(
-    private moduleName: string,
-    private config: {
-      enabled?: boolean
-      format?: string
-      symbol?: string
-      command?: string
-      when?: string | boolean
-      shell?: string[]
-      description?: string
-      files?: string[]
-      extensions?: string[]
-      directories?: string[]
-    } = {},
-  ) {
-    super()
-    this.name = `custom_${moduleName}`
-  }
-
-  detect(context: ModuleContext): boolean {
-    if (!this.isEnabled(this.config))
-      return false
-
-    // Check file/extension/directory conditions
-    if (this.config.files && !ModuleUtils.hasFiles(context, this.config.files)) {
-      return false
-    }
-
-    if (this.config.extensions && !ModuleUtils.hasExtensions(context, this.config.extensions)) {
-      return false
-    }
-
-    if (this.config.directories && !ModuleUtils.hasDirectories(context, this.config.directories)) {
-      return false
-    }
-
-    // Check when condition
-    if (this.config.when !== undefined) {
-      if (typeof this.config.when === 'boolean') {
-        return this.config.when
-      }
-
-      if (typeof this.config.when === 'string') {
-        return this.evaluateWhenCondition(this.config.when, context)
-      }
-    }
-
-    return true
-  }
-
-  async render(context: ModuleContext): Promise<ModuleResult | null> {
-    if (!this.config.command)
-      return null
-
-    try {
-      const output = await this.executeCommand(this.config.command, context)
-      if (!output || output.trim() === '')
-        return null
-
-      const symbol = this.config.symbol || ''
-      const format = this.config.format || '{symbol}{output}'
-
-      const content = ModuleUtils.formatTemplate(format, {
-        symbol,
-        output: output.trim(),
-      })
-
-      return this.formatResult(content, { color: '#6b7280' })
-    }
-    catch {
-      return null
+  // Create custom modules
+  if (config.custom) {
+    for (const [name, moduleConfig] of Object.entries(config.custom)) {
+      modules.push(new CustomModule(`custom.${name}`, moduleConfig as Record<string, any>))
     }
   }
 
-  private async executeCommand(command: string, context: ModuleContext): Promise<string | null> {
-    try {
-      const shell = this.config.shell || ['/bin/sh', '-c']
-      const fullCommand = shell.length > 1
-        ? `${shell[0]} ${shell.slice(1).join(' ')} "${command}"`
-        : `${shell[0]} "${command}"`
-
-      const { stdout } = await execAsync(fullCommand, {
-        cwd: context.cwd,
-        env: { ...process.env, ...context.environment },
-        timeout: 10000, // 10 second timeout
-      })
-
-      return stdout
-    }
-    catch {
-      return null
+  // Create environment variable modules
+  if (config.env_var) {
+    for (const [name, moduleConfig] of Object.entries(config.env_var)) {
+      modules.push(new EnvVarModule(`env_var.${name}`, moduleConfig as Record<string, any>))
     }
   }
 
-  private evaluateWhenCondition(condition: string, context: ModuleContext): boolean {
-    try {
-      // Simple condition evaluation - in a real implementation, you'd want a proper expression parser
-      // For now, just check if it's a command that exits successfully
-      return this.executeCommand(condition, context).then(output => output !== null).catch(() => false)
-    }
-    catch {
-      return false
-    }
-  }
-}
-
-// Factory functions for creating modules
-export function createEnvVarModule(name: string, config: any): EnvVarModule {
-  return new EnvVarModule(name, config)
-}
-
-export function createCustomModule(name: string, config: any): CustomModule {
-  return new CustomModule(name, config)
+  return modules
 }

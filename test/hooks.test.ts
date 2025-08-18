@@ -1,4 +1,4 @@
-import type { BunshConfig, HookConfig, HookContext, HookResult } from '../src/types'
+import type { BunshConfig, HookConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -243,7 +243,7 @@ describe('Hooks System', () => {
   })
 
   it('should prevent recursive hook execution', async () => {
-    let executionCount = 0
+    const executionCount = 0
 
     // Create a hook that would trigger itself
     const recursiveHook: HookConfig = {

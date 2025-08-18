@@ -3,6 +3,7 @@ biomejs
 booleanish
 bumpp
 bunfig
+Bunsh
 bunx
 changelogen
 changelogithub
@@ -34,6 +35,7 @@ Spatie
 stacksjs
 twoslash
 typecheck
+unalias
 unconfig
 unocss
 unplugin

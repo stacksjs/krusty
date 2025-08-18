@@ -1,7 +1,6 @@
-/* eslint-disable no-console */
+/* eslint-disable unused-imports/no-unused-vars */
 import type {
   BunshConfig,
-  CommandResult,
   Plugin,
   PluginConfig,
   PluginContext,
@@ -10,9 +9,11 @@ import type {
   Shell,
 } from '../types'
 import { exec } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 const execAsync = promisify(exec)
@@ -22,22 +23,24 @@ class PluginUtilsImpl implements PluginUtils {
   async exec(command: string, options: any = {}): Promise<{ stdout: string, stderr: string, exitCode: number }> {
     try {
       const { stdout, stderr } = await execAsync(command, options)
-      return { stdout, stderr, exitCode: 0 }
+      return { stdout: stdout?.toString() ?? '', stderr: stderr?.toString() ?? '', exitCode: 0 }
     }
     catch (error: any) {
       return {
-        stdout: error.stdout || '',
-        stderr: error.stderr || error.message,
+        stdout: (error.stdout?.toString?.() ?? error.stdout ?? ''),
+        stderr: (error.stderr?.toString?.() ?? error.message ?? ''),
         exitCode: error.code || 1,
       }
     }
   }
 
   async readFile(path: string): Promise<string> {
+    const { readFileSync } = await import('node:fs')
     return readFileSync(this.expandPath(path), 'utf-8')
   }
 
   async writeFile(path: string, content: string): Promise<void> {
+    const { writeFileSync } = await import('node:fs')
     writeFileSync(this.expandPath(path), content, 'utf-8')
   }
 
@@ -59,24 +62,24 @@ class PluginUtilsImpl implements PluginUtils {
 
 // Plugin logger implementation
 class PluginLoggerImpl implements PluginLogger {
-  constructor(private pluginName: string, private verbose: boolean = false) {}
+  constructor(private pluginName: string, private shell: Shell, private verbose: boolean = false) {}
 
   debug(message: string, ...args: any[]): void {
     if (this.verbose) {
-      console.debug(`[${this.pluginName}] DEBUG:`, message, ...args)
+      this.shell.log.debug(`[${this.pluginName}] ${message}`, ...args)
     }
   }
 
   info(message: string, ...args: any[]): void {
-    console.info(`[${this.pluginName}] INFO:`, message, ...args)
+    this.shell.log.info(`[${this.pluginName}] ${message}`, ...args)
   }
 
   warn(message: string, ...args: any[]): void {
-    console.warn(`[${this.pluginName}] WARN:`, message, ...args)
+    this.shell.log.warn(`[${this.pluginName}] ${message}`, ...args)
   }
 
   error(message: string, ...args: any[]): void {
-    console.error(`[${this.pluginName}] ERROR:`, message, ...args)
+    this.shell.log.error(`[${this.pluginName}] ${message}`, ...args)
   }
 }
 
@@ -88,12 +91,36 @@ export class PluginManager {
 
   constructor(private shell: Shell, private config: BunshConfig) {}
 
-  // Load plugins from configuration
+  // Load plugins from configuration (with default injection)
   async loadPlugins(): Promise<void> {
-    if (!this.config.plugins)
-      return
+    const configured = this.config.plugins || []
 
-    for (const pluginConfig of this.config.plugins) {
+    // Compute defaults relative to this file
+    const __filename = fileURLToPath(import.meta.url)
+    const __dirname = dirname(__filename)
+    const defaultCandidates: PluginConfig[] = [
+      { name: 'auto-suggest', path: resolve(__dirname, '../plugins/auto-suggest-plugin.ts'), enabled: true },
+      { name: 'highlight', path: resolve(__dirname, '../plugins/highlight-plugin.ts'), enabled: true },
+    ]
+
+    // Respect explicit disables and existing entries
+    const explicitlyDisabled = new Set(
+      configured.filter(p => p.name && p.enabled === false).map(p => p.name as string),
+    )
+    const existing = new Set(configured.filter(p => p.name && p.enabled !== false).map(p => p.name as string))
+
+    const toLoad: PluginConfig[] = []
+    // Load configured ones first
+    toLoad.push(...configured.filter(p => p.enabled !== false))
+
+    // Add defaults if not present and not disabled
+    for (const cand of defaultCandidates) {
+      if (!existing.has(cand.name!) && !explicitlyDisabled.has(cand.name!)) {
+        toLoad.push(cand)
+      }
+    }
+
+    for (const pluginConfig of toLoad) {
       if (pluginConfig.enabled === false)
         continue
 
@@ -101,7 +128,8 @@ export class PluginManager {
         await this.loadPlugin(pluginConfig)
       }
       catch (error) {
-        console.error(`Failed to load plugin ${pluginConfig.name}:`, error)
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        this.shell.log.error(`❌ Failed to load plugin ${pluginConfig.name}: ${errorMessage}`)
       }
     }
   }
@@ -138,7 +166,7 @@ export class PluginManager {
       shell: this.shell,
       config: this.config,
       pluginConfig: config.config,
-      logger: new PluginLoggerImpl(plugin.name, this.config.verbose),
+      logger: new PluginLoggerImpl(plugin.name, this.shell, this.config.verbose),
       utils: this.utils,
     }
 
@@ -206,9 +234,48 @@ export class PluginManager {
 
   // Check version compatibility
   private isVersionCompatible(requiredVersion: string): boolean {
-    // Simple version check - in production, use semver
     const currentVersion = '1.0.0' // This should come from package.json
-    return currentVersion >= requiredVersion
+
+    // Handle semver range syntax (e.g., ">=1.0.0")
+    if (requiredVersion.startsWith('>=')) {
+      const minVersion = requiredVersion.substring(2)
+      return this.compareVersions(currentVersion, minVersion) >= 0
+    }
+
+    if (requiredVersion.startsWith('>')) {
+      const minVersion = requiredVersion.substring(1)
+      return this.compareVersions(currentVersion, minVersion) > 0
+    }
+
+    if (requiredVersion.startsWith('<=')) {
+      const maxVersion = requiredVersion.substring(2)
+      return this.compareVersions(currentVersion, maxVersion) <= 0
+    }
+
+    if (requiredVersion.startsWith('<')) {
+      const maxVersion = requiredVersion.substring(1)
+      return this.compareVersions(currentVersion, maxVersion) < 0
+    }
+
+    // Exact version match
+    return this.compareVersions(currentVersion, requiredVersion) === 0
+  }
+
+  private compareVersions(version1: string, version2: string): number {
+    const v1Parts = version1.split('.').map(Number)
+    const v2Parts = version2.split('.').map(Number)
+
+    for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+      const v1Part = v1Parts[i] || 0
+      const v2Part = v2Parts[i] || 0
+
+      if (v1Part > v2Part)
+        return 1
+      if (v1Part < v2Part)
+        return -1
+    }
+
+    return 0
   }
 
   // Get loaded plugin
@@ -304,7 +371,7 @@ export class PluginManager {
         await this.unloadPlugin(name)
       }
       catch (error) {
-        console.error(`Error unloading plugin ${name}:`, error)
+        this.shell.log.error(`Error unloading plugin ${name}:`, error)
       }
     }
   }
@@ -313,13 +380,13 @@ export class PluginManager {
 // Plugin discovery utilities
 export class PluginDiscovery {
   static getPluginDirectories(): string[] {
-    return [
-      join(homedir(), '.bunsh', 'plugins'),
-      join(process.cwd(), 'plugins'),
+    const pluginDirs = [
       join(process.cwd(), 'node_modules', '@bunsh'),
+      join(process.cwd(), '..', '..', 'node_modules', '@bunsh'),
       '/usr/local/share/bunsh/plugins',
       '/opt/bunsh/plugins',
     ]
+    return pluginDirs
   }
 
   static async discoverPlugins(): Promise<PluginConfig[]> {
@@ -347,8 +414,8 @@ export class PluginDiscovery {
                   })
                 }
               }
-              catch (error) {
-                // Skip invalid package.json files
+              catch (_error) {
+                // Skip invalid packages
               }
             }
           }
@@ -372,19 +439,11 @@ export abstract class BasePlugin implements Plugin {
   dependencies?: string[]
   bunshVersion?: string
 
-  async initialize?(context: PluginContext): Promise<void> {
-    // Override in subclasses
-  }
+  async initialize(_context: PluginContext): Promise<void> {}
 
-  async activate?(context: PluginContext): Promise<void> {
-    // Override in subclasses
-  }
+  async activate(_context: PluginContext): Promise<void> {}
 
-  async deactivate?(context: PluginContext): Promise<void> {
-    // Override in subclasses
-  }
+  async deactivate(_context: PluginContext): Promise<void> {}
 
-  async destroy?(context: PluginContext): Promise<void> {
-    // Override in subclasses
-  }
+  async destroy(_context: PluginContext): Promise<void> {}
 }

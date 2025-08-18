@@ -1,7 +1,7 @@
 import type { BunshConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rmdir } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
 import { BunshShell } from '../src/shell'
@@ -17,8 +17,8 @@ describe('Builtin Commands', () => {
       verbose: false,
       history: {
         ...defaultConfig.history,
-        file: '/tmp/test_history_builtin_' + Math.random().toString(36).substr(2, 9)
-      }
+        file: `/tmp/test_history_builtin_${Math.random().toString(36).substr(2, 9)}`,
+      },
     }
     shell = new BunshShell(testConfig)
     tempDir = await mkdtemp(join(tmpdir(), 'bunsh-test-'))
@@ -49,13 +49,13 @@ describe('Builtin Commands', () => {
     it('should change to home directory with no arguments', async () => {
       const result = await shell.execute('cd')
       expect(result.exitCode).toBe(0)
-      expect(shell.cwd).toBe(process.env.HOME)
+      expect(shell.cwd).toBe(homedir())
     })
 
     it('should handle cd with tilde', async () => {
       const result = await shell.execute('cd ~')
       expect(result.exitCode).toBe(0)
-      expect(shell.cwd).toBe(process.env.HOME)
+      expect(shell.cwd).toBe(homedir())
     })
 
     it('should return error for non-existent directory', async () => {
@@ -97,8 +97,8 @@ describe('Builtin Commands', () => {
         ...testConfig,
         history: {
           ...testConfig.history,
-          file: '/tmp/test_history_display_' + Math.random().toString(36).substr(2, 9)
-        }
+          file: `/tmp/test_history_display_${Math.random().toString(36).substr(2, 9)}`,
+        },
       }
       const historyShell = new BunshShell(historyConfig)
 
@@ -121,8 +121,8 @@ describe('Builtin Commands', () => {
         ...testConfig,
         history: {
           ...testConfig.history,
-          file: '/tmp/test_history_number_' + Math.random().toString(36).substr(2, 9)
-        }
+          file: `/tmp/test_history_number_${Math.random().toString(36).substr(2, 9)}`,
+        },
       }
       const historyShell = new BunshShell(historyConfig)
 
@@ -144,8 +144,8 @@ describe('Builtin Commands', () => {
         ...testConfig,
         history: {
           ...testConfig.history,
-          file: '/tmp/test_history_limit_' + Math.random().toString(36).substr(2, 9)
-        }
+          file: `/tmp/test_history_limit_${Math.random().toString(36).substr(2, 9)}`,
+        },
       }
       const historyShell = new BunshShell(historyConfig)
 

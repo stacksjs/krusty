@@ -1,21 +1,23 @@
 {
   "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
+    "moduleDetection": "force",
+    "baseUrl": ".",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "paths": {
       "bunsh": ["./src"]
     },
-    "target": "esnext",
-    "lib": ["esnext"],
-    "moduleDetection": "force",
-    "module": "esnext",
-    "moduleResolution": "bundler",
     "resolveJsonModule": true,
-    "types": ["bun"],
+    "types": ["bun", "node"],
     "allowImportingTsExtensions": true,
     "strict": true,
     "strictNullChecks": true,
     "noFallthroughCasesInSwitch": true,
     "declaration": true,
     "noEmit": true,
+    "outDir": "dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedDeclarations": true,
@@ -23,5 +25,7 @@
     "verbatimModuleSyntax": true,
     "skipDefaultLibCheck": true,
     "skipLibCheck": true
-  }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }

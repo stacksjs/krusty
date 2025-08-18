@@ -1,7 +1,8 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
-import { resolve, join } from 'node:path'
-import { homedir } from 'node:os'
 import { existsSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import process from 'node:process'
 
 export function createBuiltins(): Map<string, BuiltinCommand> {
   const builtins = new Map<string, BuiltinCommand>()
@@ -53,7 +54,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
           stderr: success ? '' : `cd: ${args[0]}: Permission denied\n`,
           duration: performance.now() - start,
         }
-      } catch (error) {
+      }
+      catch (error) {
         return {
           exitCode: 1,
           stdout: '',
@@ -69,7 +71,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     name: 'pwd',
     description: 'Print the current working directory',
     usage: 'pwd',
-    async execute(args: string[], shell: Shell): Promise<CommandResult> {
+    async execute(_args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
       return {
         exitCode: 0,
@@ -101,8 +103,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       let limit = shell.history.length
       const nIndex = args.indexOf('-n')
       if (nIndex !== -1 && args[nIndex + 1]) {
-        const parsed = parseInt(args[nIndex + 1], 10)
-        if (!isNaN(parsed) && parsed > 0) {
+        const parsed = Number.parseInt(args[nIndex + 1], 10)
+        if (!Number.isNaN(parsed) && parsed > 0) {
           limit = parsed
         }
       }
@@ -124,49 +126,126 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   // alias command
   builtins.set('alias', {
     name: 'alias',
-    description: 'Create or display aliases',
+    description: 'Define or display aliases',
     usage: 'alias [name[=value] ...]',
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
 
+      // Helper function to format alias output in the format: name=value
+      const formatAlias = (name: string, value: string): string => {
+        return `${name}=${value}`
+      }
+
+      // If no arguments, list all aliases
       if (args.length === 0) {
-        // Display all aliases
-        const output = Object.entries(shell.aliases)
-          .map(([name, value]) => `${name}=${value}`)
+        const aliases = Object.entries(shell.aliases)
+          .map(([name, value]) => formatAlias(name, value))
+          .sort()
           .join('\n')
 
         return {
           exitCode: 0,
-          stdout: output ? `${output}\n` : '',
+          stdout: aliases + (aliases ? '\n' : ''),
           stderr: '',
           duration: performance.now() - start,
         }
       }
 
-      for (const arg of args) {
-        if (arg.includes('=')) {
-          // Set alias
-          const [name, ...valueParts] = arg.split('=')
-          const value = valueParts.join('=').replace(/^["']|["']$/g, '')
-          shell.aliases[name] = value
-        } else {
-          // Display specific alias
-          if (shell.aliases[arg]) {
+      if (args.length === 1 && !args[0].includes('=')) {
+        const aliasName = args[0].trim()
+        if (aliasName in shell.aliases) {
+          return {
+            exitCode: 0,
+            stdout: `${formatAlias(aliasName, shell.aliases[aliasName])}\n`,
+            stderr: '',
+            duration: performance.now() - start,
+          }
+        }
+        else {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `alias: ${aliasName}: not found\n`,
+            duration: performance.now() - start,
+          }
+        }
+      }
+
+      // Reconstruct and parse definitions: support spaces and '=' in values.
+      // We'll iterate tokens and group them into name=value definitions by using the first '='
+      // When reconstructing the value, re-quote tokens that require quoting so that
+      // complex values are preserved as expected by tests.
+      const quoteIfNeeded = (s: string): string => {
+        // Needs quoting if contains whitespace or shell-special characters
+        const needs = /[\s"'!@#$%^&*()[\]|;<>?]/.test(s)
+        if (!needs)
+          return s
+        // Prefer single quotes, escape internal single quotes by closing/opening
+        return `'${s.replace(/'/g, '\'\\\'\'')}'`
+      }
+      let i = 0
+      while (i < args.length) {
+        const token = args[i]
+        if (!token || !token.trim()) {
+          i++
+          continue
+        }
+
+        const eq = token.indexOf('=')
+        if (eq === -1) {
+          // No '=' in this token -> treat as lookup for specific alias
+          const aliasNameLookup = token.trim()
+          if (aliasNameLookup in shell.aliases) {
             return {
               exitCode: 0,
-              stdout: `${arg}=${shell.aliases[arg]}\n`,
+              stdout: `${formatAlias(aliasNameLookup, shell.aliases[aliasNameLookup])}\n`,
               stderr: '',
               duration: performance.now() - start,
             }
-          } else {
+          }
+          else {
             return {
               exitCode: 1,
               stdout: '',
-              stderr: `alias: ${arg}: not found\n`,
+              stderr: `alias: ${aliasNameLookup}: not found\n`,
               duration: performance.now() - start,
             }
           }
         }
+
+        // Start of a definition
+        let aliasName = token.substring(0, eq).trim()
+        const valuePart = token.substring(eq + 1)
+
+        if (!aliasName) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: 'alias: invalid empty alias name\n',
+            duration: performance.now() - start,
+          }
+        }
+
+        // Consume all remaining tokens as part of the value
+        const extraParts: string[] = []
+        i++
+        while (i < args.length) {
+          extraParts.push(args[i])
+          i++
+        }
+
+        // Build alias value: keep the first part (from the same token) as-is, only quote subsequent tokens if needed.
+        const aliasValue = [valuePart, ...extraParts.map(quoteIfNeeded)].join(' ')
+
+        // Do not strip quotes here; we intentionally keep them when needed
+
+        // If the alias name is quoted, remove the quotes
+        if ((aliasName.startsWith('"') && aliasName.endsWith('"'))
+          || (aliasName.startsWith('\'') && aliasName.endsWith('\''))) {
+          aliasName = aliasName.slice(1, -1)
+        }
+
+        shell.aliases[aliasName] = aliasValue
       }
 
       return {
@@ -186,11 +265,11 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
 
-      if (args.includes('-a')) {
+      if (args[0] === '-a') {
         // Remove all aliases
-        Object.keys(shell.aliases).forEach(key => {
+        for (const key of Object.keys(shell.aliases)) {
           delete shell.aliases[key]
-        })
+        }
         return {
           exitCode: 0,
           stdout: '',
@@ -202,7 +281,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       for (const name of args) {
         if (shell.aliases[name]) {
           delete shell.aliases[name]
-        } else {
+        }
+        else {
           return {
             exitCode: 1,
             stdout: '',
@@ -266,7 +346,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     name: 'echo',
     description: 'Display text',
     usage: 'echo [-n] [string ...]',
-    async execute(args: string[], shell: Shell): Promise<CommandResult> {
+    async execute(args: string[], _shell: Shell): Promise<CommandResult> {
       const start = performance.now()
 
       let noNewline = false
@@ -298,8 +378,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
       let exitCode = 0
       if (args[0]) {
-        const parsed = parseInt(args[0], 10)
-        if (isNaN(parsed)) {
+        const parsed = Number.parseInt(args[0], 10)
+        if (Number.isNaN(parsed)) {
           return {
             exitCode: 1,
             stdout: '',
@@ -362,6 +442,89 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
         stderr: '',
         duration: performance.now() - start,
       }
+    },
+  })
+
+  // which command
+  builtins.set('which', {
+    name: 'which',
+    description: 'Locate a command (alias, builtin, or executable)',
+    usage: 'which name [name ...]',
+    async execute(args: string[], shell: Shell): Promise<CommandResult> {
+      const start = performance.now()
+
+      if (args.length === 0) {
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'which: missing arguments\n',
+          duration: performance.now() - start,
+        }
+      }
+
+      const outputs: string[] = []
+      let anyMissing = false
+
+      // Helper to check PATH executables
+      const pathVar = shell.environment.PATH || process.env.PATH || ''
+      const pathEntries = pathVar.split(':').filter(Boolean)
+
+      const isExecutable = (p: string) => {
+        try {
+          const st = statSync(p)
+          return st.isFile() && (st.mode & 0o111) !== 0
+        }
+        catch {
+          return false
+        }
+      }
+
+      for (const name of args) {
+        let found = false
+
+        // Alias
+        if (Object.prototype.hasOwnProperty.call(shell.aliases, name)) {
+          outputs.push(`\`${name}\`: aliased to \`${shell.aliases[name]}\``)
+          found = true
+        }
+
+        // Builtin
+        if (shell.builtins.has(name)) {
+          outputs.push(`\`${name}\`: shell builtin`)
+          found = true
+        }
+
+        // PATH search
+        for (const dir of pathEntries) {
+          const full = resolve(dir, name)
+          if (isExecutable(full)) {
+            outputs.push(`\`${full}\``)
+            found = true
+            break // mimic common which behavior: first match
+          }
+        }
+
+        if (!found) {
+          anyMissing = true
+        }
+      }
+
+      return {
+        exitCode: anyMissing ? 1 : 0,
+        stdout: outputs.length ? `${outputs.join('\n')}\n` : '',
+        stderr: anyMissing ? 'which: some commands not found\n' : '',
+        duration: performance.now() - start,
+      }
+    },
+  })
+
+  // reload command
+  builtins.set('reload', {
+    name: 'reload',
+    description: 'Reload Bunsh configuration, aliases, env, and plugins',
+    usage: 'reload',
+    async execute(_args: string[], shell: Shell): Promise<CommandResult> {
+      return await shell.reload()
     },
   })
 

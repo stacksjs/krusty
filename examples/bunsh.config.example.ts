@@ -9,7 +9,7 @@ import type { BunshConfig } from '../src/types'
  * - Custom modules
  * - Themes and styling
  */
-export default {
+const exampleConfig: BunshConfig = {
   verbose: true,
 
   // Prompt configuration
@@ -43,25 +43,25 @@ export default {
 
   // Shell aliases
   aliases: {
-    'll': 'ls -la',
-    'la': 'ls -A',
-    'l': 'ls -CF',
-    'grep': 'grep --color=auto',
-    'fgrep': 'fgrep --color=auto',
-    'egrep': 'egrep --color=auto',
-    'cls': 'clear',
-    'h': 'history',
-    'j': 'jobs',
-    'df': 'df -h',
-    'du': 'du -h',
-    'mkdir': 'mkdir -pv',
-    'wget': 'wget -c',
-    'path': 'echo $PATH | tr ":" "\\n"',
-    'now': 'date +"%T"',
-    'nowdate': 'date +"%d-%m-%Y"',
-    'vi': 'vim',
-    'svi': 'sudo vi',
-    'edit': 'vim',
+    ll: 'ls -la',
+    la: 'ls -A',
+    l: 'ls -CF',
+    grep: 'grep --color=auto',
+    fgrep: 'fgrep --color=auto',
+    egrep: 'egrep --color=auto',
+    cls: 'clear',
+    h: 'history',
+    j: 'jobs',
+    df: 'df -h',
+    du: 'du -h',
+    mkdir: 'mkdir -pv',
+    wget: 'wget -c',
+    path: 'echo $PATH | tr ":" "\\n"',
+    now: 'date +"%T"',
+    nowdate: 'date +"%d-%m-%Y"',
+    vi: 'vim',
+    svi: 'sudo vi',
+    edit: 'vim',
   },
 
   // Environment variables
@@ -82,7 +82,7 @@ export default {
         autoFetch: true,
         showBranchInPrompt: true,
         colorOutput: true,
-      }
+      },
     },
     {
       name: 'docker-plugin',
@@ -91,7 +91,7 @@ export default {
       config: {
         showContainerCount: true,
         autoComplete: true,
-      }
+      },
     },
     {
       name: 'aws-plugin',
@@ -100,8 +100,8 @@ export default {
       config: {
         showProfile: true,
         showRegion: true,
-      }
-    }
+      },
+    },
   ],
 
   // Theme configuration
@@ -192,7 +192,7 @@ export default {
         command: 'echo "🚀 Welcome to Bunsh! Type \\"help\\" for available commands."',
         enabled: true,
         priority: 10,
-      }
+      },
     ],
 
     'shell:start': [
@@ -209,7 +209,7 @@ export default {
         script: '~/.bunsh/scripts/load-functions.sh',
         enabled: true,
         priority: 5,
-      }
+      },
     ],
 
     'shell:exit': [
@@ -223,7 +223,7 @@ export default {
         name: 'goodbye-message',
         command: 'echo "👋 Goodbye from Bunsh!"',
         enabled: true,
-      }
+      },
     ],
 
     // Command hooks
@@ -236,9 +236,9 @@ export default {
           {
             type: 'env',
             value: 'BUNSH_VERBOSE_COMMANDS',
-            operator: 'exists'
-          }
-        ]
+            operator: 'exists',
+          },
+        ],
       },
       {
         name: 'dangerous-command-warning',
@@ -247,10 +247,10 @@ export default {
         conditions: [
           {
             type: 'custom',
-            value: 'context.data.command.includes("rm -rf") || context.data.command.includes("sudo")'
-          }
-        ]
-      }
+            value: 'context.data.command.includes("rm -rf") || context.data.command.includes("sudo")',
+          },
+        ],
+      },
     ],
 
     'command:after': [
@@ -261,10 +261,10 @@ export default {
         conditions: [
           {
             type: 'custom',
-            value: 'context.data.result.exitCode === 0 && context.data.result.duration > 10000'
-          }
-        ]
-      }
+            value: 'context.data.result.exitCode === 0 && context.data.result.duration > 10000',
+          },
+        ],
+      },
     ],
 
     'command:error': [
@@ -281,10 +281,10 @@ export default {
         conditions: [
           {
             type: 'custom',
-            value: 'context.data.result.stderr.includes("command not found")'
-          }
-        ]
-      }
+            value: 'context.data.result.stderr.includes("command not found")',
+          },
+        ],
+      },
     ],
 
     // Directory hooks
@@ -297,9 +297,9 @@ export default {
           {
             type: 'env',
             value: 'BUNSH_AUTO_LS',
-            operator: 'exists'
-          }
-        ]
+            operator: 'exists',
+          },
+        ],
       },
       {
         name: 'project-detection',
@@ -315,10 +315,10 @@ export default {
           {
             type: 'directory',
             value: '.git',
-            operator: 'exists'
-          }
-        ]
-      }
+            operator: 'exists',
+          },
+        ],
+      },
     ],
 
     // Prompt hooks
@@ -328,7 +328,7 @@ export default {
         command: 'echo -ne "\\033]0;Bunsh - $(pwd)\\007"',
         enabled: true,
         async: true,
-      }
+      },
     ],
 
     // History hooks
@@ -340,10 +340,10 @@ export default {
         conditions: [
           {
             type: 'custom',
-            value: 'context.data.command.includes("sudo") || context.data.command.includes("rm")'
-          }
-        ]
-      }
+            value: 'context.data.command.includes("sudo") || context.data.command.includes("rm")',
+          },
+        ],
+      },
     ],
 
     // Completion hooks
@@ -354,7 +354,7 @@ export default {
         enabled: true,
         async: true,
         timeout: 1000,
-      }
+      },
     ],
 
     // Custom hooks
@@ -367,10 +367,10 @@ export default {
           {
             type: 'file',
             value: 'package.json',
-            operator: 'exists'
-          }
-        ]
-      }
+            operator: 'exists',
+          },
+        ],
+      },
     ],
 
     'docker:build': [
@@ -379,7 +379,9 @@ export default {
         command: 'docker image prune -f',
         enabled: true,
         async: true,
-      }
-    ]
-  }
-} satisfies BunshConfig
+      },
+    ],
+  },
+}
+
+export default exampleConfig
