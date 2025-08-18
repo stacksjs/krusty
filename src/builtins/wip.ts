@@ -73,6 +73,9 @@ export const wipCommand: BuiltinCommand = {
 
     // Pre-commit banners
     const out: string[] = []
+    // Suppress streaming of internal git command outputs to avoid redundant logs
+    const prevStream = shell.config.streamOutput
+    shell.config.streamOutput = false
     try {
       out.push(banner('WIP start', 'cyan', { forceColor: opts.forceColor, noColor: opts.noColor }))
 
@@ -102,9 +105,6 @@ export const wipCommand: BuiltinCommand = {
           '-c', 'commit.gpgsign=false',
           '-c', 'core.hooksPath=',
           '-c', 'commit.template=',
-          // ensure identity is present even if global config is missing/locked down
-          '-c', 'user.name=Test User',
-          '-c', 'user.email=test@example.com',
           'commit', '--no-verify', '--no-gpg-sign', '-m', msg,
         ]
         if (opts.amend) commitArgs.push('--amend', '--no-edit')
@@ -112,10 +112,12 @@ export const wipCommand: BuiltinCommand = {
         if (commit.exitCode === 0) {
           if (opts.verbose && commit.stdout)
             out.push(commit.stdout.trimEnd())
-          // Show last commit summary like the alias
-          out.push(banner('commit (last)', 'none', { forceColor: opts.forceColor, noColor: opts.noColor }))
-          const last = await shell.executeCommand('git', ['--no-pager', '-c', 'color.ui=always', 'log', '-1', '--oneline'])
-          if (last.stdout) out.push(last.stdout.trimEnd())
+          // Only show last commit summary/details in verbose mode
+          if (opts.verbose) {
+            out.push(banner('commit (last)', 'none', { forceColor: opts.forceColor, noColor: opts.noColor }))
+            const last = await shell.executeCommand('git', ['--no-pager', '-c', 'color.ui=always', 'log', '-1', '--oneline'])
+            if (last.stdout) out.push(last.stdout.trimEnd())
+          }
         }
         else {
           // Commit failed; include error details but continue
@@ -145,6 +147,8 @@ export const wipCommand: BuiltinCommand = {
     finally {
       // Final banner (always)
       out.push(banner('done', 'green', { forceColor: opts.forceColor, noColor: opts.noColor }))
+      // Restore streaming setting
+      shell.config.streamOutput = prevStream
     }
 
     return {
