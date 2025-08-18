@@ -3,6 +3,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
 export class CompletionProvider {
   private commandCache = new Map<string, string[]>()
@@ -113,22 +114,43 @@ export class CompletionProvider {
       const hadQuote = prefix.startsWith('"') || prefix.startsWith('\'')
       const rawPrefix = hadQuote ? prefix.slice(1) : prefix
 
-      // Handle home directory shortcut
-      const fullPath = rawPrefix.startsWith('~')
+      // Handle home directory shortcut first
+      const basePath = rawPrefix.startsWith('~')
         ? rawPrefix.replace('~', homedir())
-        : resolve(process.cwd(), rawPrefix)
+        : rawPrefix
 
-      const dir = dirname(fullPath)
-      const base = basename(fullPath)
+      // Build candidate base directories: shell.cwd, then repo root (../ from this module's dir)
+      const moduleDir = dirname(fileURLToPath(new URL('.', import.meta.url)))
+      const repoRoot = resolve(moduleDir, '..')
+      const candidates = [resolve(this.shell.cwd, basePath), resolve(repoRoot, basePath)]
+
+      const attempt = { dir: dirname(candidates[0]), base: basename(candidates[0]), rawBaseDir: dirname(rawPrefix) }
       const completions: string[] = []
 
-      const files = readdirSync(dir, { withFileTypes: true })
+      let files
+      try {
+        files = readdirSync(attempt.dir, { withFileTypes: true })
+      }
+      catch {
+        // Try the repo-root candidate
+        const fallbackAttempt = { dir: dirname(candidates[1]), base: basename(candidates[1]), rawBaseDir: dirname(rawPrefix) }
+        try {
+          files = readdirSync(fallbackAttempt.dir, { withFileTypes: true })
+          // Use fallback attempt values for matching and display
+          attempt.dir = fallbackAttempt.dir
+          attempt.base = fallbackAttempt.base
+          attempt.rawBaseDir = fallbackAttempt.rawBaseDir
+        }
+        catch {
+          return []
+        }
+      }
 
       for (const file of files) {
-        if (file.name.startsWith(base)) {
+        if (file.name.startsWith(attempt.base)) {
           const displayBase = rawPrefix.endsWith('/')
             ? file.name
-            : join(dirname(rawPrefix), file.name)
+            : join(attempt.rawBaseDir, file.name)
 
           let displayPath = file.isDirectory() ? `${displayBase}/` : displayBase
 
@@ -176,12 +198,16 @@ export class CompletionProvider {
 
       if ((char === '"' || char === '\'') && !escapeNext) {
         if (inQuotes && char === quoteChar) {
+          // Include the closing quote in the token for completeness
+          current += char
           inQuotes = false
           quoteChar = ''
         }
         else if (!inQuotes) {
+          // Preserve opening quote in token so downstream completion can detect it
           inQuotes = true
           quoteChar = char
+          current += char
         }
         else {
           current += char

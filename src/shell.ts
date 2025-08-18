@@ -485,22 +485,45 @@ export class KrustyShell implements Shell {
         }
       }
 
-      // Filter out empty strings and sort with priority: builtins, aliases, then others
-      completions = completions
+      // Filter out empty strings and sort alphabetically (case-insensitive)
+      const allSorted = completions
         .filter(c => c && c.trim().length > 0)
-        .sort((a, b) => {
-          const rank = (s: string) => (this.builtins.has(s) ? 0 : (this.aliases[s] ? 1 : 2))
-          const ra = rank(a)
-          const rb = rank(b)
-          if (ra !== rb)
-            return ra - rb
-          return a.localeCompare(b, undefined, { sensitivity: 'base' })
-        })
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
       // Enforce max suggestions limit
       const max = this.config.completion?.maxSuggestions ?? 10
-      if (completions.length > max)
-        completions = completions.slice(0, max)
+      completions = allSorted.length > max ? allSorted.slice(0, max) : allSorted
+
+      // If this appears to be a first-token completion, ensure at least one matching builtin is present
+      const before = input.slice(0, Math.max(0, cursor))
+      if (before.trim().length > 0 && !before.includes(' ')) {
+        const prefix = before.trim()
+        const caseSensitive = this.config.completion?.caseSensitive ?? false
+        const startsWith = (s: string) => caseSensitive
+          ? s.startsWith(prefix)
+          : s.toLowerCase().startsWith(prefix.toLowerCase())
+
+        const builtinMatches = Array.from(this.builtins.keys()).filter(startsWith)
+        if (builtinMatches.length > 0) {
+          // If none of the builtin matches are in the current slice but exist in the full list, swap one in
+          const present = completions.some(c => this.builtins.has(c) && startsWith(c))
+          if (!present) {
+            const candidate = allSorted.find(c => this.builtins.has(c) && startsWith(c))
+            if (candidate) {
+              if (!completions.includes(candidate)) {
+                if (completions.length < max) {
+                  completions.push(candidate)
+                }
+                else {
+                  completions[completions.length - 1] = candidate
+                }
+                // Re-sort to preserve alphabetical order
+                completions.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+              }
+            }
+          }
+        }
+      }
 
       // Execute completion:after hooks
       this.hookManager.executeHooks('completion:after', { input, cursor, completions })
