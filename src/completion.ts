@@ -18,14 +18,26 @@ export class CompletionProvider {
     const builtins = Array.from(this.shell.builtins.keys())
     const aliases = Object.keys(this.shell.aliases || {})
     const pathCommands = this.getPathCommands()
-    const allCommands = [...new Set([...builtins, ...aliases, ...pathCommands])]
     const caseSensitive = this.shell.config.completion?.caseSensitive ?? false
 
-    return allCommands.filter(cmd =>
-      caseSensitive
-        ? cmd.startsWith(prefix)
-        : cmd.toLowerCase().startsWith(prefix.toLowerCase()),
-    )
+    const match = (s: string) =>
+      caseSensitive ? s.startsWith(prefix) : s.toLowerCase().startsWith(prefix.toLowerCase())
+
+    const b = builtins.filter(match)
+    const a = aliases.filter(match)
+    const p = pathCommands.filter(match)
+
+    // Keep order: builtins, aliases, then PATH commands; dedupe while preserving order
+    const ordered = [...b, ...a, ...p]
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const cmd of ordered) {
+      if (!seen.has(cmd)) {
+        seen.add(cmd)
+        result.push(cmd)
+      }
+    }
+    return result
   }
 
   /**
@@ -97,10 +109,14 @@ export class CompletionProvider {
    */
   private getFileCompletions(prefix: string): string[] {
     try {
+      // Handle leading quotes for in-progress quoted paths
+      const hadQuote = prefix.startsWith('"') || prefix.startsWith('\'')
+      const rawPrefix = hadQuote ? prefix.slice(1) : prefix
+
       // Handle home directory shortcut
-      const fullPath = prefix.startsWith('~')
-        ? prefix.replace('~', homedir())
-        : resolve(process.cwd(), prefix)
+      const fullPath = rawPrefix.startsWith('~')
+        ? rawPrefix.replace('~', homedir())
+        : resolve(process.cwd(), rawPrefix)
 
       const dir = dirname(fullPath)
       const base = basename(fullPath)
@@ -110,13 +126,18 @@ export class CompletionProvider {
 
       for (const file of files) {
         if (file.name.startsWith(base)) {
-          const displayPath = prefix.endsWith('/')
+          const displayBase = rawPrefix.endsWith('/')
             ? file.name
-            : join(dirname(prefix), file.name)
+            : join(dirname(rawPrefix), file.name)
 
-          completions.push(
-            file.isDirectory() ? `${displayPath}/` : displayPath,
-          )
+          let displayPath = file.isDirectory() ? `${displayBase}/` : displayBase
+
+          // Re-add the opening quote if present in the original prefix
+          if (hadQuote) {
+            const quote = prefix[0]
+            displayPath = `${quote}${displayPath}`
+          }
+          completions.push(displayPath)
         }
       }
 

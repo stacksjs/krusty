@@ -10,10 +10,10 @@ export const bgCommand: BuiltinCommand = {
   usage: 'bg [job_id...]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-    
+
     // Get all jobs
     const jobs = shell.getJobs()
-    
+
     if (jobs.length === 0) {
       return {
         exitCode: 1,
@@ -24,8 +24,8 @@ export const bgCommand: BuiltinCommand = {
     }
 
     // If no job IDs provided, use the most recent stopped job
-    const jobIds = args.length > 0 
-      ? args.map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+    const jobIds = args.length > 0
+      ? args.map(id => Number.parseInt(id, 10)).filter(id => !isNaN(id))
       : [jobs[jobs.length - 1]?.id].filter(Boolean) as number[]
 
     if (jobIds.length === 0) {
@@ -42,7 +42,7 @@ export const bgCommand: BuiltinCommand = {
 
     for (const jobId of jobIds) {
       const job = shell.getJob(jobId)
-      
+
       if (!job) {
         hasError = true
         results.push(`bg: ${jobId}: no such job`)
@@ -51,7 +51,8 @@ export const bgCommand: BuiltinCommand = {
 
       if (job.status === 'running') {
         results.push(`[${jobId}] ${job.command} (already running)`)
-      } else {
+      }
+      else {
         // Mark the job as running in the background
         shell.setJobStatus(jobId, 'running')
         results.push(`[${jobId}] ${job.command} &`)
@@ -60,8 +61,8 @@ export const bgCommand: BuiltinCommand = {
 
     return {
       exitCode: hasError ? 1 : 0,
-      stdout: results.join('\n') + '\n',
-      stderr: hasError ? results.filter(r => r.startsWith('bg: ')).join('\n') + '\n' : '',
+      stdout: `${results.join('\n')}\n`,
+      stderr: hasError ? `${results.filter(r => r.startsWith('bg: ')).join('\n')}\n` : '',
       duration: performance.now() - start,
     }
   },

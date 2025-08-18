@@ -1,6 +1,6 @@
-import { access, constants } from 'node:fs/promises'
-import { join, delimiter } from 'node:path'
 import type { BuiltinCommand, CommandResult, Shell } from './types'
+import { access, constants } from 'node:fs/promises'
+import { delimiter, join } from 'node:path'
 
 /**
  * Which command - shows the full path of commands
@@ -12,7 +12,7 @@ export const whichCommand: BuiltinCommand = {
   usage: 'which [command...]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-    
+
     if (args.length === 0) {
       return {
         exitCode: 1,
@@ -28,7 +28,8 @@ export const whichCommand: BuiltinCommand = {
 
     for (const cmd of args) {
       // Skip empty arguments
-      if (!cmd.trim()) continue
+      if (!cmd.trim())
+        continue
 
       // Check if it's a builtin command
       if (shell.builtins.has(cmd)) {
@@ -47,7 +48,8 @@ export const whichCommand: BuiltinCommand = {
         try {
           await access(cmd, constants.X_OK)
           results.push(cmd)
-        } catch {
+        }
+        catch {
           notFound.push(cmd)
         }
         continue
@@ -56,15 +58,17 @@ export const whichCommand: BuiltinCommand = {
       // Search in PATH
       let found = false
       for (const dir of pathDirs) {
-        if (!dir) continue // Skip empty PATH entries
-        
+        if (!dir)
+          continue // Skip empty PATH entries
+
         const fullPath = join(dir, cmd)
         try {
           await access(fullPath, constants.X_OK)
           results.push(fullPath)
           found = true
           break
-        } catch {
+        }
+        catch {
           // Command not found in this directory
           continue
         }
@@ -78,31 +82,34 @@ export const whichCommand: BuiltinCommand = {
     // Prepare output
     let stdout = ''
     let stderr = ''
-    
+
     if (results.length > 0) {
-      stdout = results.join('\n') + '\n'
+      stdout = `${results.join('\n')}\n`
       // Add a newline between found and not found if both exist
       if (notFound.length > 0) {
         stdout += '\n'
         // Add a newline if there are multiple not found
         if (notFound.length > 1) {
-          stderr = notFound.map(cmd => `which: no ${cmd} in (${pathDirs.join(':')})`).join('\n') + '\n'
+          stderr = `${notFound.map(cmd => `which: no ${cmd} in (${pathDirs.join(':')})`).join('\n')}\n`
           // Add a newline between not found and found if both exist
           if (results.length > 0) {
-            stderr = '\n' + stderr
+            stderr = `\n${stderr}`
           }
-        } else {
+        }
+        else {
           stderr = `which: no ${notFound[0]} in (${pathDirs.join(':')})\n`
         }
       }
-    } else if (notFound.length > 0) {
+    }
+    else if (notFound.length > 0) {
       if (notFound.length > 1) {
-        stderr = notFound.map(cmd => `which: no ${cmd} in (${pathDirs.join(':')})`).join('\n') + '\n'
+        stderr = `${notFound.map(cmd => `which: no ${cmd} in (${pathDirs.join(':')})`).join('\n')}\n`
         // Add a newline between not found and found if both exist
         if (results.length > 0) {
-          stderr = '\n' + stderr
+          stderr = `\n${stderr}`
         }
-      } else {
+      }
+      else {
         stderr = `which: no ${notFound[0]} in (${pathDirs.join(':')})\n`
       }
     }

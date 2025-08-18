@@ -485,23 +485,17 @@ export class KrustyShell implements Shell {
         }
       }
 
-      // Determine current token prefix for filtering (basic handling of quotes)
-      const before = input.slice(0, Math.max(0, cursor))
-      const match = before.match(/(^|\s)(\S*)$/)
-      let prefix = match ? match[2] : before
-      if (prefix.startsWith('"') || prefix.startsWith('\'')) {
-        prefix = prefix.slice(1)
-      }
-
-      const caseSensitive = this.config.completion?.caseSensitive ?? false
-
-      // Filter out empty strings and enforce prefix match
+      // Filter out empty strings and sort with priority: builtins, aliases, then others
       completions = completions
         .filter(c => c && c.trim().length > 0)
-        .filter(c =>
-          caseSensitive ? c.startsWith(prefix) : c.toLowerCase().startsWith(prefix.toLowerCase()),
-        )
-        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .sort((a, b) => {
+          const rank = (s: string) => (this.builtins.has(s) ? 0 : (this.aliases[s] ? 1 : 2))
+          const ra = rank(a)
+          const rb = rank(b)
+          if (ra !== rb)
+            return ra - rb
+          return a.localeCompare(b, undefined, { sensitivity: 'base' })
+        })
 
       // Enforce max suggestions limit
       const max = this.config.completion?.maxSuggestions ?? 10

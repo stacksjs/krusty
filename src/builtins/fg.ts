@@ -10,10 +10,10 @@ export const fgCommand: BuiltinCommand = {
   usage: 'fg [job_id]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-    
+
     // Get all jobs
     const jobs = shell.getJobs()
-    
+
     if (jobs.length === 0) {
       return {
         exitCode: 1,
@@ -24,7 +24,7 @@ export const fgCommand: BuiltinCommand = {
     }
 
     let jobId: number
-    
+
     // If no job ID is provided, use the most recent job
     if (args.length === 0) {
       const lastJob = jobs[jobs.length - 1]
@@ -37,9 +37,10 @@ export const fgCommand: BuiltinCommand = {
         }
       }
       jobId = lastJob.id
-    } else {
+    }
+    else {
       // Parse the job ID from the argument
-      const id = parseInt(args[0], 10)
+      const id = Number.parseInt(args[0], 10)
       if (isNaN(id)) {
         return {
           exitCode: 1,
@@ -64,10 +65,10 @@ export const fgCommand: BuiltinCommand = {
 
     // Mark the job as running in the foreground
     shell.setJobStatus(jobId, 'running')
-    
+
     // In a real shell, this would actually bring the process to the foreground
     // For now, we'll just update the job status
-    
+
     return {
       exitCode: 0,
       stdout: `${job.command}\n`,

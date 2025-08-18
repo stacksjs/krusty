@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
 import type { BuiltinCommand, CommandResult, Shell } from './types'
+import { existsSync } from 'node:fs'
 
 /**
  * PWD (Print Working Directory) command - outputs the current working directory

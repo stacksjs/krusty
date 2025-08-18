@@ -5,14 +5,14 @@ import type { BuiltinCommand, CommandResult, Shell } from './types'
  * Common signals that can be sent to processes
  */
 const SIGNALS: Record<string, number> = {
-  'HUP': 1,    // Hangup
-  'INT': 2,    // Interrupt (Ctrl+C)
-  'QUIT': 3,   // Quit
-  'KILL': 9,   // Non-catchable, non-ignorable kill
-  'TERM': 15,  // Software termination signal (default)
-  'CONT': 18,  // Continue if stopped
-  'STOP': 19,  // Stop process
-  'TSTP': 20,  // Stop typed at terminal
+  HUP: 1, // Hangup
+  INT: 2, // Interrupt (Ctrl+C)
+  QUIT: 3, // Quit
+  KILL: 9, // Non-catchable, non-ignorable kill
+  TERM: 15, // Software termination signal (default)
+  CONT: 18, // Continue if stopped
+  STOP: 19, // Stop process
+  TSTP: 20, // Stop typed at terminal
 }
 
 /**
@@ -25,7 +25,7 @@ export const killCommand: BuiltinCommand = {
   usage: 'kill [-s SIGNAL | -SIGNAL] pid|job_spec...',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-    
+
     if (args.length === 0) {
       return {
         exitCode: 1,
@@ -40,10 +40,10 @@ export const killCommand: BuiltinCommand = {
       const signals = Object.entries(SIGNALS)
         .map(([name, num]) => `${num}) ${name}`)
         .join('\n')
-      
+
       return {
         exitCode: 0,
-        stdout: signals + '\n',
+        stdout: `${signals}\n`,
         stderr: '',
         duration: performance.now() - start,
       }
@@ -56,20 +56,21 @@ export const killCommand: BuiltinCommand = {
     // Parse command line arguments
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
-      
+
       if (parseSignals && arg.startsWith('-')) {
         if (arg === '--') {
           parseSignals = false
           continue
         }
-        
+
         // Handle -s SIGNAL or -SIGNAL format
         if (arg.startsWith('-s') || arg.startsWith('--signal=')) {
           let sig: string
-          
+
           if (arg.startsWith('--signal=')) {
             sig = arg.slice(9)
-          } else if (arg === '-s' || arg === '--signal') {
+          }
+          else if (arg === '-s' || arg === '--signal') {
             sig = args[++i]
             if (!sig) {
               return {
@@ -79,15 +80,17 @@ export const killCommand: BuiltinCommand = {
                 duration: performance.now() - start,
               }
             }
-          } else {
+          }
+          else {
             sig = arg.slice(1) // Handle -SIGNAL format
           }
-          
+
           // Convert signal name to uppercase and check if it's valid
           const sigUpper = sig.toUpperCase()
           if (SIGNALS[sigUpper] !== undefined || !isNaN(Number(sig))) {
             signal = sigUpper
-          } else {
+          }
+          else {
             return {
               exitCode: 1,
               stdout: '',
@@ -97,13 +100,13 @@ export const killCommand: BuiltinCommand = {
           }
           continue
         }
-        
+
         // Handle -SIGNAL format
         if (/^-\d+$/.test(arg)) {
           signal = arg.slice(1)
           continue
         }
-        
+
         // Unknown option
         return {
           exitCode: 1,
@@ -112,13 +115,13 @@ export const killCommand: BuiltinCommand = {
           duration: performance.now() - start,
         }
       }
-      
+
       // Parse PID or job spec
-      const pid = parseInt(arg, 10)
+      const pid = Number.parseInt(arg, 10)
       if (isNaN(pid)) {
         // Handle job spec (e.g., %1)
         if (arg.startsWith('%')) {
-          const jobId = parseInt(arg.slice(1), 10)
+          const jobId = Number.parseInt(arg.slice(1), 10)
           if (isNaN(jobId)) {
             return {
               exitCode: 1,
@@ -127,7 +130,7 @@ export const killCommand: BuiltinCommand = {
               duration: performance.now() - start,
             }
           }
-          
+
           const job = shell.getJob(jobId)
           if (!job || !job.pid) {
             return {
@@ -138,7 +141,8 @@ export const killCommand: BuiltinCommand = {
             }
           }
           pids.push(job.pid)
-        } else {
+        }
+        else {
           return {
             exitCode: 1,
             stdout: '',
@@ -146,7 +150,8 @@ export const killCommand: BuiltinCommand = {
             duration: performance.now() - start,
           }
         }
-      } else {
+      }
+      else {
         pids.push(pid)
       }
     }
@@ -162,7 +167,7 @@ export const killCommand: BuiltinCommand = {
 
     // In a real implementation, we would send the signal to each process
     // For now, we'll just simulate it and update job status if needed
-    const signalNum = SIGNALS[signal] || parseInt(signal, 10) || 15 // Default to TERM
+    const signalNum = SIGNALS[signal] || Number.parseInt(signal, 10) || 15 // Default to TERM
     const results: string[] = []
     let hasError = false
 
@@ -172,25 +177,30 @@ export const killCommand: BuiltinCommand = {
         // For now, we'll just update the job status if this PID matches a job
         const jobs = shell.getJobs()
         const job = jobs.find(j => j.pid === pid)
-        
+
         if (job) {
           if (signalNum === 18) { // CONT
             shell.setJobStatus(job.id, 'running')
             results.push(`[${job.id}] ${job.command} continued`)
-          } else if (signalNum === 19 || signalNum === 20) { // STOP/TSTP
+          }
+          else if (signalNum === 19 || signalNum === 20) { // STOP/TSTP
             shell.setJobStatus(job.id, 'stopped')
             results.push(`[${job.id}] ${job.command} stopped`)
-          } else if (signalNum === 9 || signalNum === 15) { // KILL/TERM
+          }
+          else if (signalNum === 9 || signalNum === 15) { // KILL/TERM
             shell.setJobStatus(job.id, 'done')
             shell.removeJob(job.id)
             results.push(`[${job.id}] ${job.command} terminated`)
-          } else {
+          }
+          else {
             results.push(`Sent signal ${signal} to process ${pid}`)
           }
-        } else {
+        }
+        else {
           results.push(`Sent signal ${signal} to process ${pid}`)
         }
-      } catch (err) {
+      }
+      catch (err) {
         hasError = true
         results.push(`kill: (${pid}) - No such process`)
       }
@@ -198,8 +208,8 @@ export const killCommand: BuiltinCommand = {
 
     return {
       exitCode: hasError ? 1 : 0,
-      stdout: results.join('\n') + '\n',
-      stderr: hasError ? results.filter(r => r.includes('No such process')).join('\n') + '\n' : '',
+      stdout: `${results.join('\n')}\n`,
+      stderr: hasError ? `${results.filter(r => r.includes('No such process')).join('\n')}\n` : '',
       duration: performance.now() - start,
     }
   },

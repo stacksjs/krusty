@@ -31,7 +31,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       const filePath = args[0]
       const scriptArgs = args.slice(1)
       let fullPath: string | null = null
-      
+
       // Lazy load dependencies
       const fs = await import('node:fs/promises')
       const path = await import('node:path')
@@ -40,18 +40,21 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
         // Resolve the file path
         if (path.isAbsolute(filePath) || filePath.startsWith('./') || filePath.startsWith('../')) {
           fullPath = path.resolve(shell.cwd, filePath)
-        } else {
+        }
+        else {
           // Search in PATH if not a relative/absolute path
           const pathDirs = (shell.environment.PATH || process.env.PATH || '').split(path.delimiter)
           for (const dir of pathDirs) {
-            if (!dir) continue // Skip empty PATH entries
-            
+            if (!dir)
+              continue // Skip empty PATH entries
+
             const testPath = path.join(dir, filePath)
             try {
               await fs.access(testPath)
               fullPath = testPath
               break
-            } catch {
+            }
+            catch {
               continue
             }
           }
@@ -96,7 +99,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
           for (const line of lines) {
             const trimmed = line.trim()
-            
+
             // Skip comments and empty lines
             if (!trimmed || trimmed.startsWith('#')) {
               continue
@@ -148,14 +151,14 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
    */
   const cdCommand: BuiltinCommand = {
     name: 'cd',
-    description: 'Change the current working directory',
+    description: 'Change the current directory',
     usage: 'cd [directory]',
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
-      
+
       // Default to home directory if no argument is provided
       const targetArg = args[0] || '~'
-      
+
       try {
         // Handle tilde expansion for home directory
         let targetDir = targetArg.startsWith('~')
@@ -165,7 +168,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
         // Resolve relative paths against current working directory
         if (!targetDir.startsWith('/')) {
           targetDir = resolve(shell.cwd, targetDir)
-        } else {
+        }
+        else {
           // For absolute paths, resolve to handle any '..' or '.'
           targetDir = resolve(targetDir)
         }
@@ -193,7 +197,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
         // Attempt to change directory using shell's method
         const success = shell.changeDirectory(targetDir)
-        
+
         if (!success) {
           return {
             exitCode: 1,
@@ -209,7 +213,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
           stderr: '',
           duration: performance.now() - start,
         }
-      } catch (error) {
+      }
+      catch (error) {
         return {
           exitCode: 1,
           stdout: '',
@@ -219,7 +224,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       }
     },
   }
-  
+
   // Add cd command to builtins
   builtins.set('cd', cdCommand)
 
@@ -233,25 +238,26 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     usage: 'pwd',
     async execute(_args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
-      
+
       try {
         // Verify we have a valid working directory
         if (!shell.cwd || typeof shell.cwd !== 'string') {
           throw new Error('Invalid working directory')
         }
-        
+
         // Ensure the directory still exists and is accessible
         if (!existsSync(shell.cwd)) {
           throw new Error('Current working directory no longer exists')
         }
-        
+
         return {
           exitCode: 0,
           stdout: `${shell.cwd}\n`,
           stderr: '',
           duration: performance.now() - start,
         }
-      } catch (error) {
+      }
+      catch (error) {
         return {
           exitCode: 1,
           stdout: '',
@@ -261,7 +267,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
       }
     },
   }
-  
+
   // Add pwd command to builtins
   builtins.set('pwd', pwdCommand)
 
@@ -275,7 +281,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
     usage: 'history [-c] [-n number]',
     async execute(args: string[], shell: Shell): Promise<CommandResult> {
       const start = performance.now()
-      
+
       try {
         // Handle clear history flag
         if (args.includes('-c')) {
@@ -291,14 +297,15 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
 
         // Default to showing all history
         let limit = shell.history.length
-        
+
         // Check for -n flag to limit output
         const nIndex = args.indexOf('-n')
         if (nIndex !== -1 && args[nIndex + 1]) {
           const parsed = Number.parseInt(args[nIndex + 1], 10)
           if (!Number.isNaN(parsed) && parsed > 0) {
             limit = Math.min(parsed, shell.history.length)
-          } else {
+          }
+          else {
             return {
               exitCode: 1,
               stdout: '',
@@ -333,7 +340,8 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
           stderr: '',
           duration: performance.now() - start,
         }
-      } catch (error) {
+      }
+      catch (error) {
         return {
           exitCode: 1,
           stdout: '',
