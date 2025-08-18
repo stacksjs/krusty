@@ -105,6 +105,34 @@ describe('Alias Support', () => {
     expect(result.stdout.trim()).toBe('"first arg" second')
   })
 
+  // Stdin redirection via alias: cat < README.md
+  test('should support stdin redirection in alias-expanded commands', async () => {
+    shell.aliases.readme = 'cat < README.md'
+    const result = await shell.execute('readme')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    // README contains project title
+    expect(result.stdout).toContain('Krusty Shell')
+  })
+
+  // Quoted '<' must not be treated as redirection
+  test('should not treat quoted < as stdin redirection in alias', async () => {
+    shell.aliases.lt = 'echo "< inside"'
+    const result = await shell.execute('lt')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout.trim()).toBe('< inside')
+  })
+
+  // Combine stdin redirection with chaining operators
+  test('should support stdin redirection with chaining (||) in alias', async () => {
+    shell.aliases.combo = 'cat < README.md || echo fail'
+    const result = await shell.execute('combo')
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('Krusty Shell')
+    expect(result.stdout).not.toContain('fail')
+  })
+
   // Special characters in aliases
   test('should handle special characters in aliases', async () => {
     shell.aliases['special-chars'] = 'echo "$@" | cat -e'

@@ -1,7 +1,7 @@
 import type { ChildProcess } from 'node:child_process'
 import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell } from './types'
 import { spawn } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import process from 'node:process'
@@ -818,6 +818,39 @@ export class KrustyShell implements Shell {
 
     // Process each command in the sequence
     const processCommand = (cmdStr: string, isFirst: boolean = true) => {
+      // Extract simple stdin redirection: < file (only when not quoted)
+      let stdinFile: string | undefined
+      {
+        let inQuotes = false
+        let q = ''
+        for (let i = 0; i < cmdStr.length; i++) {
+          const ch = cmdStr[i]
+          if (!inQuotes && (ch === '"' || ch === '\'')) {
+            inQuotes = true
+            q = ch
+            continue
+          }
+          if (inQuotes && ch === q) {
+            inQuotes = false
+            q = ''
+            continue
+          }
+          if (!inQuotes && ch === '<') {
+            // consume '<' and any whitespace
+            let j = i + 1
+            while (j < cmdStr.length && /\s/.test(cmdStr[j])) j++
+            // capture the filename token (stop at whitespace or operator)
+            let k = j
+            while (k < cmdStr.length && !/[\s|;&]/.test(cmdStr[k])) k++
+            if (k > j) {
+              stdinFile = cmdStr.slice(j, k)
+              // remove the segment from the command string
+              cmdStr = `${cmdStr.slice(0, i)} ${cmdStr.slice(k)}`.trim()
+            }
+            break
+          }
+        }
+      }
       // Handle pipes in the command
       if (cmdStr.includes('|')) {
         const pipeParts = cmdStr.split('|').map(part => part.trim())
@@ -836,6 +869,7 @@ export class KrustyShell implements Shell {
         // Return the first command with the rest as pipe commands
         return {
           ...pipeCommands[0],
+          stdinFile,
           pipe: true,
           pipeCommands: pipeCommands.slice(1),
         }
@@ -871,6 +905,7 @@ export class KrustyShell implements Shell {
         ...baseCommand,
         name: tokens[0],
         args: finalArgs.filter(arg => arg !== ''),
+        stdinFile,
       }
     }
 
@@ -972,10 +1007,6 @@ export class KrustyShell implements Shell {
     return this.setupStreamingProcess(child, start, command, input)
   }
 
-  // ... (rest of the code remains the same)
-
-  /* Removed malformed duplicate setupStreamingProcess and stray methods here */
-
   /**
    * Helper method to set up streaming for a child process
    * This ensures consistent handling of output streams across all command executions
@@ -1047,14 +1078,41 @@ export class KrustyShell implements Shell {
       })
 
       // Handle input if provided
-      if (input && child.stdin) {
-        try {
-          child.stdin?.setDefaultEncoding('utf-8')
-          child.stdin?.write(input)
-          child.stdin?.end()
+      if (child.stdin) {
+        if (input) {
+          try {
+            child.stdin.setDefaultEncoding('utf-8')
+            child.stdin.write(input)
+            child.stdin.end()
+          }
+          catch (err) {
+            this.log.error('Error writing to stdin:', err)
+          }
         }
-        catch (err) {
-          this.log.error('Error writing to stdin:', err)
+        else if (command.stdinFile) {
+          try {
+            const rs = createReadStream(command.stdinFile, { encoding: 'utf-8' })
+            rs.on('error', (err) => {
+              // Surface error to stderr stream and close stdin
+              stderr += `${String(err)}\n`
+              try {
+                child.stdin?.end()
+              }
+              catch {}
+            })
+            rs.pipe(child.stdin)
+          } catch (err) {
+            try {
+              this.log.error('Error opening stdin file:', err)
+            } catch (logError) {
+              console.error(logError)
+            }
+            try {
+              child.stdin.end()
+            } catch (endError) {
+              console.error(endError)
+            }
+          }
         }
       }
 
