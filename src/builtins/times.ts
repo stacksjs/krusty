@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from './types'
 import process from 'node:process'
 
 export const timesCommand: BuiltinCommand = {
@@ -8,7 +8,7 @@ export const timesCommand: BuiltinCommand = {
   examples: [
     'times',
   ],
-  async execute(): Promise<CommandResult> {
+  async execute(_args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
     const up = process.uptime() // seconds
     const fmt = (s: number) => {
@@ -17,6 +17,8 @@ export const timesCommand: BuiltinCommand = {
       return `${m}m${sec}s`
     }
     const line = `${fmt(up)} ${fmt(0)}\n${fmt(0)} ${fmt(0)}\n`
+    if (shell.config.verbose)
+      shell.log.debug('[times] uptime(s):', up.toFixed(2))
     return { exitCode: 0, stdout: line, stderr: '', duration: performance.now() - start }
   },
 }
