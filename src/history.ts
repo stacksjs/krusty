@@ -15,7 +15,7 @@ export class HistoryManager {
   constructor(config?: HistoryConfig) {
     this.config = {
       maxEntries: 1000,
-      file: '~/.bunsh_history',
+      file: '~/.krusty_history',
       ignoreDuplicates: true,
       ignoreSpace: true,
       searchMode: 'fuzzy',
@@ -23,7 +23,7 @@ export class HistoryManager {
     }
 
     // Resolve the history file path
-    this.historyPath = this.resolvePath(this.config.file || '~/.bunsh_history')
+    this.historyPath = this.resolvePath(this.config.file || '~/.krusty_history')
 
     // Initialize asynchronously
     this.initialize().catch(console.error)
@@ -140,7 +140,7 @@ export class HistoryManager {
 
   load(): void {
     try {
-      const filePath = this.resolvePath(this.config.file || '~/.bunsh_history')
+      const filePath = this.resolvePath(this.config.file || '~/.krusty_history')
 
       if (!existsSync(filePath)) {
         return
@@ -159,7 +159,7 @@ export class HistoryManager {
 
   saveSync(): void {
     try {
-      const filePath = this.resolvePath(this.config.file || '~/.bunsh_history')
+      const filePath = this.resolvePath(this.config.file || '~/.krusty_history')
       const dir = dirname(filePath)
 
       // Ensure directory exists

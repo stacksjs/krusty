@@ -17,26 +17,38 @@ class AutoSuggestPlugin extends BasePlugin implements Plugin {
     {
       // Match any input to consider suggestions
       command: '',
-      complete: (input: string, _cursor: number, context: PluginContext): string[] => {
+      complete: (input: string, cursor: number, context: PluginContext): string[] => {
         const suggestions: string[] = []
-        const partial = input.trim()
+        const before = input.slice(0, Math.max(0, cursor))
+        const partial = before.trim()
+        const caseSensitive = context.config.completion?.caseSensitive ?? false
+        const startsWith = (s: string, p: string) =>
+          caseSensitive ? s.startsWith(p) : s.toLowerCase().startsWith(p.toLowerCase())
+        const equals = (a: string, b: string) =>
+          caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase()
+        const max = context.config.completion?.maxSuggestions || 10
 
         // History suggestions (most recent first)
         const history = [...context.shell.history].reverse()
         for (const h of history) {
-          if (!partial || h.startsWith(partial)) {
+          if (!partial || startsWith(h, partial)) {
             if (!suggestions.includes(h))
               suggestions.push(h)
-            if (suggestions.length >= (context.config.completion?.maxSuggestions || 10))
+            if (suggestions.length >= max)
               break
           }
         }
 
-        // Alias names
-        for (const alias of Object.keys(context.shell.aliases)) {
-          if (!partial || alias.startsWith(partial)) {
-            if (!suggestions.includes(alias))
-              suggestions.push(alias)
+        // Alias names (optionally toggleable via plugin config)
+        const includeAliases = context.pluginConfig?.autoSuggest?.includeAliases !== false
+        if (includeAliases && suggestions.length < max) {
+          for (const alias of Object.keys(context.shell.aliases)) {
+            if (!partial || startsWith(alias, partial)) {
+              if (!suggestions.includes(alias))
+                suggestions.push(alias)
+              if (suggestions.length >= max)
+                break
+            }
           }
         }
 
@@ -50,11 +62,16 @@ class AutoSuggestPlugin extends BasePlugin implements Plugin {
           gitst: 'git status',
           gist: 'git status',
         }
-        if (corrections[partial]) {
-          suggestions.unshift(corrections[partial])
+        // Apply correction if the current partial exactly matches a known typo
+        const correctionKey = Object.keys(corrections).find(k => equals(k, partial))
+        if (correctionKey) {
+          const fix = corrections[correctionKey]
+          // Put correction at the front
+          if (!suggestions.includes(fix))
+            suggestions.unshift(fix)
         }
 
-        return suggestions.slice(0, context.config.completion?.maxSuggestions || 10)
+        return suggestions.slice(0, max)
       },
     },
   ]

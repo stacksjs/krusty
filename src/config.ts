@@ -35,7 +35,14 @@ export const defaultConfig: KrustyConfig = {
     showDescriptions: true,
     maxSuggestions: 10,
   },
-  aliases: {},
+  aliases: {
+    // Stage all changes and open a commit message prompt
+    commit: 'git add .; git commit -m',
+    // Work-in-progress: use the commit alias to create a WIP commit and then push
+    wip: "commit 'chore: wip'; push",
+    // Push current branch
+    push: 'git push',
+  },
   environment: {},
   plugins: [],
   theme: {

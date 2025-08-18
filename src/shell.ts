@@ -568,13 +568,15 @@ export class KrustyShell implements Shell {
       return this.executePipedCommands(commands, options)
     }
 
-    // If the expanded command is a chain of sequential commands (separated by ;) from alias expansion
+    // If the expanded command is a chain of sequential/conditional commands from alias expansion
     if ((expandedCommand as any).next) {
       let current: any = expandedCommand
       let aggregate: CommandResult | null = null
+      let lastExit = 0
 
       while (current) {
         const res = await this.executeSingleCommand({ name: current.name, args: current.args }, options)
+        lastExit = res.exitCode
         if (!aggregate) {
           aggregate = { ...res }
         }
@@ -587,7 +589,22 @@ export class KrustyShell implements Shell {
           }
         }
 
-        current = current.next?.command
+        // Respect conditional chaining operators: && and ||
+        const link = current.next as any | undefined
+        if (!link) {
+          current = undefined
+          continue
+        }
+        const op = link.type || ';'
+        if (op === '&&' && lastExit !== 0) {
+          // stop executing the rest of the chain on failure
+          break
+        }
+        if (op === '||' && lastExit === 0) {
+          // stop executing the rest of the chain on success
+          break
+        }
+        current = link.command
       }
 
       return aggregate || { exitCode: 0, stdout: '', stderr: '', duration: 0 }
@@ -695,6 +712,11 @@ export class KrustyShell implements Shell {
 
     // Process the alias value
     let processedValue = aliasValue.trim()
+    // Simple command substitution for current working directory
+    // Replace `pwd` and $(pwd) occurrences with this.cwd while preserving surrounding quotes
+    processedValue = processedValue
+      .replace(/`pwd`/g, this.cwd)
+      .replace(/\$\(pwd\)/g, this.cwd)
     // Handle quoted numeric placeholders like "$1" so that quotes are preserved in output.
     // We replace them with internal markers before general substitution and remove the quotes,
     // then after tokenization we turn the markers back into literal quoted arguments.
@@ -719,7 +741,8 @@ export class KrustyShell implements Shell {
         processedValue = processedValue.replace(/\$@/g, quotedArgs.join(' '))
       }
 
-      // Replace $1, $2, etc. with specific arguments
+      // Replace $1, $2, etc. with specific arguments (no auto-quoting here;
+      // quoting can be enforced by writing "$1" in the alias which we preserve via markers)
       processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
         const index = Number.parseInt(num, 10) - 1
         return command.args[index] !== undefined ? command.args[index] : ''
@@ -727,7 +750,8 @@ export class KrustyShell implements Shell {
 
       // If alias ends with space OR it doesn't contain placeholders, append remaining args
       if (command.args.length > 0 && (endsWithSpace || !hasPlaceholders)) {
-        processedValue += ` ${command.args.join(' ')}`
+        const quoted = command.args.map((arg: string) => (/\s/.test(arg) ? `"${arg}"` : arg))
+        processedValue += ` ${quoted.join(' ')}`
       }
     }
     else {
@@ -735,13 +759,60 @@ export class KrustyShell implements Shell {
       processedValue = processedValue.replace(/\$@|\$\d+/g, '')
     }
 
-    // Handle multiple commands separated by ;
-    const commandStrings = processedValue
-      .split(';')
-      .map(s => s.trim())
-      .filter(Boolean)
+    // Handle multiple commands separated by ;, &&, || (quote-aware)
+    const segments: Array<{ cmd: string, op?: ';' | '&&' | '||' }> = []
+    {
+      let buf = ''
+      let inQuotes = false
+      let q = ''
+      let i = 0
+      const pushSeg = (op?: ';' | '&&' | '||') => {
+        const t = buf.trim()
+        if (t)
+          segments.push({ cmd: t, op })
+        buf = ''
+      }
+      while (i < processedValue.length) {
+        const ch = processedValue[i]
+        const next = processedValue[i + 1]
+        if (!inQuotes && (ch === '"' || ch === '\'')) {
+          inQuotes = true
+          q = ch
+          buf += ch
+          i++
+          continue
+        }
+        if (inQuotes && ch === q) {
+          inQuotes = false
+          q = ''
+          buf += ch
+          i++
+          continue
+        }
+        if (!inQuotes) {
+          if (ch === ';') {
+            pushSeg(';')
+            i++
+            continue
+          }
+          if (ch === '&' && next === '&') {
+            pushSeg('&&')
+            i += 2
+            continue
+          }
+          if (ch === '|' && next === '|') {
+            pushSeg('||')
+            i += 2
+            continue
+          }
+        }
+        buf += ch
+        i++
+      }
+      pushSeg()
+    }
 
-    if (commandStrings.length === 0) {
+    if (segments.length === 0) {
       return command
     }
 
@@ -804,12 +875,11 @@ export class KrustyShell implements Shell {
     }
 
     // Process all commands in the sequence
-    const processedCommands = []
-    for (let i = 0; i < commandStrings.length; i++) {
-      const cmd = processCommand(commandStrings[i], i === 0)
-      if (cmd) {
-        processedCommands.push(cmd)
-      }
+    const processedCommands: any[] = []
+    for (let i = 0; i < segments.length; i++) {
+      const cmd = processCommand(segments[i].cmd, i === 0)
+      if (cmd)
+        processedCommands.push({ node: cmd, op: segments[i].op })
     }
 
     if (processedCommands.length === 0) {
@@ -818,17 +888,16 @@ export class KrustyShell implements Shell {
 
     // If there's only one command, return it directly
     if (processedCommands.length === 1) {
-      return processedCommands[0]
+      return processedCommands[0].node
     }
 
     // For multiple commands, chain them together with ;
-    const result = { ...processedCommands[0] }
-    let current = result
-
+    const result = { ...processedCommands[0].node }
+    let current: any = result
     for (let i = 1; i < processedCommands.length; i++) {
       current.next = {
-        type: ';',
-        command: processedCommands[i],
+        type: (processedCommands[i - 1].op || ';'),
+        command: processedCommands[i].node,
       }
       current = current.next.command
     }

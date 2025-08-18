@@ -22,7 +22,7 @@ export class HistoryManager {
 
     try {
       // Ensure history directory exists
-      await mkdir(join(homedir(), '.bunsh'), { recursive: true })
+      await mkdir(join(homedir(), '.krusty'), { recursive: true })
 
       // Load existing history
       const data = await readFile(this.historyPath, 'utf-8').catch(() => '')
