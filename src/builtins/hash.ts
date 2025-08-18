@@ -20,6 +20,8 @@ export const hashCommand: BuiltinCommand = {
 
     // Handle -r flag to clear the hash table
     if (args[0] === '-r') {
+      if (shell.config.verbose)
+        shell.log.debug('[hash] clearing hash table')
       shell.hashTable.clear()
       args.shift()
 
@@ -39,6 +41,9 @@ export const hashCommand: BuiltinCommand = {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([cmd, path]) => `builtin hash -p ${path} ${cmd}`)
         .join('\n')
+
+      if (shell.config.verbose)
+        shell.log.debug('[hash] listing %d entries', shell.hashTable.size)
 
       return {
         exitCode: 0,
@@ -62,6 +67,8 @@ export const hashCommand: BuiltinCommand = {
         const cmd = args.shift()
         if (path && cmd) {
           shell.hashTable.set(cmd, path)
+          if (shell.config.verbose)
+            shell.log.debug('[hash] set -p %s=%s', cmd, path)
           continue
         }
       }
@@ -98,6 +105,9 @@ export const hashCommand: BuiltinCommand = {
         results.push(`hash: ${name}: command not found`)
       }
     }
+
+    if (shell.config.verbose)
+      shell.log.debug('[hash] processed=%d found_all=%s', args.length, String(allFound))
 
     return {
       exitCode: allFound ? 0 : 1,

@@ -18,6 +18,8 @@ export const trapCommand: BuiltinCommand = {
 
     // If no arguments, list all traps
     if (args.length === 0) {
+      if (shell.config.verbose)
+        shell.log.debug('[trap] listing traps')
       const output: string[] = []
 
       for (const [signal, handler] of shell.signalHandlers.entries()) {
@@ -63,6 +65,8 @@ export const trapCommand: BuiltinCommand = {
 
     const action = args[0]
     const signals = args.slice(1)
+    if (shell.config.verbose)
+      shell.log.debug('[trap] action=%s signals=%o', action, signals)
 
     // Handle -l flag (list signal names)
     if (action === '-l' || action === '--list') {

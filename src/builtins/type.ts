@@ -69,6 +69,9 @@ export const typeCommand: BuiltinCommand = {
       }
     }
 
+    if (shell.config.verbose)
+      shell.log.debug('[type] flags: showAll=%s fileOnly=%s noPath=%s showPath=%s names=%o', String(showAll), String(fileOnly), String(noPath), String(showPath), args)
+
     for (const name of args) {
       if (!name)
         continue
@@ -153,6 +156,9 @@ export const typeCommand: BuiltinCommand = {
         results.push(`type: ${name}: not found`)
       }
     }
+
+    if (shell.config.verbose)
+      shell.log.debug('[type] evaluated=%d allFound=%s', args.length, String(allFound))
 
     return {
       exitCode: allFound ? 0 : 1,

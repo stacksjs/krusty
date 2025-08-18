@@ -23,6 +23,7 @@ export const setCommand: BuiltinCommand = {
 
     // Simple option support: -e (ignored for now but succeed)
     let i = 0
+    let sawE = false
     while (i < args.length && args[i].startsWith('-')) {
       const opt = args[i]
       if (opt === '--') {
@@ -35,6 +36,7 @@ export const setCommand: BuiltinCommand = {
         switch (flag) {
           case 'e':
             // could set a flag on shell.options if exists
+            sawE = true
             break
           default:
             // ignore unknown flags for compatibility; continue
@@ -45,6 +47,7 @@ export const setCommand: BuiltinCommand = {
     }
 
     // Remaining args should be NAME=VALUE pairs
+    const assignments: Array<{ name: string, value: string }> = []
     for (; i < args.length; i++) {
       const tok = args[i]
       if (!tok)
@@ -60,6 +63,11 @@ export const setCommand: BuiltinCommand = {
       }
       if (name)
         shell.environment[name] = value
+      assignments.push({ name, value })
+    }
+
+    if (shell.config.verbose) {
+      shell.log.debug('[set] flags: -e=%s, assignments: %o', String(sawE), assignments)
     }
 
     return {

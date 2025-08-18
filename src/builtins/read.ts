@@ -144,6 +144,9 @@ export const readCommand: BuiltinCommand = {
       vars.push(arg)
     }
 
+    if (shell.config.verbose)
+      shell.log.debug('[read] options=%o vars=%o', options, vars)
+
     // In a real implementation, we would read from stdin
     // For now, we'll simulate reading a line
     let input = ''
@@ -259,6 +262,9 @@ export const readCommand: BuiltinCommand = {
         fields.push(currentField)
       }
 
+      if (shell.config.verbose)
+        shell.log.debug('[read] input_length=%d', input.length)
+
       // Assign to variables
       if (options.arrayName) {
         // Assign to array
@@ -286,6 +292,9 @@ export const readCommand: BuiltinCommand = {
         // Default to REPLY variable
         shell.environment.REPLY = fields.join(' ')
       }
+
+      if (shell.config.verbose)
+        shell.log.debug('[read] fields=%d -> assigned vars=%o', fields.length, vars.length ? vars : ['REPLY'])
 
       return {
         exitCode: 0,

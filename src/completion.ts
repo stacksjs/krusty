@@ -69,10 +69,15 @@ export class CompletionProvider {
       case 'getopts': {
         // getopts optstring name [args...]
         if (tokens.length === 2) {
+          // If user typed a space after optstring (last===""), suggest var names
+          if (last === '') {
+            const names = ['opt', 'flag']
+            return names
+          }
           const optstrings = ['"ab:"', '"f:"', '"hv"', '"o:"']
           return optstrings.filter(s => s.startsWith(last) || last === '')
         }
-        if (tokens.length === 3) {
+        if (tokens.length >= 3) {
           const names = ['opt', 'flag']
           return names.filter(s => s.startsWith(last) || last === '')
         }
@@ -98,8 +103,18 @@ export class CompletionProvider {
       case 'trap': {
         // Common POSIX signals
         const signals = [
-          '-SIGINT', '-SIGTERM', '-SIGKILL', '-SIGHUP', '-SIGQUIT', '-SIGSTOP',
-          'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGQUIT', 'SIGSTOP',
+          '-SIGINT',
+          '-SIGTERM',
+          '-SIGKILL',
+          '-SIGHUP',
+          '-SIGQUIT',
+          '-SIGSTOP',
+          'SIGINT',
+          'SIGTERM',
+          'SIGKILL',
+          'SIGHUP',
+          'SIGQUIT',
+          'SIGSTOP',
         ]
         if (last.startsWith('-'))
           return signals.filter(s => s.startsWith(last))
@@ -300,7 +315,13 @@ export class CompletionProvider {
       }
     }
 
-    if (current.trim()) {
+    // If input ends with a space (and we're not in quotes), append an empty token
+    if (!inQuotes && input.endsWith(' ')) {
+      if (current.trim())
+        tokens.push(current)
+      tokens.push('')
+    }
+    else if (current.trim()) {
       tokens.push(current)
     }
 
