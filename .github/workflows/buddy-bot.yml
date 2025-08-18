@@ -227,7 +227,7 @@ jobs:
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📋 View detailed logs above for check results (rebase requests and auto-closing)." >> $GITHUB_STEP_SUMMARY
+          echo "📋 View detailed logs above for check results (rebase requests, auto-closing, and branch cleanup)." >> $GITHUB_STEP_SUMMARY
 
   # Dependency update job
   dependency-update:
