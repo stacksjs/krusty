@@ -16,8 +16,9 @@ export class CompletionProvider {
    */
   private getCommandCompletions(prefix: string): string[] {
     const builtins = Array.from(this.shell.builtins.keys())
+    const aliases = Object.keys(this.shell.aliases || {})
     const pathCommands = this.getPathCommands()
-    const allCommands = [...new Set([...builtins, ...pathCommands])]
+    const allCommands = [...new Set([...builtins, ...aliases, ...pathCommands])]
     const caseSensitive = this.shell.config.completion?.caseSensitive ?? false
 
     return allCommands.filter(cmd =>

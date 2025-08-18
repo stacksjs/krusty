@@ -9,7 +9,7 @@ import { resolve } from 'node:path'
  */
 export const cdCommand: BuiltinCommand = {
   name: 'cd',
-  description: 'Change the current working directory',
+  description: 'Change the current directory',
   usage: 'cd [directory]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()

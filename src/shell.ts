@@ -30,6 +30,7 @@ export class KrustyShell implements Shell {
     command: string
     status: 'running' | 'stopped' | 'done'
   }> = []
+
   private nextJobId = 1
   private lastExitCode: number = 0
 
@@ -58,12 +59,8 @@ export class KrustyShell implements Shell {
       Object.entries(process.env).filter(([_, value]) => value !== undefined),
     ) as Record<string, string>
     this.history = []
-    this.historyManager = new HistoryManager({
-      maxEntries: 1000,
-      file: '~/.bunsh_history',
-      ignoreDuplicates: true,
-      ignoreSpace: true,
-    })
+    // Honor configured history settings
+    this.historyManager = new HistoryManager(this.config.history)
     // Initialize aliases from config (tests expect constructor to honor provided aliases)
     this.aliases = { ...(this.config.aliases || {}) }
     this.builtins = createBuiltins()
@@ -87,7 +84,8 @@ export class KrustyShell implements Shell {
   private loadHistory(): void {
     try {
       this.history = this.historyManager.getHistory()
-    } catch (error) {
+    }
+    catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to load history:', error)
       }
@@ -97,7 +95,8 @@ export class KrustyShell implements Shell {
   private saveHistory(): void {
     try {
       this.historyManager.save()
-    } catch (error) {
+    }
+    catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to save history:', error)
       }
@@ -112,7 +111,7 @@ export class KrustyShell implements Shell {
       id: jobId,
       pid: processId,
       command,
-      status: 'running'
+      status: 'running',
     })
     return jobId
   }
@@ -124,11 +123,11 @@ export class KrustyShell implements Shell {
     }
   }
 
-  getJob(id: number): { id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' } | undefined {
+  getJob(id: number): { id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' } | undefined {
     return this.jobs.find(job => job.id === id)
   }
 
-  getJobs(): Array<{ id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' }> {
+  getJobs(): Array<{ id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' }> {
     return [...this.jobs]
   }
 
@@ -467,10 +466,11 @@ export class KrustyShell implements Shell {
 
       // Get completions from the completion provider
       let completions: string[] = []
-      
+
       try {
         completions = this.completionProvider.getCompletions(input, cursor)
-      } catch (error) {
+      }
+      catch (error) {
         this.log.error('Error in completion provider:', error)
       }
 
@@ -479,22 +479,42 @@ export class KrustyShell implements Shell {
         try {
           const pluginCompletions = this.pluginManager.getPluginCompletions(input, cursor) || []
           completions = [...new Set([...completions, ...pluginCompletions])] // Remove duplicates
-        } catch (error) {
+        }
+        catch (error) {
           this.log.error('Error getting plugin completions:', error)
         }
       }
 
-      // Filter out empty strings and sort
+      // Determine current token prefix for filtering (basic handling of quotes)
+      const before = input.slice(0, Math.max(0, cursor))
+      const match = before.match(/(^|\s)(\S*)$/)
+      let prefix = match ? match[2] : before
+      if (prefix.startsWith('"') || prefix.startsWith('\'')) {
+        prefix = prefix.slice(1)
+      }
+
+      const caseSensitive = this.config.completion?.caseSensitive ?? false
+
+      // Filter out empty strings and enforce prefix match
       completions = completions
         .filter(c => c && c.trim().length > 0)
+        .filter(c =>
+          caseSensitive ? c.startsWith(prefix) : c.toLowerCase().startsWith(prefix.toLowerCase()),
+        )
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+      // Enforce max suggestions limit
+      const max = this.config.completion?.maxSuggestions ?? 10
+      if (completions.length > max)
+        completions = completions.slice(0, max)
 
       // Execute completion:after hooks
       this.hookManager.executeHooks('completion:after', { input, cursor, completions })
         .catch(err => this.log.error('completion:after hook error:', err))
 
       return completions
-    } catch (error) {
+    }
+    catch (error) {
       this.log.error('Error in getCompletions:', error)
       return []
     }
@@ -827,7 +847,8 @@ export class KrustyShell implements Shell {
   private async readLine(prompt: string): Promise<string | null> {
     return new Promise((resolve) => {
       const rl = this.rl
-      if (!rl) return resolve(null)
+      if (!rl)
+        return resolve(null)
 
       rl.question(prompt, (answer) => {
         const trimmed = answer.trim()
