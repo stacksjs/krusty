@@ -561,11 +561,14 @@ export class KrustyShell implements Shell {
 
     // If the expanded command represents a pipeline constructed by alias expansion
     if ((expandedCommand as any).pipe && Array.isArray((expandedCommand as any).pipeCommands)) {
+      // Preserve stdinFile (applies to the first command) and any other fields we might need
       const commands = [
-        { name: expandedCommand.name, args: expandedCommand.args },
+        { name: expandedCommand.name, args: expandedCommand.args, stdinFile: (expandedCommand as any).stdinFile },
         ...((expandedCommand as any).pipeCommands as any[]).map(c => ({ name: c.name, args: c.args })),
       ]
-      return this.executePipedCommands(commands, options)
+      // These are already expanded; avoid re-expanding aliases
+      const execOptions = { ...(options || {}), bypassAliases: true }
+      return this.executePipedCommands(commands, execOptions)
     }
 
     // If the expanded command is a chain of sequential/conditional commands from alias expansion
@@ -575,7 +578,11 @@ export class KrustyShell implements Shell {
       let lastExit = 0
 
       while (current) {
-        const res = await this.executeSingleCommand({ name: current.name, args: current.args }, options)
+        // Execute only the current node (preserve stdinFile, pipes, etc.) without its chain link
+        const nodeToRun: any = { ...current }
+        if (nodeToRun.next)
+          delete nodeToRun.next
+        const res = await this.executeSingleCommand(nodeToRun, { ...(options || {}), bypassAliases: true })
         lastExit = res.exitCode
         if (!aggregate) {
           aggregate = { ...res }

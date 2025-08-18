@@ -105,14 +105,21 @@ describe('Alias Support', () => {
     expect(result.stdout.trim()).toBe('"first arg" second')
   })
 
-  // Stdin redirection via alias: cat < README.md
+  // Stdin redirection via alias using a temp file
   test('should support stdin redirection in alias-expanded commands', async () => {
-    shell.aliases.readme = 'cat < README.md'
-    const result = await shell.execute('readme')
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('')
-    // README contains project title
-    expect(result.stdout).toContain('Krusty Shell')
+    const filename = 'stdin-test.txt'
+    const content = 'hello-stdin-redirection\n'
+    await Bun.write(filename, content)
+    try {
+      shell.aliases.readfile = `cat < ${filename}`
+      const result = await shell.execute('readfile')
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toBe(content)
+    } finally {
+      const fs = await import('node:fs/promises')
+      await fs.rm(filename, { force: true })
+    }
   })
 
   // Quoted '<' must not be treated as redirection
@@ -126,11 +133,19 @@ describe('Alias Support', () => {
 
   // Combine stdin redirection with chaining operators
   test('should support stdin redirection with chaining (||) in alias', async () => {
-    shell.aliases.combo = 'cat < README.md || echo fail'
-    const result = await shell.execute('combo')
-    expect(result.exitCode).toBe(0)
-    expect(result.stdout).toContain('Krusty Shell')
-    expect(result.stdout).not.toContain('fail')
+    const filename = 'stdin-test-2.txt'
+    const content = 'hello-stdin-2\n'
+    await Bun.write(filename, content)
+    try {
+      shell.aliases.combo = `cat < ${filename} || echo fail`
+      const result = await shell.execute('combo')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('hello-stdin-2')
+      expect(result.stdout).not.toContain('fail')
+    } finally {
+      const fs = await import('node:fs/promises')
+      await fs.rm(filename, { force: true })
+    }
   })
 
   // Special characters in aliases
