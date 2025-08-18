@@ -4,6 +4,10 @@ export const disownCommand: BuiltinCommand = {
   name: 'disown',
   description: 'Remove jobs from the job table',
   usage: 'disown [job_id...]',
+  examples: [
+    'disown             # disown the most recent job',
+    'disown %1 %2       # disown jobs by id',
+  ],
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
     const jobs = shell.getJobs()
@@ -20,6 +24,8 @@ export const disownCommand: BuiltinCommand = {
           .filter((n): n is number => typeof n === 'number')
 
     const errors: string[] = []
+    if (shell.config.verbose)
+      shell.log.debug('[disown] requested ids:', args.join(' '))
     for (const jid of jobIds) {
       const job = shell.getJob(jid)
       if (!job) {

@@ -6,6 +6,10 @@ export const commandCommand: BuiltinCommand = {
   name: 'command',
   description: 'Run a command ignoring functions and aliases',
   usage: 'command name [args...]',
+  examples: [
+    'alias ll="echo hi"; command ll   # does NOT expand alias, attempts to run external `ll`',
+    'command printf %s world            # runs builtin/external printf without alias/function overrides',
+  ],
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
     if (args.length === 0)
@@ -13,7 +17,9 @@ export const commandCommand: BuiltinCommand = {
 
     // Reconstruct command string and execute via shell
     const cmd = args.join(' ')
-    const res = await shell.execute(cmd)
+    if (shell.config.verbose)
+      shell.log.debug('[command] bypassing aliases/functions for:', cmd)
+    const res = await shell.execute(cmd, { bypassAliases: true, bypassFunctions: true })
     return { ...res, duration: performance.now() - start }
   },
 }

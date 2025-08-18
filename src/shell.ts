@@ -222,7 +222,7 @@ export class KrustyShell implements Shell {
     return this.executeSingleCommand(cmd)
   }
 
-  async execute(command: string): Promise<CommandResult> {
+  async execute(command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     const start = performance.now()
 
     try {
@@ -255,7 +255,7 @@ export class KrustyShell implements Shell {
       }
 
       // Execute command chain
-      const result = await this.executeCommandChain(parsed)
+      const result = await this.executeCommandChain(parsed, options)
       this.lastExitCode = result.exitCode
 
       // Execute command:after hooks
@@ -537,16 +537,16 @@ export class KrustyShell implements Shell {
     }
   }
 
-  private async executeCommandChain(parsed: ParsedCommand): Promise<CommandResult> {
+  private async executeCommandChain(parsed: ParsedCommand, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     if (parsed.commands.length === 1) {
-      return this.executeSingleCommand(parsed.commands[0])
+      return this.executeSingleCommand(parsed.commands[0], options)
     }
 
     // Handle piped commands
-    return this.executePipedCommands(parsed.commands)
+    return this.executePipedCommands(parsed.commands, options)
   }
 
-  private async executeSingleCommand(command: any): Promise<CommandResult> {
+  private async executeSingleCommand(command: any, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     if (!command?.name) {
       return {
         exitCode: 0,
@@ -557,7 +557,7 @@ export class KrustyShell implements Shell {
     }
 
     // Expand aliases with cycle detection
-    const expandedCommand = this.expandAliasWithCycleDetection(command)
+    const expandedCommand = options?.bypassAliases ? command : this.expandAliasWithCycleDetection(command)
 
     // If the expanded command represents a pipeline constructed by alias expansion
     if ((expandedCommand as any).pipe && Array.isArray((expandedCommand as any).pipeCommands)) {
@@ -565,7 +565,7 @@ export class KrustyShell implements Shell {
         { name: expandedCommand.name, args: expandedCommand.args },
         ...((expandedCommand as any).pipeCommands as any[]).map(c => ({ name: c.name, args: c.args })),
       ]
-      return this.executePipedCommands(commands)
+      return this.executePipedCommands(commands, options)
     }
 
     // If the expanded command is a chain of sequential commands (separated by ;) from alias expansion
@@ -574,7 +574,7 @@ export class KrustyShell implements Shell {
       let aggregate: CommandResult | null = null
 
       while (current) {
-        const res = await this.executeSingleCommand({ name: current.name, args: current.args })
+        const res = await this.executeSingleCommand({ name: current.name, args: current.args }, options)
         if (!aggregate) {
           aggregate = { ...res }
         }
@@ -594,7 +594,7 @@ export class KrustyShell implements Shell {
     }
 
     // Check if it's a builtin command
-    if (this.builtins.has(expandedCommand.name)) {
+    if (!options?.bypassFunctions && this.builtins.has(expandedCommand.name)) {
       const builtin = this.builtins.get(expandedCommand.name)!
       return builtin.execute(expandedCommand.args, this)
     }
@@ -628,7 +628,7 @@ export class KrustyShell implements Shell {
     return this.expandAliasWithCycleDetection(expanded, visited)
   }
 
-  private async executePipedCommands(commands: any[]): Promise<CommandResult> {
+  private async executePipedCommands(commands: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     // For now, implement simple pipe execution
     // This is a simplified version - full pipe implementation would be more complex
 
@@ -645,7 +645,7 @@ export class KrustyShell implements Shell {
 
       if (i === 0) {
         // First command
-        lastResult = await this.executeSingleCommand(command)
+        lastResult = await this.executeSingleCommand(command, options)
       }
       else {
         // Pipe previous output to current command

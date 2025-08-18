@@ -29,16 +29,13 @@ describe('command builtin', () => {
     expect(res.stderr).toContain('command: name required')
   })
 
-  it('executes the provided command string (current behavior: aliases still expand)', async () => {
+  it('bypasses aliases/functions: command ll does NOT expand alias', async () => {
     // Given an alias ll -> echo hi
     shell.aliases.ll = 'echo hi'
 
-    // Using command ll still goes through shell.execute(), which expands aliases currently
+    // Using command ll should bypass alias expansion and attempt to run external `ll`
     const res = await shell.execute('command ll')
-    expect(res.exitCode).toBe(0)
-    expect(res.stdout.trim()).toBe('hi')
-
-    // Note: once a real bypass is implemented in shell.execute(), this test should be updated
-    // to assert that aliases/functions are skipped (e.g., command ll should NOT expand alias).
+    expect(res.exitCode).not.toBe(0)
+    expect(res.stderr).toMatch(/krusty: ll: command not found|exec: ll: command not found/)
   })
 })

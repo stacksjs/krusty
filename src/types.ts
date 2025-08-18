@@ -151,6 +151,7 @@ export interface BuiltinCommand {
   name: string
   description: string
   usage: string
+  examples?: string[]
   execute: (args: string[], shell: Shell) => Promise<CommandResult>
 }
 
@@ -169,7 +170,7 @@ export interface Shell {
   umask?: number
 
   // Core methods
-  execute: (command: string) => Promise<CommandResult>
+  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>
   parseCommand: (input: string) => ParsedCommand
   changeDirectory: (path: string) => boolean

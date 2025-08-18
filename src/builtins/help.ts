@@ -37,9 +37,13 @@ export const helpCommand: BuiltinCommand = {
       }
     }
 
+    const examples = command.examples && command.examples.length
+      ? `\nExamples:\n${command.examples.map(e => `  ${e}`).join('\n')}`
+      : ''
+
     return {
       exitCode: 0,
-      stdout: `${command.name}: ${command.description}\nUsage: ${command.usage}\n`,
+      stdout: `${command.name}: ${command.description}\nUsage: ${command.usage}${examples}\n`,
       stderr: '',
       duration: performance.now() - start,
     }
