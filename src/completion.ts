@@ -53,6 +53,11 @@ export class CompletionProvider {
         }
         return []
       }
+      case 'cd': {
+        // Directory-only completions
+        const files = this.getFileCompletions(last)
+        return files.filter(f => f.endsWith('/'))
+      }
       case 'printf': {
         // Suggest common format strings for the first arg
         if (tokens.length === 2) {
@@ -72,6 +77,27 @@ export class CompletionProvider {
           return names.filter(s => s.startsWith(last) || last === '')
         }
         return []
+      }
+      case 'export': {
+        // Complete environment variable names; include '=' if first assignment
+        const keys = Object.keys(this.shell.environment || {})
+        const base = keys.map(k => (tokens.length <= 2 ? `${k}=` : k))
+        return base.filter(k => k.startsWith(last) || last === '')
+      }
+      case 'unset': {
+        const keys = Object.keys(this.shell.environment || {})
+        return keys.filter(k => k.startsWith(last) || last === '')
+      }
+      case 'kill':
+      case 'trap': {
+        // Common POSIX signals
+        const signals = [
+          '-SIGINT', '-SIGTERM', '-SIGKILL', '-SIGHUP', '-SIGQUIT', '-SIGSTOP',
+          'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGQUIT', 'SIGSTOP',
+        ]
+        if (last.startsWith('-'))
+          return signals.filter(s => s.startsWith(last))
+        return signals.filter(s => s.startsWith(last) || last === '')
       }
       // Builtins without args: no special completions
       case 'times':
