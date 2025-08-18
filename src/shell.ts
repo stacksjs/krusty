@@ -20,7 +20,7 @@ export class KrustyShell implements Shell {
   public config: KrustyConfig
   public cwd: string
   public environment: Record<string, string>
-  public history: string[]
+  public historyManager: HistoryManager
   public aliases: Record<string, string>
   public builtins: Map<string, BuiltinCommand>
 
@@ -59,14 +59,22 @@ export class KrustyShell implements Shell {
       Object.entries(process.env).filter(([_, value]) => value !== undefined),
     ) as Record<string, string>
     this.history = []
-    this.aliases = { ...this.config.aliases }
+    this.historyManager = new HistoryManager({
+      maxEntries: 1000,
+      file: '~/.bunsh_history',
+      ignoreDuplicates: true,
+      ignoreSpace: true,
+    })
+    this.aliases = {}
     this.builtins = createBuiltins()
+
+    // Initialize history manager
+    this.historyManager.initialize().catch(console.error)
 
     this.parser = new CommandParser()
     this.promptRenderer = new PromptRenderer(this.config)
     this.systemInfoProvider = new SystemInfoProvider()
     this.gitInfoProvider = new GitInfoProvider()
-    this.historyManager = new HistoryManager(this.config.history)
     this.completionProvider = new CompletionProvider(this)
     this.pluginManager = new PluginManager(this, this.config)
     this.hookManager = new HookManager(this, this.config)
@@ -757,21 +765,13 @@ export class KrustyShell implements Shell {
     return this.setupStreamingProcess(child, start, command, input)
   }
 
-  private readLine(prompt: string): Promise<string | null> {
+  private async readLine(prompt: string): Promise<string> {
     return new Promise((resolve) => {
-      if (!this.rl) {
-        resolve(null)
-        return
-      }
-
-      // Check if readline is in a usable state
-      try {
-        // Try to call a method to see if it's still valid
-        this.rl.getPrompt()
-      }
-      catch {
-        resolve(null)
-        return
+      const rl = this.historyManager.getReadlineInterface()
+      rl.question(prompt, (answer) => {
+        rl.close()
+        if (answer.trim()) {
+          this.historyManager.add(answer).catch(console.error)
       }
 
       // Set up error handler for the readline interface

@@ -1,26 +1,59 @@
+import type { Interface } from 'node:readline'
 import type { HistoryConfig } from './types'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
 
 export class HistoryManager {
   private history: string[] = []
   private config: HistoryConfig
+  private historyPath: string
+  private isInitialized = false
 
   constructor(config?: HistoryConfig) {
     this.config = {
-      maxEntries: 10000,
-      file: '~/.krusty_history',
+      maxEntries: 1000,
+      file: '~/.bunsh_history',
       ignoreDuplicates: true,
       ignoreSpace: true,
       searchMode: 'fuzzy',
       ...config,
     }
 
-    this.load()
+    // Resolve the history file path
+    this.historyPath = this.resolvePath(this.config.file)
+
+    // Initialize asynchronously
+    this.initialize().catch(console.error)
   }
 
-  add(command: string): void {
+  async initialize(): Promise<void> {
+    if (this.isInitialized)
+      return
+
+    try {
+      // Ensure history directory exists
+      const dir = dirname(this.historyPath)
+      if (!existsSync(dir)) {
+        await fs.mkdir(dir, { recursive: true })
+      }
+
+      // Load existing history
+      if (existsSync(this.historyPath)) {
+        const data = await fs.readFile(this.historyPath, 'utf-8')
+        this.history = data.split('\n').filter(Boolean)
+      }
+
+      this.isInitialized = true
+    }
+    catch (error) {
+      console.error('Failed to initialize history:', error)
+      this.history = []
+    }
+  }
+
+  async add(command: string): Promise<void> {
     // Skip empty commands
     if (!command.trim())
       return
@@ -40,10 +73,36 @@ export class HistoryManager {
     if (this.config.maxEntries && this.history.length > this.config.maxEntries) {
       this.history = this.history.slice(-this.config.maxEntries)
     }
+
+    // Save history after each command
+    await this.save()
   }
 
   getHistory(): string[] {
     return [...this.history]
+  }
+
+  async save(): Promise<void> {
+    if (!this.isInitialized) return
+    
+    try {
+      // Ensure we don't have duplicate commands
+      const uniqueHistory = [...new Set(this.history)]
+      await fs.writeFile(this.historyPath, `${uniqueHistory.join('\n')}\n`, 'utf-8')
+    } catch (error) {
+      console.error('Failed to save history:', error)
+    }
+  }
+
+  // For readline integration
+  getReadlineInterface(): Interface {
+    const { stdin, stdout } = require('node:process')
+    return createInterface({
+      input: stdin,
+      output: stdout,
+      history: this.history,
+      historySize: this.config.maxEntries || 1000,
+    })
   }
 
   search(query: string): string[] {
@@ -79,13 +138,13 @@ export class HistoryManager {
 
   load(): void {
     try {
-      const filePath = this.expandPath(this.config.file!)
+      const filePath = this.resolvePath(this.config.file!)
 
       if (!existsSync(filePath)) {
         return
       }
 
-      const content = readFileSync(filePath, 'utf-8')
+      const content = require('node:fs').readFileSync(filePath, 'utf-8')
       this.history = content
         .split('\n')
         .filter(line => line.trim())
@@ -98,27 +157,28 @@ export class HistoryManager {
 
   save(): void {
     try {
-      const filePath = this.expandPath(this.config.file!)
+      const filePath = this.resolvePath(this.config.file!)
       const dir = dirname(filePath)
 
       // Ensure directory exists
       if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
+        require('node:fs').mkdirSync(dir, { recursive: true })
       }
 
       const content = this.history.join('\n')
-      writeFileSync(filePath, content, 'utf-8')
+      require('node:fs').writeFileSync(filePath, content, 'utf-8')
     }
     catch {
       // Silently fail - history saving is not critical
     }
   }
 
-  private expandPath(path: string): string {
+  private resolvePath(path: string): string {
     if (path.startsWith('~')) {
-      return path.replace('~', homedir())
+      return resolve(homedir(), path.slice(1))
     }
-    return resolve(path)
+    const { cwd } = require('node:process')
+    return resolve(cwd(), path)
   }
 
   // Get recent commands (for completion)
