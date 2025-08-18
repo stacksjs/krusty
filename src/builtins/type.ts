@@ -38,11 +38,17 @@ export const typeCommand: BuiltinCommand = {
       for (let i = 1; i < arg.length; i++) {
         const flag = arg[i]
         switch (flag) {
-          case 'a': showAll = true; break
-          case 'f': fileOnly = true; break
-          case 'p': noPath = true; break
-          case 'P': showPath = true; break
-          case 't': fileOnly = true; noPath = true; break
+          case 'a': showAll = true
+            break
+          case 'f': fileOnly = true
+            break
+          case 'p': noPath = true
+            break
+          case 'P': showPath = true
+            break
+          case 't': fileOnly = true
+            noPath = true
+            break
           default:
             return {
               exitCode: 1,

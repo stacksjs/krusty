@@ -1,4 +1,5 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
+import process from 'node:process'
 
 /**
  * Source command - executes commands from a file in the current shell context

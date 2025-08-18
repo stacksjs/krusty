@@ -1,6 +1,8 @@
+import type { Interface } from 'node:readline/promises'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import process from 'node:process'
 import { createInterface } from 'node:readline/promises'
 
 export class HistoryManager {
@@ -73,7 +75,7 @@ export class HistoryManager {
   }
 
   // For readline integration
-  getReadlineInterface() {
+  getReadlineInterface(): Interface {
     return createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -84,4 +86,4 @@ export class HistoryManager {
 }
 
 // Singleton instance
-export const historyManager = new HistoryManager()
+export const historyManager: HistoryManager = new HistoryManager()

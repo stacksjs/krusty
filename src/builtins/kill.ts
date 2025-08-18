@@ -87,7 +87,7 @@ export const killCommand: BuiltinCommand = {
 
           // Convert signal name to uppercase and check if it's valid
           const sigUpper = sig.toUpperCase()
-          if (SIGNALS[sigUpper] !== undefined || !isNaN(Number(sig))) {
+          if (SIGNALS[sigUpper] !== undefined || !Number.isNaN(Number(sig))) {
             signal = sigUpper
           }
           else {
@@ -118,11 +118,11 @@ export const killCommand: BuiltinCommand = {
 
       // Parse PID or job spec
       const pid = Number.parseInt(arg, 10)
-      if (isNaN(pid)) {
+      if (Number.isNaN(pid)) {
         // Handle job spec (e.g., %1)
         if (arg.startsWith('%')) {
           const jobId = Number.parseInt(arg.slice(1), 10)
-          if (isNaN(jobId)) {
+          if (Number.isNaN(jobId)) {
             return {
               exitCode: 1,
               stdout: '',
@@ -200,7 +200,7 @@ export const killCommand: BuiltinCommand = {
           results.push(`Sent signal ${signal} to process ${pid}`)
         }
       }
-      catch (err) {
+      catch {
         hasError = true
         results.push(`kill: (${pid}) - No such process`)
       }

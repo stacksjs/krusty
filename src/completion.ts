@@ -119,8 +119,9 @@ export class CompletionProvider {
         ? rawPrefix.replace('~', homedir())
         : rawPrefix
 
-      // Build candidate base directories: shell.cwd, then repo root (../ from this module's dir)
-      const moduleDir = dirname(fileURLToPath(new URL('.', import.meta.url)))
+      // Build candidate base directories: shell.cwd, then repo root (parent of src)
+      // Using import.meta.url directly avoids stepping up twice inadvertently.
+      const moduleDir = dirname(fileURLToPath(import.meta.url))
       const repoRoot = resolve(moduleDir, '..')
       const candidates = [resolve(this.shell.cwd, basePath), resolve(repoRoot, basePath)]
 

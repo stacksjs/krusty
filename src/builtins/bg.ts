@@ -25,7 +25,7 @@ export const bgCommand: BuiltinCommand = {
 
     // If no job IDs provided, use the most recent stopped job
     const jobIds = args.length > 0
-      ? args.map(id => Number.parseInt(id, 10)).filter(id => !isNaN(id))
+      ? args.map(id => Number.parseInt(id, 10)).filter(id => !Number.isNaN(id))
       : [jobs[jobs.length - 1]?.id].filter(Boolean) as number[]
 
     if (jobIds.length === 0) {

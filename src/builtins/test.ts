@@ -1,5 +1,6 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
 import { access, stat } from 'node:fs/promises'
+import process from 'node:process'
 
 /**
  * Test command - evaluate conditional expressions
@@ -9,7 +10,7 @@ export const testCommand: BuiltinCommand = {
   name: 'test',
   description: 'Evaluate conditional expressions',
   usage: 'test [expression]',
-  async execute(args: string[], shell: Shell): Promise<CommandResult> {
+  async execute(args: string[], _shell: Shell): Promise<CommandResult> {
     const start = performance.now()
 
     // Handle empty arguments
@@ -49,7 +50,7 @@ export const testCommand: BuiltinCommand = {
       const eof = () => pos >= tokens.length
 
       // Parse a primary expression
-      const parsePrimary = async (): Promise<boolean> => {
+      async function parsePrimary(): Promise<boolean> {
         const token = next()
 
         // Handle unary operators
@@ -132,7 +133,7 @@ export const testCommand: BuiltinCommand = {
                 throw new Error(`test: ${token}: unary operator expected\n`)
             }
           }
-          catch (error) {
+          catch (error: any) {
             if (error.code === 'ENOENT') {
               return false
             }
@@ -189,7 +190,7 @@ export const testCommand: BuiltinCommand = {
       }
 
       // Parse AND expressions
-      const parseAnd = async (): Promise<boolean> => {
+      async function parseAnd(): Promise<boolean> {
         let result = await parsePrimary()
 
         while (!eof() && peek() === '-a') {
@@ -201,7 +202,7 @@ export const testCommand: BuiltinCommand = {
       }
 
       // Parse OR expressions
-      const parseOr = async (): Promise<boolean> => {
+      async function parseOr(): Promise<boolean> {
         let result = await parseAnd()
 
         while (!eof() && peek() === '-o') {

@@ -1,4 +1,5 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
+import process from 'node:process'
 
 /**
  * Read command - read a line from input and assign to variables
@@ -68,7 +69,7 @@ export const readCommand: BuiltinCommand = {
       else if (arg === '-n') {
         // Read nchars characters
         const n = Number.parseInt(args.shift() || '0', 10)
-        if (isNaN(n) || n < 0) {
+        if (Number.isNaN(n) || n < 0) {
           return {
             exitCode: 1,
             stdout: '',
@@ -81,7 +82,7 @@ export const readCommand: BuiltinCommand = {
       else if (arg === '-N') {
         // Read exactly nchars characters
         const n = Number.parseInt(args.shift() || '0', 10)
-        if (isNaN(n) || n < 0) {
+        if (Number.isNaN(n) || n < 0) {
           return {
             exitCode: 1,
             stdout: '',
@@ -106,7 +107,7 @@ export const readCommand: BuiltinCommand = {
       else if (arg === '-t') {
         // Timeout
         const timeout = Number.parseFloat(args.shift() || '0')
-        if (isNaN(timeout) || timeout < 0) {
+        if (Number.isNaN(timeout) || timeout < 0) {
           return {
             exitCode: 1,
             stdout: '',

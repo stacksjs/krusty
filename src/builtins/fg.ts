@@ -41,7 +41,7 @@ export const fgCommand: BuiltinCommand = {
     else {
       // Parse the job ID from the argument
       const id = Number.parseInt(args[0], 10)
-      if (isNaN(id)) {
+      if (Number.isNaN(id)) {
         return {
           exitCode: 1,
           stdout: '',
