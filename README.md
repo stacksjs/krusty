@@ -26,6 +26,9 @@ Krusty is a modern, feature-rich shell built with TypeScript and Bun. It provide
 ```bash
 # Install Krusty globally
 bun add -g krusty
+npm install -g krusty
+yarn global add krusty
+pnpm global add krusty
 
 # Start the shell
 krusty
