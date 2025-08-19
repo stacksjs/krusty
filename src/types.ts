@@ -35,11 +35,44 @@ export interface HistoryConfig {
   searchMode?: 'fuzzy' | 'exact'
 }
 
+export interface CompletionCacheConfig {
+  enabled?: boolean
+  ttl?: number
+  maxEntries?: number
+}
+
+export interface CompletionContextConfig {
+  enabled?: boolean
+  maxDepth?: number
+  fileTypes?: string[]
+}
+
+export interface GitCompletionConfig {
+  enabled?: boolean
+  includePorcelain?: boolean
+  includePlumbing?: boolean
+}
+
+export interface NpmCompletionConfig {
+  enabled?: boolean
+  includeScripts?: boolean
+  includeConfig?: boolean
+}
+
+export interface CompletionCommandsConfig {
+  git?: GitCompletionConfig
+  npm?: NpmCompletionConfig
+  [key: string]: any
+}
+
 export interface CompletionConfig {
   enabled?: boolean
   caseSensitive?: boolean
   showDescriptions?: boolean
   maxSuggestions?: number
+  cache?: CompletionCacheConfig
+  context?: CompletionContextConfig
+  commands?: CompletionCommandsConfig
 }
 
 export interface LoggingConfig {
@@ -83,43 +116,78 @@ export interface ThemeFontConfig {
   ligatures?: boolean
 }
 
+export interface ThemeGitStatusConfig {
+  enabled?: boolean
+  showStaged?: boolean
+  showUnstaged?: boolean
+  showUntracked?: boolean
+  showAheadBehind?: boolean
+  format?: string
+}
+
+export interface ThemePromptConfig {
+  left?: string
+  right?: string
+  continuation?: string
+  error?: string
+}
+
+export interface ThemeGitColors {
+  branch?: string
+  ahead?: string
+  behind?: string
+  staged?: string
+  unstaged?: string
+  untracked?: string
+  conflict?: string
+}
+
+export interface ThemeColors {
+  primary?: string
+  secondary?: string
+  success?: string
+  warning?: string
+  error?: string
+  info?: string
+  git?: ThemeGitColors
+}
+
+export interface ThemeGitSymbols {
+  branch?: string
+  ahead?: string
+  behind?: string
+  staged?: string
+  unstaged?: string
+  untracked?: string
+  conflict?: string
+}
+
+export interface ThemeSymbols {
+  prompt?: string
+  continuation?: string
+  git?: ThemeGitSymbols
+}
+
 export interface ThemeConfig {
-  /**
-   * Color scheme configuration
-   */
-  colors?: {
-    primary?: string
-    secondary?: string
-    success?: string
-    warning?: string
-    error?: string
-    info?: string
-  }
-
-  /**
-   * Terminal symbols configuration
-   */
-  symbols?: {
-    prompt?: string
-    continuation?: string
-    git?: {
-      branch?: string
-      ahead?: string
-      behind?: string
-      staged?: string
-      unstaged?: string
-      untracked?: string
-    }
-  }
-
-  /**
-   * Font configuration
-   */
+  // Theme name to use (must match a theme in themes/ directory)
+  name?: string
+  // Auto-detect system color scheme
+  autoDetectColorScheme?: boolean
+  // Default color scheme (light/dark/auto)
+  defaultColorScheme?: string
+  // Enable right prompt
+  enableRightPrompt?: boolean
+  // Git status in prompt settings
+  gitStatus?: ThemeGitStatusConfig
+  // Prompt configuration
+  prompt?: ThemePromptConfig
+  // Colors configuration
+  colors?: ThemeColors
+  // Font configuration
   font?: ThemeFontConfig
-
-  /**
-   * CSS to inject when this theme is active
-   */
+  // Symbol configuration
+  symbols?: ThemeSymbols
+  // CSS overrides
   css?: string
 }
 
@@ -593,13 +661,28 @@ export interface ModuleConfig {
 }
 
 // Plugin system types
+export interface PluginUpdateConfig {
+  autoUpdate?: boolean
+  checkInterval?: number
+  lastChecked?: number
+}
+
 export interface PluginConfig {
-  name: string
+  // Enable/disable plugin system
   enabled?: boolean
-  path?: string
-  url?: string
-  version?: string
-  config?: Record<string, any>
+  // Directory to look for plugins (relative to config directory)
+  directory?: string
+  // List of plugins to load (can be local paths or npm package names)
+  list?: Array<{
+    name: string
+    enabled?: boolean
+    path?: string
+    url?: string
+    version?: string
+    config?: Record<string, any>
+  }>
+  // Plugin update settings
+  update?: PluginUpdateConfig
 }
 
 export interface Plugin {

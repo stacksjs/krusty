@@ -30,10 +30,48 @@ export const defaultConfig: KrustyConfig = {
     searchMode: 'fuzzy',
   },
   completion: {
+    // Enable/disable completion system
     enabled: true,
+    // Case sensitivity for completions
     caseSensitive: false,
+    // Show descriptions with completions
     showDescriptions: true,
+    // Maximum number of suggestions to show
     maxSuggestions: 10,
+    // Enable completion caching
+    cache: {
+      enabled: true,
+      // Cache expiration in milliseconds (1 hour)
+      ttl: 60 * 60 * 1000,
+      // Maximum number of completions to cache
+      maxEntries: 1000,
+    },
+    // Context-aware completion settings
+    context: {
+      // Enable context-aware completions
+      enabled: true,
+      // Maximum depth to analyze context
+      maxDepth: 3,
+      // File types to analyze for context
+      fileTypes: ['.ts', '.js', '.tsx', '.jsx', '.json', '.md'],
+    },
+    // Command-specific completion settings
+    commands: {
+      git: {
+        // Enable git completions
+        enabled: true,
+        // Include porcelain commands
+        includePorcelain: true,
+        // Include plumbing commands
+        includePlumbing: false,
+      },
+      npm: {
+        // Enable npm completions
+        enabled: true,
+        // Include script names from package.json
+        includeScripts: true,
+      },
+    },
   },
   aliases: {
     // Stage all changes and open a commit message prompt
@@ -43,13 +81,47 @@ export const defaultConfig: KrustyConfig = {
     // - Suppress commit's own summary (-q) to avoid duplicate info
     // - Skip commit/push if no staged changes are present
     // - Only run post-commit log and push if commit succeeds
-    wip: "printf '\\x1b[2m\\x1b[36m─── WIP start ───\\x1b[0m\\n'; git --no-pager -c color.ui=always status -sb; git -c color.ui=always add -A; printf '\\x1b[2mstaged summary\\x1b[0m\\n'; git --no-pager -c color.ui=always diff --cached --stat; git diff --cached --quiet && printf '\\x1b[2m\\x1b[33mno changes to commit; skipping push\\x1b[0m\\n' || git -c color.ui=always commit -m 'chore: wip' -q && printf '\\x1b[2mcommit (last)\\x1b[0m\\n' && git --no-pager -c color.ui=always log -1 --oneline && printf '\\x1b[2m\\x1b[36m─── pushing ───\\x1b[0m\\n' && git -c color.ui=always push; printf '\\x1b[2m\\x1b[32m─── done ───\\x1b[0m\\n'",
+    wip: 'printf \'\\x1b[2m\\x1b[36m─── WIP start ───\\x1b[0m\\n\'; git --no-pager -c color.ui=always status -sb; git -c color.ui=always add -A; printf \'\\x1b[2mstaged summary\\x1b[0m\\n\'; git --no-pager -c color.ui=always diff --cached --stat; git diff --cached --quiet && printf \'\\x1b[2m\\x1b[33mno changes to commit; skipping push\\x1b[0m\\n\' || git -c color.ui=always commit -m \'chore: wip\' -q && printf \'\\x1b[2mcommit (last)\\x1b[0m\\n\' && git --no-pager -c color.ui=always log -1 --oneline && printf \'\\x1b[2m\\x1b[36m─── pushing ───\\x1b[0m\\n\' && git -c color.ui=always push; printf \'\\x1b[2m\\x1b[32m─── done ───\\x1b[0m\\n\'',
     // Push current branch
     push: 'git push',
   },
   environment: {},
-  plugins: [],
+  // Plugin system configuration
+  plugins: [
+    // Example plugin configuration:
+    // {
+    //   name: 'example-plugin',
+    //   enabled: true,
+    //   path: './plugins/example',
+    //   config: {}
+    // }
+  ],
   theme: {
+    // Theme name to use (must match a theme in themes/ directory)
+    name: 'default',
+    // Auto-detect system color scheme
+    autoDetectColorScheme: true,
+    // Default color scheme (light/dark/auto)
+    defaultColorScheme: 'auto',
+    // Enable right prompt
+    enableRightPrompt: true,
+    // Git status in prompt settings
+    gitStatus: {
+      enabled: true,
+      showStaged: true,
+      showUnstaged: true,
+      showUntracked: true,
+      showAheadBehind: true,
+      format: '({branch}{ahead}{behind}{staged}{unstaged}{untracked})',
+    },
+    // Prompt configuration
+    prompt: {
+      left: '\u001B[32m{user}@{host}\u001B[0m \u001B[34m{path}\u001B[0m {git}{symbol} ',
+      right: '{time}{jobs}{status}',
+      continuation: '... ',
+      error: '\u001B[31m{code}\u001B[0m',
+    },
+    // Colors configuration
     colors: {
       primary: '#00D9FF',
       secondary: '#FF6B9D',
@@ -57,7 +129,18 @@ export const defaultConfig: KrustyConfig = {
       warning: '#FFD700',
       error: '#FF4757',
       info: '#74B9FF',
+      // Git status colors
+      git: {
+        branch: '#F8F8F2',
+        ahead: '#50FA7B',
+        behind: '#FF5555',
+        staged: '#50FA7B',
+        unstaged: '#FFB86C',
+        untracked: '#FF79C6',
+        conflict: '#FF5555',
+      },
     },
+    // Font configuration
     font: {
       // Default to system monospace font stack with fallbacks
       family: 'ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace',
@@ -66,6 +149,7 @@ export const defaultConfig: KrustyConfig = {
       lineHeight: 1.4,
       ligatures: false,
     },
+    // Symbol configuration
     symbols: {
       prompt: '❯',
       continuation: '…',
@@ -76,6 +160,7 @@ export const defaultConfig: KrustyConfig = {
         staged: '●',
         unstaged: '○',
         untracked: '?',
+        conflict: '✗',
       },
     },
   },
