@@ -287,11 +287,17 @@ export const defaultConfig: KrustyConfig = {
   },
 }
 
-// eslint-disable-next-line antfu/no-top-level-await
-export const config: KrustyConfig = await loadConfig({
-  name: 'krusty',
-  defaultConfig,
-})
+// Use a function to avoid top-level await issues
+export const config: KrustyConfig = (() => {
+  try {
+    return loadConfig({
+      name: 'krusty',
+      defaultConfig,
+    }) as any
+  } catch {
+    return defaultConfig
+  }
+})()
 
 // Provide a reusable loader that always fetches the latest config from disk
 export async function loadKrustyConfig(): Promise<KrustyConfig> {

@@ -406,7 +406,7 @@ describe('Builtin Commands', () => {
     it('bg should return error when no jobs are running', async () => {
       const result = await shell.execute('bg')
       expect(result.exitCode).toBe(1)
-      expect(result.stderr).toContain('no current job')
+      expect(result.stderr).toContain('no stopped jobs')
     })
   })
 

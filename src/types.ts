@@ -195,13 +195,23 @@ export interface CommandResult {
   exitCode: number
   stdout: string
   stderr: string
-  duration: number
+  duration?: number
+  success?: boolean
   /**
    * Indicates whether the command's output was already streamed live.
    * If true, callers should avoid re-printing stdout/stderr to prevent duplicates.
    * Builtins typically set this to false/undefined and return buffered output.
    */
   streamed?: boolean
+  /**
+   * Additional metadata for script control flow
+   */
+  metadata?: {
+    isReturn?: boolean
+    isBreak?: boolean
+    isContinue?: boolean
+    level?: number
+  }
 }
 
 export interface Command {
@@ -253,7 +263,7 @@ export interface Shell {
   umask?: number
 
   // Core methods
-  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
+  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean, bypassScriptDetection?: boolean }) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>
   parseCommand: (input: string) => Promise<ParsedCommand>
   changeDirectory: (path: string) => boolean

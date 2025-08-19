@@ -43,9 +43,9 @@ import { shrugCommand } from './shrug'
 import { sourceCommand } from './source'
 import { testCommand } from './test'
 import { timeCommand } from './time'
+import { timeoutCommand } from './timeout'
 import { timesCommand } from './times'
 import { trapCommand } from './trap'
-import { timeoutCommand } from './timeout'
 import { typeCommand } from './type'
 import { umaskCommand } from './umask'
 import { unaliasCommand } from './unalias'
@@ -53,6 +53,7 @@ import { unsetCommand } from './unset'
 import { waitCommand } from './wait'
 import { webCommand } from './web'
 import { whichCommand } from './which'
+import { createScriptBuiltins } from './script-builtins'
 import { wipCommand } from './wip'
 
 export function createBuiltins(): Map<string, BuiltinCommand> {
@@ -117,6 +118,12 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('web', webCommand)
   builtins.set('which', whichCommand)
   builtins.set('wip', wipCommand)
+
+  // Add script-related builtins
+  const scriptBuiltins = createScriptBuiltins()
+  for (const [name, builtin] of scriptBuiltins) {
+    builtins.set(name, builtin)
+  }
 
   return builtins
 }

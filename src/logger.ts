@@ -1,4 +1,4 @@
-import process from 'node:process'
+import * as process from 'node:process'
 import { config } from './config'
 
 /**

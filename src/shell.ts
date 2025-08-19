@@ -18,6 +18,7 @@ import { Logger } from './logger'
 import { CommandParser } from './parser'
 import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
+import { ScriptManager } from './scripting/script-manager'
 import { ThemeManager } from './theme/theme-manager'
 
 export class KrustyShell implements Shell {
@@ -42,6 +43,7 @@ export class KrustyShell implements Shell {
   private hookManager: HookManager
   public log: Logger
   private autoSuggestInput: AutoSuggestInput
+  private scriptManager: ScriptManager
 
   // Getter for testing access
   get testHookManager(): HookManager {
@@ -90,6 +92,7 @@ export class KrustyShell implements Shell {
     this.log = new Logger(this.config.verbose, 'shell')
     this.autoSuggestInput = new AutoSuggestInput(this)
     this.jobManager = new JobManager(this)
+    this.scriptManager = new ScriptManager(this)
 
     // Load history
     this.loadHistory()
@@ -122,8 +125,8 @@ export class KrustyShell implements Shell {
     return this.jobManager.addJob(command, childProcess, background)
   }
 
-  removeJob(jobId: number): boolean {
-    return this.jobManager.removeJob(jobId)
+  removeJob(jobId: number, force = false): boolean {
+    return this.jobManager.removeJob(jobId, force)
   }
 
   getJob(id: number): Job | undefined {
@@ -257,7 +260,7 @@ export class KrustyShell implements Shell {
     return this.executeSingleCommand(cmd)
   }
 
-  async execute(command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
+  async execute(command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean, bypassScriptDetection?: boolean }): Promise<CommandResult> {
     const start = performance.now()
 
     try {
@@ -276,6 +279,9 @@ export class KrustyShell implements Shell {
 
       // Add to history (before execution to capture the command even if it fails)
       this.addToHistory(command)
+
+      // Script detection disabled - infinite loop still exists in script executor
+      // Need to fix script executor's command execution before re-enabling
 
       // Parse the command
       const parsed = await this.parseCommand(command)
@@ -774,7 +780,7 @@ export class KrustyShell implements Shell {
           exitCode: result.exitCode,
           stdout: result.stdout,
           stderr: lastResult.stderr + result.stderr,
-          duration: lastResult.duration + result.duration,
+          duration: (lastResult.duration || 0) + (result.duration || 0),
           streamed: (lastResult.streamed === true) || (result.streamed === true),
         }
       }

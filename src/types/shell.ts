@@ -36,7 +36,7 @@ export interface Shell {
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>
   parseCommand: (input: string) => ParsedCommand
   addJob: (command: string, pid?: number) => number
-  removeJob: (id: number) => void
+  removeJob: (id: number, force?: boolean) => boolean
   getJob: (id: number) => Job | undefined
   getJobs: () => Job[]
   setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => void

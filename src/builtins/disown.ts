@@ -36,8 +36,8 @@ export const disownCommand: BuiltinCommand = {
         errors.push(`disown: ${jid}: job has no pid`)
         continue
       }
-      // Remove the job by its ID, not its PID
-      const removed = shell.removeJob(job.id)
+      // Remove the job by its ID, not its PID (force removal for disown)
+      const removed = shell.removeJob(job.id, true)
       if (!removed) {
         errors.push(`disown: ${jid}: failed to remove job`)
       }

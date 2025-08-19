@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
 
-describe('disown builtin', () => {
+describe('disown builtin command', () => {
   let shell: KrustyShell
   let testConfig: KrustyConfig
 
@@ -30,8 +30,12 @@ describe('disown builtin', () => {
   })
 
   it('disowns the most recent job when no args are given', async () => {
-    const j1 = shell.addJob('sleep 1', 12345)
-    const j2 = shell.addJob('sleep 2', 23456)
+    // Create mock child processes with PIDs
+    const mockChild1 = { pid: 12345, on: () => {}, removeAllListeners: () => {} } as any
+    const mockChild2 = { pid: 23456, on: () => {}, removeAllListeners: () => {} } as any
+    
+    const j1 = shell.addJob('sleep 1', mockChild1)
+    const j2 = shell.addJob('sleep 2', mockChild2)
     expect(j1).toBe(1)
     expect(j2).toBe(2)
 
@@ -46,17 +50,20 @@ describe('disown builtin', () => {
   })
 
   it('supports %N format for job IDs', async () => {
-    const j1 = shell.addJob('sleep 1', 34567)
+    const mockChild1 = { pid: 34567, on: () => {}, removeAllListeners: () => {} } as any
+    const j1 = shell.addJob('sleep 1', mockChild1)
     expect(j1).toBe(1)
 
     const res = await shell.execute('disown %1')
     expect(res.exitCode).toBe(0)
+
     const jobs = shell.getJobs()
-    expect(jobs.find(j => j.id === 1)).toBeUndefined()
+    expect(jobs.length).toBe(0)
   })
 
   it('reports error for invalid job IDs when jobs exist', async () => {
-    shell.addJob('sleep 1', 45678)
+    const mockChild1 = { pid: 45678, on: () => {}, removeAllListeners: () => {} } as any
+    shell.addJob('sleep 1', mockChild1)
 
     const res = await shell.execute('disown %999')
     expect(res.exitCode).toBe(1)
@@ -65,15 +72,16 @@ describe('disown builtin', () => {
   })
 
   it('handles multiple job IDs', async () => {
-    shell.addJob('sleep 1', 11111) // id 1
-    shell.addJob('sleep 2', 22222) // id 2
+    const mockChild1 = { pid: 11111, on: () => {}, removeAllListeners: () => {} } as any
+    const mockChild2 = { pid: 22222, on: () => {}, removeAllListeners: () => {} } as any
+    shell.addJob('sleep 1', mockChild1) // id 1
+    shell.addJob('sleep 2', mockChild2) // id 2
 
     const res = await shell.execute('disown 1 2')
     expect(res.exitCode).toBe(0)
 
     const jobs = shell.getJobs()
-    expect(jobs.find(j => j.id === 1)).toBeUndefined()
-    expect(jobs.find(j => j.id === 2)).toBeUndefined()
+    expect(jobs.length).toBe(0)
   })
 
   it('reports pid-less jobs as errors', async () => {

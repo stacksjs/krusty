@@ -1,6 +1,6 @@
 import type { Shell } from '../types'
 import { spawn } from 'node:child_process'
-import process from 'node:process'
+import * as process from 'node:process'
 
 export interface ExpansionContext {
   shell: Shell

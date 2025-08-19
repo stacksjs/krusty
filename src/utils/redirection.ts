@@ -256,7 +256,9 @@ export class RedirectionHandler {
     // File descriptor redirection (e.g., 2>&1)
     if (redirection.target === '&1' && redirection.fd === 2) {
       // Redirect stderr to stdout
-      process.stderr?.pipe(process.stdout!)
+      if (process.stderr && process.stdout) {
+        process.stderr.pipe(process.stdout as any)
+      }
     }
     // Additional FD redirections can be implemented here
   }

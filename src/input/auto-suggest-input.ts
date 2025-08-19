@@ -337,5 +337,20 @@ export class AutoSuggestInput {
     this.updateDisplay(prompt)
   }
 
+  // Method for testing - get current input
+  getCurrentInputForTesting(): string {
+    return this.currentInput
+  }
+
+  // Method for testing - get cursor position
+  getCursorPositionForTesting(): number {
+    return this.cursorPosition
+  }
+
+  // Method for testing - set cursor position
+  setCursorPositionForTesting(pos: number): void {
+    this.cursorPosition = pos
+  }
+
   // Removed all suggestion list display methods to prevent UI clutter
 }
