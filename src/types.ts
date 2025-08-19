@@ -281,8 +281,8 @@ export interface Shell {
     status: 'running' | 'stopped' | 'done'
     fg?: boolean
   }>
-  addJob: (command: string, pid?: number) => number
-  removeJob: (id: number) => void
+  addJob: (command: string, childProcess?: any, background?: boolean) => number
+  removeJob: (id: number) => boolean
   getJob: (id: number) => {
     id: number
     command: string
@@ -297,7 +297,14 @@ export interface Shell {
     status: 'running' | 'stopped' | 'done'
     fg?: boolean
   }>
-  setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => void
+  setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => boolean
+  
+  // Enhanced job control methods
+  suspendJob?: (jobId: number) => boolean
+  resumeJobBackground?: (jobId: number) => boolean
+  resumeJobForeground?: (jobId: number) => boolean
+  terminateJob?: (jobId: number, signal?: string) => boolean
+  waitForJob?: (jobId: number) => Promise<any>
 }
 
 export interface GitInfo {

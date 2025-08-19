@@ -1,5 +1,5 @@
 import type { KrustyConfig } from '../src/types'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { mkdtemp, rmdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +10,7 @@ describe('Builtin Commands', () => {
   let shell: KrustyShell
   let testConfig: KrustyConfig
   let tempDir: string
+  let originalExecuteCommand: any
 
   beforeEach(async () => {
     testConfig = {
@@ -22,9 +23,28 @@ describe('Builtin Commands', () => {
     }
     shell = new KrustyShell(testConfig)
     tempDir = await mkdtemp(join(tmpdir(), 'krusty-test-'))
+    
+    // Mock executeCommand to prevent actual command execution
+    originalExecuteCommand = shell.executeCommand
+    shell.executeCommand = mock(async (command: string, args: string[] = []) => {
+      // Mock the 'code' command to prevent opening VS Code
+      if (command === 'code') {
+        return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
+      }
+      // Mock 'command -v' checks
+      if (command === 'sh' && args[2]?.includes('command -v')) {
+        return { exitCode: 0, stdout: '/path/to/command', stderr: '', duration: 0 }
+      }
+      // For other commands, use the original implementation
+      return originalExecuteCommand.call(shell, command, args)
+    })
   })
 
   afterEach(async () => {
+    // Restore original method
+    if (originalExecuteCommand) {
+      shell.executeCommand = originalExecuteCommand
+    }
     shell.stop()
     try {
       await rmdir(tempDir, { recursive: true })

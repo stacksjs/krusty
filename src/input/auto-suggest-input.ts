@@ -247,29 +247,53 @@ export class AutoSuggestInput {
 
     // Calculate visible prompt length (excluding ANSI escape sequences)
     const visiblePromptLength = this.getVisibleLength(prompt)
+    const cursorColumn = visiblePromptLength + this.cursorPosition + 1 // +1 for 1-based column
 
     if (this.shellMode && this.promptAlreadyWritten) {
       // Shell mode: only update input area, don't rewrite prompt
-      // Move to start of input area and clear to end of line
       const inputStartColumn = visiblePromptLength + 1
-      stdout.write(`\x1B[${inputStartColumn}G\x1B[K`)
-      stdout.write(this.currentInput)
+      
+      // Save current cursor position
+      stdout.write('\x1B7')
+      
+      // Move to start of input, clear to end of line, and write input
+      stdout.write(`\x1B[${inputStartColumn}G\x1B[K${this.currentInput}`)
+      
+      // Show inline suggestion if available
+      if (this.options.showInline && this.currentSuggestion) {
+        stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
+      }
+      
+      // Clear any remaining characters from previous input
+      if (this.lastDisplayedInput.length > this.currentInput.length) {
+        const remainingChars = this.lastDisplayedInput.length - this.currentInput.length
+        stdout.write(' '.repeat(remainingChars))
+        stdout.write(`\x1B[${cursorColumn}G`) // Move cursor back to position
+      }
+      
+      // Explicitly set cursor position after updates
+      stdout.write(`\x1B[${cursorColumn}G`)
+      
+      // Restore cursor position if we're not at the end
+      if (this.cursorPosition < this.currentInput.length) {
+        // Calculate the actual cursor position in the line
+        const actualCursorColumn = visiblePromptLength + this.cursorPosition + 1
+        stdout.write(`\x1B[${actualCursorColumn}G`)
+      }
     } else {
       // Isolated mode: always clear line and write prompt + input
       stdout.write('\r\x1B[2K')
       stdout.write(prompt + this.currentInput)
+      
+      // Show inline suggestion if available
+      if (this.options.showInline && this.currentSuggestion) {
+        stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
+      }
+      
+      // Set cursor position
+      stdout.write(`\x1B[${cursorColumn}G`)
       this.promptAlreadyWritten = true
     }
-
-    // Show inline suggestion if available
-    if (this.options.showInline && this.currentSuggestion) {
-      stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
-    }
-
-    // Move cursor to correct position using absolute positioning
-    // Terminal columns are 1-based, cursorPosition indicates position within input
-    const cursorColumn = visiblePromptLength + this.cursorPosition
-    stdout.write(`\x1B[${cursorColumn}G`)
 
     // Remember what we displayed
     this.lastDisplayedInput = this.currentInput

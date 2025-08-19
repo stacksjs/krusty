@@ -1,5 +1,6 @@
+/* eslint-disable no-console */
 import type { KrustyConfig } from '../src/types'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { homedir } from 'node:os'
 import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
@@ -7,8 +8,16 @@ import { KrustyShell } from '../src/shell'
 describe('KrustyShell', () => {
   let shell: KrustyShell
   let testConfig: KrustyConfig
+  // Mock variables (prefixed with _ to indicate they're intentionally unused in some tests)
+  let _mockOutput: string
+  let _writeCallCount: number
+  let _keypressHandlers: Array<(str: string, key: any) => void>
+  let originalWrite: any
+  let originalOn: any
+  let originalSetRawMode: any
 
   beforeEach(() => {
+    // Setup test config and shell
     testConfig = {
       ...defaultConfig,
       verbose: true,
@@ -18,18 +27,69 @@ describe('KrustyShell', () => {
       },
     }
     shell = new KrustyShell(testConfig)
+
+    // Setup mock output tracking
+    _mockOutput = ''
+    _writeCallCount = 0
+    _keypressHandlers = []
+
+    // Store original methods
+    originalWrite = process.stdout.write
+    originalOn = process.stdin.on
+    originalSetRawMode = process.stdin.setRawMode
+
+    // Mock process.stdout.write
+    process.stdout.write = mock((chunk: any) => {
+      _writeCallCount++
+      const str = chunk.toString()
+      _mockOutput += str
+      return true
+    })
+
+    // Mock process.stdin.on for keypress events
+    process.stdin.on = mock((event: string, handler: any) => {
+      if (event === 'keypress') {
+        _keypressHandlers.push(handler)
+      }
+      return process.stdin
+    })
+
+    // Mock setRawMode
+    process.stdin.setRawMode = mock(() => process.stdin)
+    process.stdin.removeAllListeners = mock(() => process.stdin)
   })
 
-  describe('alias expanding into pipeline', () => {
+  // Note: Input and Display tests have been moved to dedicated test files
+  // to better organize the test suite and avoid type issues with AutoSuggestInput
+
+  // ============================================
+  // Alias and Pipeline Tests
+  // ============================================
+
+  describe('Alias and Pipeline', () => {
     it('should execute pipeline created by alias expansion', async () => {
       shell.aliases.pipeit = 'printf "a\n" | wc -l'
       const result = await shell.execute('pipeit')
       expect(result.exitCode).toBe(0)
       expect(result.stdout.trim()).toBe('1')
     })
+
+    it('should handle alias expansion in simple pipelines', async () => {
+      shell.aliases.greeting = 'echo "Hello, World!"'
+      const result = await shell.execute('greeting | wc -w')
+      expect(result.exitCode).toBe(0)
+      // Should count the number of words in "Hello, World!" which is 2
+      expect(result.stdout.trim()).toBe('2')
+    })
   })
 
   afterEach(() => {
+    // Restore original methods
+    process.stdout.write = originalWrite
+    process.stdin.on = originalOn
+    process.stdin.setRawMode = originalSetRawMode
+
+    // Stop the shell
     shell.stop()
   })
 
@@ -143,7 +203,11 @@ describe('KrustyShell', () => {
     })
   })
 
-  describe('builtin commands', () => {
+  // ============================================
+  // Builtin Commands Tests
+  // ============================================
+
+  describe('Builtin Commands', () => {
     it('should have cd builtin', () => {
       expect(shell.builtins.has('cd')).toBe(true)
     })
@@ -202,7 +266,11 @@ describe('KrustyShell', () => {
     })
   })
 
-  describe('history management', () => {
+  // ============================================
+  // History Management Tests
+  // ============================================
+
+  describe('History Management', () => {
     it('should add command to history', () => {
       shell.addToHistory('test command')
       expect(shell.history).toContain('test command')
@@ -254,9 +322,62 @@ describe('KrustyShell', () => {
       expect(results).toContain('git status')
       expect(results).toContain('git commit')
     })
+
+    it('history navigation should be tested when implemented', () => {
+      // Placeholder for history navigation tests
+      expect(true).toBe(true)
+    })
   })
 
-  describe('completion', () => {
+  // ============================================
+  // Cursor Positioning
+  // ============================================
+
+  describe('Cursor Positioning', () => {
+    it('should maintain cursor position after typing a single character', async () => {
+      // Reset mock output before test
+      _mockOutput = ''
+      
+      // Get the auto-suggest input instance
+      const autoSuggestInput = (shell as any).autoSuggestInput as any
+      
+      // Simulate the shell state after typing 'b'
+      autoSuggestInput.currentInput = 'b'
+      autoSuggestInput.cursorPosition = 1
+      
+      // Update the display with a test prompt
+      const prompt = '~/test ❯ '
+      autoSuggestInput.updateDisplayForTesting(prompt)
+      
+      // The output should contain the prompt and the 'b' character
+      expect(_mockOutput).toContain(prompt)
+      expect(_mockOutput).toContain('b')
+      
+      // Check for the clear line sequence (\x1B[2K)
+      expect(_mockOutput).toContain('\x1B[2K')
+      
+      // Check for the cursor position sequence (\x1B[10G)
+      const cursorPosMatch = _mockOutput.match(/\x1B\[(\d+)G/)
+      if (!cursorPosMatch) {
+        throw new Error('No cursor position control sequence found')
+      }
+      
+      // Verify cursor is positioned after the 'b' character
+      const cursorColumn = Number.parseInt(cursorPosMatch[1], 10)
+      const expectedColumn = prompt.length + 1 // +1 for 'b' (1-based column)
+      expect(cursorColumn).toBe(expectedColumn)
+      
+      // Reset for next test
+      autoSuggestInput.currentInput = ''
+      autoSuggestInput.cursorPosition = 0
+    })
+  })
+
+  // ============================================
+  // Completion Tests
+  // ============================================
+
+  describe('Completion', () => {
     it('should provide command completions', () => {
       const completions = shell.getCompletions('l', 1)
       // Since we prioritize builtins and 'ls' is a system command,
@@ -285,6 +406,11 @@ describe('KrustyShell', () => {
     it('should provide file completions', () => {
       const completions = shell.getCompletions('ls ./', 5)
       expect(completions.length).toBeGreaterThan(0)
+    })
+
+    it('completion handling should be tested in dedicated test files', () => {
+      // Placeholder for completion tests
+      expect(true).toBe(true)
     })
   })
 })

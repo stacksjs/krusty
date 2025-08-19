@@ -1,5 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import type * as readline from 'node:readline'
+import type { Job } from './jobs/job-manager'
 import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell, ThemeConfig } from './types'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, statSync } from 'node:fs'
@@ -14,6 +15,7 @@ import { HookManager } from './hooks'
 import { AutoSuggestInput } from './input/auto-suggest-input'
 import { Logger } from './logger'
 import { CommandParser } from './parser'
+import { JobManager } from './jobs/job-manager'
 import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 import { ThemeManager } from './theme/theme-manager'
@@ -26,14 +28,8 @@ export class KrustyShell implements Shell {
   public aliases: Record<string, string>
   public builtins: Map<string, BuiltinCommand>
   public history: string[] = []
-  public jobs: Array<{
-    id: number
-    pid: number
-    command: string
-    status: 'running' | 'stopped' | 'done'
-  }> = []
-
-  private nextJobId = 1
+  public jobManager: JobManager
+  public jobs: Job[] = [] // Compatibility property for Shell interface
   private lastExitCode: number = 0
 
   private parser: CommandParser
@@ -93,6 +89,7 @@ export class KrustyShell implements Shell {
     this.hookManager = new HookManager(this, this.config)
     this.log = new Logger(this.config.verbose, 'shell')
     this.autoSuggestInput = new AutoSuggestInput(this)
+    this.jobManager = new JobManager(this)
 
     // Load history
     this.loadHistory()
@@ -120,41 +117,52 @@ export class KrustyShell implements Shell {
     }
   }
 
-  // Job management methods
-  addJob(command: string, pid?: number): number {
-    const jobId = this.nextJobId++
-    const processId = pid ?? process.pid
-    this.jobs.push({
-      id: jobId,
-      pid: processId,
-      command,
-      status: 'running',
-    })
-    return jobId
+  // Job management methods - delegated to JobManager
+  addJob(command: string, childProcess?: ChildProcess, background = false): number {
+    return this.jobManager.addJob(command, childProcess, background)
   }
 
-  removeJob(pid: number): void {
-    const index = this.jobs.findIndex(job => job.pid === pid)
-    if (index !== -1) {
-      this.jobs.splice(index, 1)
-    }
+  removeJob(jobId: number): boolean {
+    return this.jobManager.removeJob(jobId)
   }
 
-  getJob(id: number): { id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' } | undefined {
-    return this.jobs.find(job => job.id === id)
+  getJob(id: number): Job | undefined {
+    return this.jobManager.getJob(id)
   }
 
-  getJobs(): Array<{ id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' }> {
-    return [...this.jobs]
+  getJobs(): Job[] {
+    this.jobs = this.jobManager.getJobs() // Keep compatibility property in sync
+    return this.jobs
   }
 
   setJobStatus(id: number, status: 'running' | 'stopped' | 'done'): boolean {
-    const job = this.jobs.find(job => job.id === id)
+    const job = this.jobManager.getJob(id)
     if (job) {
       job.status = status
       return true
     }
     return false
+  }
+
+  // Additional job control methods
+  suspendJob(jobId: number): boolean {
+    return this.jobManager.suspendJob(jobId)
+  }
+
+  resumeJobBackground(jobId: number): boolean {
+    return this.jobManager.resumeJobBackground(jobId)
+  }
+
+  resumeJobForeground(jobId: number): boolean {
+    return this.jobManager.resumeJobForeground(jobId)
+  }
+
+  terminateJob(jobId: number, signal = 'SIGTERM'): boolean {
+    return this.jobManager.terminateJob(jobId, signal)
+  }
+
+  waitForJob(jobId: number): Promise<Job | null> {
+    return this.jobManager.waitForJob(jobId)
   }
 
   // Public proxies for plugin operations (for tests and external callers)
@@ -1325,7 +1333,7 @@ export class KrustyShell implements Shell {
       if (command.background) {
         this.log.info(`[${child.pid}] ${command.raw}`)
         // Add to jobs list
-        this.addJob(command.raw, child.pid)
+        this.addJob(command.raw, child, true)
         // For background processes, we don't wait for completion
         this.lastExitCode = 0
         resolve({

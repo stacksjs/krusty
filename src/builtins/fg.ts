@@ -67,22 +67,52 @@ export const fgCommand: BuiltinCommand = {
       }
     }
 
-    // Mark the job as running in the foreground
-    shell.setJobStatus(jobId, 'running')
-    if (shell.config.verbose)
-      shell.log.debug('[fg] set job %d to running (foreground)', jobId)
-
-    // In a real shell, this would actually bring the process to the foreground
-    // For now, we'll just update the job status
-
-    const res: CommandResult = {
-      exitCode: 0,
-      stdout: `${job.command}\n`,
-      stderr: '',
-      duration: performance.now() - start,
+    // Resume the job in foreground using enhanced job control
+    const success = shell.resumeJobForeground?.(jobId)
+    if (success) {
+      if (shell.config.verbose)
+        shell.log.debug('[fg] set job %d to running (foreground)', jobId)
+      
+      // Wait for the job to complete if waitForJob is available
+      if (shell.waitForJob) {
+        try {
+          const completedJob = await shell.waitForJob(jobId)
+          if (completedJob) {
+            return {
+              exitCode: completedJob.exitCode || 0,
+              stdout: `${job.command}\n`,
+              stderr: '',
+              duration: performance.now() - start,
+            }
+          }
+        }
+        catch (error) {
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `fg: error waiting for job ${jobId}: ${error}\n`,
+            duration: performance.now() - start,
+          }
+        }
+      }
+      
+      const res: CommandResult = {
+        exitCode: 0,
+        stdout: `${job.command}\n`,
+        stderr: '',
+        duration: performance.now() - start,
+      }
+      if (shell.config.verbose)
+        shell.log.debug('[fg] done in %dms', Math.round(res.duration))
+      return res
     }
-    if (shell.config.verbose)
-      shell.log.debug('[fg] done in %dms', Math.round(res.duration))
-    return res
+    else {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `fg: failed to resume job ${jobId}\n`,
+        duration: performance.now() - start,
+      }
+    }
   },
 }

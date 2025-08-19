@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Job, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from './types'
 
 /**
  * Jobs command - lists background jobs
@@ -29,13 +29,13 @@ export const jobsCommand: BuiltinCommand = {
     }
 
     // Format job entries
-    const jobEntries = jobs.map((job: Job) => {
+    const jobEntries = jobs.map((job) => {
       const statusSymbol
         = job.status === 'running'
-          ? 'running'
-          : job.status === 'stopped' ? 'stopped' : 'done'
+          ? '+'
+          : job.status === 'stopped' ? '-' : 'Done'
 
-      let line = `[${job.id}] ${statusSymbol}`
+      let line = `[${job.id}]${statusSymbol} ${job.status}`
 
       if (showPid && job.pid) {
         line += ` ${job.pid}`
