@@ -210,6 +210,7 @@ export interface Command {
   raw: string
   background?: boolean
   pipes?: Command[]
+  originalArgs?: string[]
 }
 
 export interface Redirection {

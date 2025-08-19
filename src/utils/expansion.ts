@@ -53,8 +53,8 @@ export class ExpansionEngine {
       return this.expandParameter(content)
     })
 
-    // Handle simple $VAR syntax
-    const simpleRegex = /\$([A-Z_]\w*)/gi
+    // Handle simple $VAR syntax (only uppercase variables and underscores)
+    const simpleRegex = /\$([A-Z_][A-Z0-9_]*)/g
     result = result.replace(simpleRegex, (match, varName) => {
       // Use shell environment first, then system environment
       if (varName in this.context.environment) {
@@ -193,7 +193,7 @@ export class ExpansionEngine {
     let result = input
 
     // Handle brace expansion with prefix/suffix support
-    const braceRegex = /([^{}\s]*)\{([^{}]+)\}([^{}\s]*)/g
+    const braceRegex = /([^{}\s,]*)\{([^{}]+)\}([^{}\s,]*)/g
     result = result.replace(braceRegex, (match, prefix, content, suffix) => {
       // Handle range expansion {1..10}, {a..z}
       if (content.includes('..')) {
@@ -304,7 +304,7 @@ export class ExpansionEngine {
   /**
    * Executes a command and returns its output
    */
-  private async executeCommand(command: string): Promise<string> {
+  async executeCommand(command: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const shell = process.platform === 'win32' ? 'cmd' : '/bin/sh'
       const args = process.platform === 'win32' ? ['/c', command] : ['-c', command]

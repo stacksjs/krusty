@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { RedirectionHandler } from '../src/utils/redirection'
 
 describe('RedirectionHandler', () => {

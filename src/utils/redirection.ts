@@ -39,6 +39,7 @@ export class RedirectionHandler {
       // Here documents: <<EOF, <<-EOF
       { regex: /\s+<<-?\s*([A-Z_]\w*)\s*$/gi, type: 'here-doc' },
       // Here strings: <<<string
+      // eslint-disable-next-line regexp/no-super-linear-backtracking
       { regex: /\s+<<<\s*(.+)$/g, type: 'here-string' },
       // Combined stderr+stdout: &>, &>>
       { regex: /\s+(&>>?)\s+(\S+)/g, type: 'both' },

@@ -1,6 +1,7 @@
-import { describe, expect, it, beforeEach } from 'bun:test'
-import { ExpansionEngine, ExpansionUtils } from '../src/utils/expansion'
+/* eslint-disable no-template-curly-in-string */
 import type { Shell } from '../src/types'
+import { beforeEach, describe, expect, it } from 'bun:test'
+import { ExpansionEngine, ExpansionUtils } from '../src/utils/expansion'
 
 describe('ExpansionEngine', () => {
   let mockShell: Shell
@@ -118,16 +119,17 @@ describe('ExpansionEngine', () => {
 
     it('should handle nested expansions', async () => {
       const result = await expansionEngine.expand('prefix_{1..3}_suffix')
-      expect(result).toBe('prefix_1 2 3_suffix')
+      expect(result).toBe('prefix_1_suffix prefix_2_suffix prefix_3_suffix')
     })
   })
 
   describe('Command Substitution', () => {
     it('should handle $() syntax', async () => {
       // Mock the command execution to return a predictable result
-      const originalExecuteCommand = expansionEngine['executeCommand']
-      expansionEngine['executeCommand'] = async (cmd: string) => {
-        if (cmd === 'echo hello') return 'hello\n'
+      const originalExecuteCommand = expansionEngine.executeCommand
+      expansionEngine.executeCommand = async (cmd: string) => {
+        if (cmd === 'echo hello')
+          return 'hello\n'
         return ''
       }
 
@@ -135,14 +137,15 @@ describe('ExpansionEngine', () => {
       expect(result).toBe('Output: hello')
 
       // Restore original method
-      expansionEngine['executeCommand'] = originalExecuteCommand
+      expansionEngine.executeCommand = originalExecuteCommand
     })
 
     it('should handle backtick syntax', async () => {
       // Mock the command execution
-      const originalExecuteCommand = expansionEngine['executeCommand']
-      expansionEngine['executeCommand'] = async (cmd: string) => {
-        if (cmd === 'pwd') return '/current/dir\n'
+      const originalExecuteCommand = expansionEngine.executeCommand
+      expansionEngine.executeCommand = async (cmd: string) => {
+        if (cmd === 'pwd')
+          return '/current/dir\n'
         return ''
       }
 
@@ -150,7 +153,7 @@ describe('ExpansionEngine', () => {
       expect(result).toBe('Current dir: /current/dir')
 
       // Restore original method
-      expansionEngine['executeCommand'] = originalExecuteCommand
+      expansionEngine.executeCommand = originalExecuteCommand
     })
   })
 

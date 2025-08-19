@@ -1,3 +1,4 @@
+/* eslint-disable no-template-curly-in-string */
 import type { KrustyConfig } from '../src/types'
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { KrustyShell } from '../src/shell'

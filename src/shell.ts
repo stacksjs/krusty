@@ -66,7 +66,7 @@ export class KrustyShell implements Shell {
     this.environment = Object.fromEntries(
       Object.entries(process.env).filter(([_, value]) => value !== undefined),
     ) as Record<string, string>
-    
+
     // Override with config environment if provided
     if (this.config.environment) {
       Object.assign(this.environment, this.config.environment)
@@ -590,12 +590,12 @@ export class KrustyShell implements Shell {
     // Prefer builtins over aliases to ensure builtin behavior is not shadowed by alias names
     if (!options?.bypassFunctions && this.builtins.has(command.name)) {
       const builtin = this.builtins.get(command.name)!
-      
+
       // Handle background processes for builtins
       if (command.background) {
         // For background builtins, execute asynchronously and add to jobs
         const jobId = this.addJob(command.raw)
-        
+
         // Execute builtin in background (don't await)
         builtin.execute(command.args, this).then(async (result) => {
           // Apply redirections if needed
@@ -607,7 +607,7 @@ export class KrustyShell implements Shell {
         }).catch(() => {
           this.setJobStatus(jobId, 'done')
         })
-        
+
         return {
           exitCode: 0,
           stdout: '',
@@ -615,15 +615,19 @@ export class KrustyShell implements Shell {
           duration: 0,
         }
       }
-      
-      const result = await builtin.execute(command.args, this)
-      
+
+      // Process arguments to remove quotes for builtin commands (except alias which handles quotes itself)
+      const processedArgs = command.name === 'alias'
+        ? command.args
+        : command.args.map((arg: string) => this.processAliasArgument(arg))
+      const result = await builtin.execute(processedArgs, this)
+
       // Apply redirections to builtin output if needed
       if (redirections && redirections.length > 0) {
         await this.applyRedirectionsToBuiltinResult(result, redirections)
         return { ...result, stdout: '' } // Clear stdout since it was redirected
       }
-      
+
       return result
     }
 
@@ -692,14 +696,18 @@ export class KrustyShell implements Shell {
     // Check if it's a builtin command
     if (!options?.bypassFunctions && this.builtins.has(expandedCommand.name)) {
       const builtin = this.builtins.get(expandedCommand.name)!
-      const result = await builtin.execute(expandedCommand.args, this)
-      
+      // Process arguments to remove quotes for builtin commands (except alias which handles quotes itself)
+      const processedArgs = expandedCommand.name === 'alias'
+        ? expandedCommand.args
+        : expandedCommand.args.map((arg: string) => this.processAliasArgument(arg))
+      const result = await builtin.execute(processedArgs, this)
+
       // Apply redirections to builtin output if needed
       if (redirections && redirections.length > 0) {
         await this.applyRedirectionsToBuiltinResult(result, redirections)
         return { ...result, stdout: '' } // Clear stdout since it was redirected
       }
-      
+
       return result
     }
 
@@ -785,6 +793,24 @@ export class KrustyShell implements Shell {
   }
 
   /**
+   * Processes an argument from alias expansion by removing quotes
+   * @param arg The argument to process
+   * @returns The processed argument
+   */
+  private processAliasArgument(arg: string): string {
+    if (!arg)
+      return arg
+
+    // Handle quoted strings
+    if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
+      return arg.slice(1, -1)
+    }
+
+    // Handle escaped characters
+    return arg.replace(/\\(.)/g, '$1')
+  }
+
+  /**
    * Expands a command if it matches a defined alias
    * @param command The command to potentially expand
    * @returns The expanded command or the original command if no alias was found
@@ -823,13 +849,15 @@ export class KrustyShell implements Shell {
     // then after tokenization we turn the markers back into literal quoted arguments.
     const QUOTED_MARKER_PREFIX = '__krusty_QARG_'
     processedValue = processedValue.replace(/"\$(\d+)"/g, (_m, num) => `${QUOTED_MARKER_PREFIX}${num}__`)
-    const hasArgs = command.args.length > 0
+    const argsToUse = (command as any).originalArgs || command.args
+    const hasArgs = argsToUse.length > 0
     const endsWithSpace = aliasValue.endsWith(' ')
     const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
 
-    // Handle environment variables first
-    processedValue = processedValue.replace(/\$([A-Z_]\w*)/gi, (_, varName) => {
-      return this.environment[varName] || ''
+    // Handle environment variables first (only replace valid variable names that exist)
+    // Only match variables that start with uppercase letter or underscore
+    processedValue = processedValue.replace(/\$([A-Z_][A-Z0-9_]*)(?=\W|$)/g, (match, varName) => {
+      return this.environment[varName] !== undefined ? this.environment[varName] : match
     })
 
     // Apply brace expansion to the alias value
@@ -849,7 +877,8 @@ export class KrustyShell implements Shell {
             const range = []
             if (startNum <= endNum) {
               for (let i = startNum; i <= endNum; i++) range.push(i)
-            } else {
+            }
+            else {
               for (let i = startNum; i >= endNum; i--) range.push(i)
             }
             return range.map(num => `${prefix}${num}${suffix}`).join(' ')
@@ -859,21 +888,18 @@ export class KrustyShell implements Shell {
       })
     }
 
-    // Handle argument substitution
+    // Handle argument substitution using original arguments for alias expansion
     if (hasArgs) {
-      // Replace $@ with all arguments, properly quoted (to preserve grouping when tokenized later)
+      // Replace $@ with all arguments, preserving original quoting
       if (processedValue.includes('$@')) {
-        const quotedArgs = command.args.map((arg: string) =>
-          arg.includes(' ') ? `"${arg}"` : arg,
-        )
-        processedValue = processedValue.replace(/\$@/g, quotedArgs.join(' '))
+        processedValue = processedValue.replace(/\$@/g, argsToUse.join(' '))
       }
 
       // Replace $1, $2, etc. with specific arguments (no auto-quoting here;
       // quoting can be enforced by writing "$1" in the alias which we preserve via markers)
       processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
         const index = Number.parseInt(num, 10) - 1
-        return command.args[index] !== undefined ? command.args[index] : ''
+        return argsToUse[index] !== undefined ? argsToUse[index] : ''
       })
 
       // If alias ends with space OR it doesn't contain placeholders, append remaining args
@@ -1021,10 +1047,9 @@ export class KrustyShell implements Shell {
         const m = arg.match(/^__krusty_QARG_(\d+)__$/)
         if (m) {
           const idx = Number.parseInt(m[1], 10) - 1
-          const val = command.args[idx] !== undefined ? command.args[idx] : ''
-          // Only inject literal quotes if the argument requires quoting
-          const needsQuoting = /[^\w./:=\-]/.test(val) || /\s/.test(val)
-          return needsQuoting ? `"${val}"` : val
+          const val = argsToUse[idx] !== undefined ? argsToUse[idx] : ''
+          // Always inject literal quotes for quoted placeholders since they were explicitly quoted in the alias
+          return `"${val}"`
         }
         return arg
       })
@@ -1086,20 +1111,24 @@ export class KrustyShell implements Shell {
     const stdio: any = ['pipe', 'pipe', 'pipe']
     let outputFile: string | undefined
     let inputFile: string | undefined
-    
+
     if (redirections && redirections.length > 0) {
       for (const redirection of redirections) {
         if (redirection.type === 'file') {
           if (redirection.direction === 'output') {
             outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
-          } else if (redirection.direction === 'input') {
+          }
+          else if (redirection.direction === 'input') {
             inputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
           }
         }
       }
     }
 
-    const child = spawn(command.name, command.args, {
+    // Process arguments to remove quotes for external commands
+    const processedArgs = command.args.map((arg: string) => this.processAliasArgument(arg))
+
+    const child = spawn(command.name, processedArgs, {
       cwd: this.cwd,
       env: cleanEnv,
       stdio,
@@ -1113,7 +1142,7 @@ export class KrustyShell implements Shell {
       // Use streaming process but skip stdout capture since it's redirected
       return this.setupStreamingProcess(child, start, command, undefined, true)
     }
-    
+
     if (inputFile) {
       const { createReadStream, existsSync } = await import('node:fs')
       if (existsSync(inputFile)) {
@@ -1133,17 +1162,20 @@ export class KrustyShell implements Shell {
     for (const redirection of redirections) {
       if (redirection.type === 'file') {
         const outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
-        
+
         if (redirection.direction === 'output') {
           const { writeFileSync } = await import('node:fs')
           writeFileSync(outputFile, result.stdout)
-        } else if (redirection.direction === 'append') {
+        }
+        else if (redirection.direction === 'append') {
           const { appendFileSync } = await import('node:fs')
           appendFileSync(outputFile, result.stdout)
-        } else if (redirection.direction === 'error') {
+        }
+        else if (redirection.direction === 'error') {
           const { writeFileSync } = await import('node:fs')
           writeFileSync(outputFile, result.stderr)
-        } else if (redirection.direction === 'error-append') {
+        }
+        else if (redirection.direction === 'error-append') {
           const { appendFileSync } = await import('node:fs')
           appendFileSync(outputFile, result.stderr)
         }

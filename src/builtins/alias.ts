@@ -113,7 +113,14 @@ export const aliasCommand: BuiltinCommand = {
       const needsQuoting = (s: string) => /[\s!@#$%^&*(){}[\]|;:<>,?`~]/.test(s)
       let aliasValue: string
       if (extraParts.length === 0) {
-        aliasValue = valuePart
+        // Remove quotes from single quoted value
+        if ((valuePart.startsWith('"') && valuePart.endsWith('"'))
+          || (valuePart.startsWith('\'') && valuePart.endsWith('\''))) {
+          aliasValue = valuePart.slice(1, -1)
+        }
+        else {
+          aliasValue = valuePart
+        }
       }
       else {
         const parts = [valuePart, ...extraParts].map((p, idx) => {
