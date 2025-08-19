@@ -32,52 +32,21 @@ export class PluginManager {
       return
 
     if (name === 'auto-suggest') {
-      const plugin: Plugin = {
-        name: 'auto-suggest',
-        version: '1.0.0',
-        description: 'Provides auto-suggestions based on history and aliases',
-        commands: {
-          suggest: {
-            description: 'Get suggestions for a command',
-            execute: async (_args: string[]) => ({
-              exitCode: 0,
-              stdout: 'Auto-suggest functionality',
-              stderr: '',
-              duration: 0,
-            }),
-          },
-        },
-        completions: [{
-          command: '*', // Apply to all commands
-          complete: (input: string, cursor: number, context: any) => {
-            // Provide history-based completions
-            const history = context.shell.history || []
-            const currentInput = input.slice(0, cursor).trim()
-
-            if (!currentInput)
-              return []
-
-            // Find matching history entries
-            const historyMatches = history
-              .filter((cmd: string) => cmd.startsWith(currentInput) && cmd !== currentInput)
-              .slice(0, 5) // Limit to 5 suggestions
-
-            // Also check aliases for completions
-            const aliases = context.shell.aliases || {}
-            const aliasMatches = Object.keys(aliases)
-              .filter((alias: string) => alias.startsWith(currentInput) && alias !== currentInput)
-              .slice(0, 3) // Limit to 3 alias suggestions
-
-            return [...historyMatches, ...aliasMatches]
-          },
-        }],
+      // Load the sophisticated auto-suggest plugin from file
+      try {
+        const autoSuggestPlugin = await import('./auto-suggest-plugin')
+        const plugin = autoSuggestPlugin.default
+        
+        this.plugins.set(name, plugin)
+        if (plugin.initialize)
+          await plugin.initialize(context)
+        if (plugin.activate)
+          await plugin.activate(context)
+      } catch (error) {
+        console.error('Failed to load auto-suggest plugin:', error)
+        // Fallback: remove the plugin entry
+        this.plugins.delete(name)
       }
-
-      this.plugins.set(name, plugin)
-      if (plugin.initialize)
-        await plugin.initialize(context)
-      if (plugin.activate)
-        await plugin.activate(context)
     }
     else if (name === 'highlight') {
       const plugin: Plugin = {

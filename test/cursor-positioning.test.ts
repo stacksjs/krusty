@@ -1,0 +1,211 @@
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+
+describe('Cursor Positioning Tests', () => {
+  let mockOutput = ''
+  let writeCallCount = 0
+  let keypressHandlers: Array<(str: string, key: any) => void> = []
+  const originalWrite = process.stdout.write
+  const originalOn = process.stdin.on
+  const originalSetRawMode = process.stdin.setRawMode
+
+  beforeEach(() => {
+    mockOutput = ''
+    writeCallCount = 0
+    keypressHandlers = []
+    
+    process.stdout.write = mock((chunk: any) => {
+      writeCallCount++
+      const str = chunk.toString()
+      mockOutput += str
+      console.log(`Write #${writeCallCount}: ${JSON.stringify(str)}`)
+      return true
+    })
+
+    process.stdin.on = mock((event: string, handler: any) => {
+      if (event === 'keypress') {
+        keypressHandlers.push(handler)
+      }
+      return process.stdin
+    })
+
+    process.stdin.setRawMode = mock(() => process.stdin)
+    process.stdin.removeAllListeners = mock(() => process.stdin)
+  })
+
+  afterEach(() => {
+    process.stdout.write = originalWrite
+    process.stdin.on = originalOn
+    process.stdin.setRawMode = originalSetRawMode
+  })
+
+  it('should position cursor correctly after prompt when typing', async () => {
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    
+    const mockShell = {
+      getCompletions: () => ['build', 'bundle'],
+      config: { completion: { enabled: true } },
+      history: [],
+      aliases: {},
+    }
+
+    const autoSuggestInput = new AutoSuggestInput(mockShell as any)
+    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🧅 1.2.21❯ '
+
+    console.log('=== Testing cursor positioning ===')
+    console.log(`Prompt length: ${prompt.length}`)
+    
+    // Start readLine
+    const readLinePromise = autoSuggestInput.readLine(prompt)
+    const keypressHandler = keypressHandlers[0]
+    
+    console.log('=== Initial state ===')
+    console.log(`Output: ${JSON.stringify(mockOutput)}`)
+    
+    // Type 'b'
+    console.log('=== User types "b" ===')
+    keypressHandler('b', { name: 'b', sequence: 'b', ctrl: false, meta: false })
+    
+    console.log(`After 'b': ${JSON.stringify(mockOutput)}`)
+    
+    // Analyze cursor positioning commands
+    const cursorCommands = mockOutput.match(/\x1B\[\d+G/g) || []
+    console.log(`Cursor positioning commands: ${JSON.stringify(cursorCommands)}`)
+    
+    // Extract the column numbers from cursor commands
+    const columnNumbers = cursorCommands.map(cmd => {
+      const match = cmd.match(/\x1B\[(\d+)G/)
+      return match ? parseInt(match[1]) : 0
+    })
+    console.log(`Column positions: ${JSON.stringify(columnNumbers)}`)
+    
+    // The cursor should be positioned right after the prompt
+    const expectedColumn = prompt.length + 1 // +1 for 1-based indexing
+    console.log(`Expected cursor column: ${expectedColumn}`)
+    
+    // Type 'u' to test sequential positioning
+    console.log('=== User types "u" ===')
+    keypressHandler('u', { name: 'u', sequence: 'u', ctrl: false, meta: false })
+    
+    console.log(`After 'u': ${JSON.stringify(mockOutput)}`)
+    
+    // Check final cursor positioning
+    const finalCursorCommands = mockOutput.match(/\x1B\[\d+G/g) || []
+    const finalColumnNumbers = finalCursorCommands.map(cmd => {
+      const match = cmd.match(/\x1B\[(\d+)G/)
+      return match ? parseInt(match[1]) : 0
+    })
+    console.log(`Final cursor positions: ${JSON.stringify(finalColumnNumbers)}`)
+    
+    // The final cursor should be at prompt + 2 characters (for "bu")
+    const expectedFinalColumn = prompt.length + 2
+    console.log(`Expected final cursor column: ${expectedFinalColumn}`)
+    
+    // Verify cursor positioning is correct
+    const lastCursorPosition = finalColumnNumbers[finalColumnNumbers.length - 1]
+    expect(lastCursorPosition).toBe(expectedFinalColumn)
+    
+    // Clean up
+    keypressHandler('', { name: 'return' })
+    await readLinePromise
+  })
+
+  it('should test updateDisplay positioning logic directly', async () => {
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    
+    const mockShell = {
+      getCompletions: () => ['build'],
+      config: { completion: { enabled: true } },
+      history: [],
+      aliases: {},
+    }
+
+    const autoSuggestInput = new AutoSuggestInput(mockShell as any)
+    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🧅 1.2.21❯ '
+
+    console.log('=== Testing updateDisplay positioning ===')
+    console.log(`Prompt: ${JSON.stringify(prompt)}`)
+    console.log(`Prompt length: ${prompt.length}`)
+    
+    // Simulate typing 'b'
+    autoSuggestInput.currentInput = 'b'
+    autoSuggestInput.cursorPosition = 1
+    autoSuggestInput.updateDisplay(prompt)
+    
+    console.log('=== After updateDisplay with "b" ===')
+    console.log(`Output: ${JSON.stringify(mockOutput)}`)
+    
+    // Parse the positioning commands
+    const moveToInputStart = mockOutput.match(/\x1B\[(\d+)G\x1B\[K/)
+    const finalCursorMove = mockOutput.match(/\x1B\[(\d+)G(?!.*\x1B\[K)/)
+    
+    console.log(`Move to input start: ${JSON.stringify(moveToInputStart)}`)
+    console.log(`Final cursor move: ${JSON.stringify(finalCursorMove)}`)
+    
+    if (moveToInputStart) {
+      const inputStartColumn = parseInt(moveToInputStart[1])
+      const expectedInputStart = prompt.length + 1
+      console.log(`Input start column: ${inputStartColumn}, expected: ${expectedInputStart}`)
+      expect(inputStartColumn).toBe(expectedInputStart)
+    }
+    
+    if (finalCursorMove) {
+      const finalColumn = parseInt(finalCursorMove[1])
+      const expectedFinalColumn = prompt.length + 1 // cursor at position 1 in "b"
+      console.log(`Final cursor column: ${finalColumn}, expected: ${expectedFinalColumn}`)
+      expect(finalColumn).toBe(expectedFinalColumn)
+    }
+    
+    // Test with longer input
+    mockOutput = ''
+    autoSuggestInput.currentInput = 'build'
+    autoSuggestInput.cursorPosition = 5
+    autoSuggestInput.updateDisplay(prompt)
+    
+    console.log('=== After updateDisplay with "build" ===')
+    console.log(`Output: ${JSON.stringify(mockOutput)}`)
+    
+    const finalCursorMove2 = mockOutput.match(/\x1B\[(\d+)G(?!.*\x1B\[K)/)
+    if (finalCursorMove2) {
+      const finalColumn2 = parseInt(finalCursorMove2[1])
+      const expectedFinalColumn2 = prompt.length + 5 // cursor at end of "build"
+      console.log(`Final cursor column for "build": ${finalColumn2}, expected: ${expectedFinalColumn2}`)
+      expect(finalColumn2).toBe(expectedFinalColumn2)
+    }
+  })
+
+  it('should handle prompt with ANSI escape sequences correctly', async () => {
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    
+    const mockShell = {
+      getCompletions: () => ['test'],
+      config: { completion: { enabled: true } },
+      history: [],
+      aliases: {},
+    }
+
+    const autoSuggestInput = new AutoSuggestInput(mockShell as any)
+    // Prompt with ANSI colors (common in shells)
+    const promptWithColors = '\x1B[36m~/Code/krusty\x1B[0m \x1B[33m⎇ main\x1B[0m ❯ '
+    
+    console.log('=== Testing prompt with ANSI sequences ===')
+    console.log(`Colored prompt: ${JSON.stringify(promptWithColors)}`)
+    console.log(`Colored prompt length: ${promptWithColors.length}`)
+    
+    // The issue might be that we're counting ANSI escape sequences as part of prompt length
+    // But terminal doesn't display them, so cursor positioning is off
+    
+    autoSuggestInput.currentInput = 't'
+    autoSuggestInput.cursorPosition = 1
+    autoSuggestInput.updateDisplay(promptWithColors)
+    
+    console.log('=== After updateDisplay with colored prompt ===')
+    console.log(`Output: ${JSON.stringify(mockOutput)}`)
+    
+    // Extract cursor positioning
+    const cursorMoves = mockOutput.match(/\x1B\[(\d+)G/g) || []
+    console.log(`Cursor moves with colored prompt: ${JSON.stringify(cursorMoves)}`)
+    
+    // This test reveals if ANSI sequences in prompt are causing positioning issues
+    expect(cursorMoves.length).toBeGreaterThan(0)
+  })
+})

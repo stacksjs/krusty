@@ -1,11 +1,10 @@
 import type { Plugin, PluginCompletion, PluginContext } from '../types'
-import { BasePlugin } from './index'
 
 /**
  * Auto Suggest Plugin
  * - Provides extra completions based on history and common corrections
  */
-class AutoSuggestPlugin extends BasePlugin implements Plugin {
+class AutoSuggestPlugin implements Plugin {
   name = 'auto-suggest'
   version = '1.0.0'
   description = 'Inline-like auto suggestions from history and common typos'

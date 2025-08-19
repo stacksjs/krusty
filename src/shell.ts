@@ -369,33 +369,22 @@ export class KrustyShell implements Shell {
     }
 
     try {
-      // Setup readline interface
-      this.rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        completer: (line: string) => {
-          const completions = this.getCompletions(line, line.length)
-          return [completions, line]
-        },
-      })
+      // Don't setup readline interface - AutoSuggestInput handles all input
+      // this.rl = readline.createInterface({
+      //   input: process.stdin,
+      //   output: process.stdout,
+      // })
 
-      // Handle Ctrl+C
-      this.rl.on('SIGINT', () => {
+      // Handle Ctrl+C directly on process
+      process.on('SIGINT', () => {
         this.log.info('(To exit, press Ctrl+D or type "exit")')
-        if (this.rl) {
-          try {
-            this.rl.prompt()
-          }
-          catch (error) {
-            this.log.error('Error prompting after SIGINT:', error)
-          }
-        }
       })
 
       // Main REPL loop
       while (this.running) {
         try {
           const prompt = await this.renderPrompt()
+          process.stdout.write(prompt) // Write prompt before readLine
           const input = await this.readLine(prompt)
 
           if (input === null) {

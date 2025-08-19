@@ -18,6 +18,7 @@ export class AutoSuggestInput {
   private suggestions: string[] = []
   private selectedIndex = 0
   private isShowingSuggestions = false
+  private isNavigatingSuggestions = false
 
   constructor(shell: Shell, options: AutoSuggestOptions = {}) {
     this.shell = shell
@@ -46,14 +47,13 @@ export class AutoSuggestInput {
       this.suggestions = []
       this.selectedIndex = 0
       this.isShowingSuggestions = false
+      this.isNavigatingSuggestions = false
 
-      // Display initial prompt
-      stdout.write(prompt)
+      // Don't write prompt - shell already wrote it via renderPrompt()
 
       const cleanup = () => {
         stdin.setRawMode(false)
         stdin.removeAllListeners('keypress')
-        this.clearSuggestions()
       }
 
       const handleKeypress = (str: string, key: any) => {
@@ -97,14 +97,14 @@ export class AutoSuggestInput {
           // Handle Arrow keys for suggestion navigation
           if (key.name === 'down' && this.suggestions.length > 0) {
             this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
-            this.applySuggestionToInput()
+            this.updateSuggestion()
             this.updateDisplay(prompt)
             return
           }
 
           if (key.name === 'up' && this.suggestions.length > 0) {
             this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
-            this.applySuggestionToInput()
+            this.updateSuggestion()
             this.updateDisplay(prompt)
             return
           }
@@ -176,12 +176,11 @@ export class AutoSuggestInput {
 
   private updateSuggestions() {
     try {
-      // Get suggestions from shell
+      // Get suggestions from shell (includes plugin completions)
       this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
       this.selectedIndex = 0
       this.updateSuggestion()
-    }
-    catch {
+    } catch {
       this.suggestions = []
       this.currentSuggestion = ''
     }
@@ -191,150 +190,77 @@ export class AutoSuggestInput {
     if (this.suggestions.length > 0) {
       const selected = this.suggestions[this.selectedIndex]
       const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
-      
+
       // Handle different completion scenarios
       if (inputBeforeCursor.trim() === '') {
         // Empty input - show full suggestion
         this.currentSuggestion = selected
-      } else {
+      }
+      else {
         // Find the last token to complete
         const tokens = inputBeforeCursor.trim().split(/\s+/)
         const lastToken = tokens[tokens.length - 1] || ''
-        
+
         // Only show suggestion if it starts with the current token
         if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
           this.currentSuggestion = selected.slice(lastToken.length)
-        } else {
+        }
+        else {
           this.currentSuggestion = ''
         }
       }
-    } else {
+    }
+    else {
       this.currentSuggestion = ''
     }
   }
 
   private acceptSuggestion() {
     if (this.currentSuggestion) {
-      this.currentInput = this.currentInput.slice(0, this.cursorPosition) + 
-                         this.currentSuggestion + 
-                         this.currentInput.slice(this.cursorPosition)
+      this.currentInput = this.currentInput.slice(0, this.cursorPosition)
+        + this.currentSuggestion
+        + this.currentInput.slice(this.cursorPosition)
       this.cursorPosition += this.currentSuggestion.length
       this.currentSuggestion = ''
       this.updateSuggestions()
     }
   }
 
-  private applySuggestionToInput() {
-    if (this.suggestions.length > 0) {
-      const selected = this.suggestions[this.selectedIndex]
-      const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
-      
-      // Handle different completion scenarios
-      if (inputBeforeCursor.trim() === '') {
-        // Empty input - replace with full suggestion
-        this.currentInput = selected + this.currentInput.slice(this.cursorPosition)
-        this.cursorPosition = selected.length
-      } else {
-        // Find the last token to replace
-        const tokens = inputBeforeCursor.trim().split(/\s+/)
-        const lastToken = tokens[tokens.length - 1] || ''
-        
-        if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
-          // Replace the partial token with the full suggestion
-          const beforeLastToken = inputBeforeCursor.slice(0, inputBeforeCursor.lastIndexOf(lastToken))
-          this.currentInput = beforeLastToken + selected + this.currentInput.slice(this.cursorPosition)
-          this.cursorPosition = beforeLastToken.length + selected.length
-        }
-      }
-      
-      this.updateSuggestion()
-    }
-  }
+  private lastDisplayedInput = ''
+  private lastDisplayedSuggestion = ''
 
-  private updateDisplay(prompt: string) {
+  private updateDisplay(_prompt: string) {
     const stdout = process.stdout
 
-    // Clear current line completely
-    stdout.write('\r\x1B[2K')
-    
-    // Clear any existing suggestions
-    if (this.isShowingSuggestions) {
-      this.clearSuggestions()
+    // Only update if input or suggestion actually changed
+    if (this.currentInput === this.lastDisplayedInput && 
+        this.currentSuggestion === this.lastDisplayedSuggestion) {
+      return
     }
 
-    // Write prompt and current input
-    stdout.write(`${prompt}${this.currentInput}`)
+    // Clear from current position to end of line
+    stdout.write('\x1B[0K')
+    
+    // Write current input
+    stdout.write(this.currentInput)
 
     // Show inline suggestion if available
     if (this.options.showInline && this.currentSuggestion) {
       stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
     }
 
-    // Show suggestion list if multiple suggestions and we have meaningful input
-    if (this.suggestions.length > 1 && this.currentInput.trim().length > 0) {
-      this.showSuggestionList()
-    }
-
-    // Position cursor correctly
-    const totalLength = prompt.length + this.currentInput.length + 
-                       (this.currentSuggestion ? this.currentSuggestion.length : 0)
-    const targetPosition = prompt.length + this.cursorPosition
-    const moveBack = totalLength - targetPosition
+    // Move cursor to correct position
+    const totalLength = this.currentInput.length + (this.currentSuggestion ? this.currentSuggestion.length : 0)
+    const moveBack = totalLength - this.cursorPosition
     
     if (moveBack > 0) {
       stdout.write(`\x1B[${moveBack}D`)
     }
+
+    // Remember what we displayed
+    this.lastDisplayedInput = this.currentInput
+    this.lastDisplayedSuggestion = this.currentSuggestion
   }
 
-  private showSuggestionList() {
-    const stdout = process.stdout
-    const maxShow = Math.min(this.suggestions.length, this.options.maxSuggestions || 10)
-
-    // Move to next line only once
-    stdout.write('\n')
-
-    for (let i = 0; i < maxShow; i++) {
-      const suggestion = this.suggestions[i]
-      const isSelected = i === this.selectedIndex
-
-      if (isSelected) {
-        stdout.write(`${this.options.suggestionColor}> ${suggestion}\x1B[0m\n`)
-      }
-      else {
-        stdout.write(`  ${suggestion}\n`)
-      }
-    }
-
-    if (this.suggestions.length > maxShow) {
-      stdout.write(`  ... and ${this.suggestions.length - maxShow} more\n`)
-    }
-
-    // Move cursor back up to input line
-    const linesToMove = maxShow + (this.suggestions.length > maxShow ? 1 : 0)
-    stdout.write(`\x1B[${linesToMove}A`)
-    this.isShowingSuggestions = true
-  }
-
-  private clearSuggestions() {
-    if (this.isShowingSuggestions) {
-      const stdout = process.stdout
-      const maxShow = Math.min(this.suggestions.length, this.options.maxSuggestions || 10)
-      const linesToClear = maxShow + (this.suggestions.length > maxShow ? 1 : 0)
-
-      // Move down to the suggestion area
-      stdout.write(`\x1B[${linesToClear}B`)
-      
-      // Move up and clear each line
-      for (let i = 0; i < linesToClear; i++) {
-        stdout.write(`\x1B[1A\x1B[2K`) // Move up one line and clear it
-      }
-
-      this.isShowingSuggestions = false
-    }
-  }
-
-  private clearDisplay() {
-    // This method is now handled directly in updateDisplay
-    // to avoid double clearing which was causing extra lines
-  }
+  // Removed all suggestion list display methods to prevent UI clutter
 }
