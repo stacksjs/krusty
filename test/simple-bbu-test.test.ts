@@ -42,17 +42,18 @@ describe('Simple BBU Test', () => {
     process.stdout.write(prompt)
     console.log(`After prompt: ${JSON.stringify(mockOutput)}`)
 
-    // Simulate typing 'b' - first updateDisplay call
-    autoSuggestInput.currentInput = 'b'
-    autoSuggestInput.cursorPosition = 1
-    autoSuggestInput.updateDisplay(prompt)
+    // Test the 'bbu' bug by simulating typing 'b' then 'u'
+    // Use the public interface to set input
+    ;(autoSuggestInput as any).currentInput = 'b'
+    ;(autoSuggestInput as any).cursorPosition = 1
+    ;(autoSuggestInput as any).updateDisplay('❯ ')
 
     console.log(`After first 'b': ${JSON.stringify(mockOutput)}`)
 
-    // Simulate typing 'u' - second updateDisplay call
-    autoSuggestInput.currentInput = 'bu'
-    autoSuggestInput.cursorPosition = 2
-    autoSuggestInput.updateDisplay(prompt)
+    // Now type 'u' to make it 'bu'
+    ;(autoSuggestInput as any).currentInput = 'bu'
+    ;(autoSuggestInput as any).cursorPosition = 2
+    ;(autoSuggestInput as any).updateDisplay('❯ ')
 
     console.log(`After 'bu': ${JSON.stringify(mockOutput)}`)
 
@@ -67,24 +68,32 @@ describe('Simple BBU Test', () => {
     // The key insight: we need to check what would actually be visible on screen
     // after all the escape sequences are processed
 
-    // Parse the output to simulate what terminal would show
+    // Parse the output    // Simulate terminal behavior with proper cursor tracking
     let simulatedScreen = ''
+    let cursorPos = 0
     let i = 0
+
     while (i < mockOutput.length) {
-      if (mockOutput[i] === '\x1B') {
-        // Skip escape sequence
-        if (mockOutput[i + 1] === '[') {
-          let j = i + 2
-          while (j < mockOutput.length && !/[a-z]/i.test(mockOutput[j])) {
-            j++
-          }
+      if (mockOutput[i] === '\x1B' && i + 1 < mockOutput.length && mockOutput[i + 1] === '[') {
+        // Find the end of the escape sequence
+        let j = i + 2
+        let numStr = ''
+        while (j < mockOutput.length && /\d/.test(mockOutput[j])) {
+          numStr += mockOutput[j]
+          j++
+        }
+
+        if (j < mockOutput.length) {
           const command = mockOutput[j]
+          const num = numStr ? Number.parseInt(numStr, 10) : 1
+
           if (command === 'K') {
-            // Clear to end of line - remove everything after current position
-            simulatedScreen = simulatedScreen.substring(0, simulatedScreen.length)
+            // Clear to end of line - remove everything from cursor position to end
+            simulatedScreen = simulatedScreen.substring(0, cursorPos)
           }
           else if (command === 'D') {
-            // Move cursor left - for simplicity, just track final state
+            // Move cursor left
+            cursorPos = Math.max(0, cursorPos - num)
           }
           i = j + 1
         }
@@ -93,7 +102,16 @@ describe('Simple BBU Test', () => {
         }
       }
       else {
-        simulatedScreen += mockOutput[i]
+        // Insert character at cursor position
+        if (cursorPos >= simulatedScreen.length) {
+          simulatedScreen += mockOutput[i]
+        }
+        else {
+          simulatedScreen = simulatedScreen.substring(0, cursorPos)
+            + mockOutput[i]
+            + simulatedScreen.substring(cursorPos)
+        }
+        cursorPos++
         i++
       }
     }

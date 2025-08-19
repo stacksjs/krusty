@@ -238,6 +238,15 @@ export class AutoSuggestInput {
       return
     }
 
+    // Move cursor to beginning of current line content (after prompt)
+    const lastDisplayedLength = this.lastDisplayedInput.length + 
+      (this.lastDisplayedSuggestion ? this.lastDisplayedSuggestion.length : 0)
+    
+    if (lastDisplayedLength > 0) {
+      // Move cursor back to start of input area
+      stdout.write(`\x1B[${lastDisplayedLength}D`)
+    }
+
     // Clear from current position to end of line
     stdout.write('\x1B[0K')
     

@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import process from 'node:process'
 import { config } from '../config'
 
 interface CompletionCache {
@@ -135,17 +136,212 @@ export class CompletionManager {
   }
 
   private async generateCompletions(
-    _input: string,
-    _context: Record<string, any>,
+    input: string,
+    context: Record<string, any>,
   ): Promise<string[]> {
-    // This is a simplified implementation
-    // In a real implementation, you would:
-    // 1. Parse the input to determine the type of completion needed
-    // 2. Delegate to appropriate completion providers (git, npm, file system, etc.)
-    // 3. Apply any context-aware filtering
+    const shell = context.shell
+    if (!shell) return []
 
-    // Placeholder implementation
-    return []
+    const cursor = context.cursor || input.length
+    const tokens = this.tokenize(input)
+    const before = input.slice(0, Math.max(0, cursor))
+    const isFirstToken = !before.includes(' ') || before.trim() === tokens[0]
+
+    let completions: string[] = []
+
+    try {
+      if (isFirstToken) {
+        // Command completions (builtins, aliases, PATH commands)
+        const partial = before.trim()
+        completions = this.getCommandCompletions(partial, shell)
+      } else {
+        // Argument completions (files, directories, etc.)
+        const lastToken = tokens[tokens.length - 1] || ''
+        completions = this.getArgumentCompletions(lastToken, shell)
+      }
+
+      // Add plugin completions
+      if (shell.pluginManager?.getPluginCompletions) {
+        try {
+          const pluginCompletions = shell.pluginManager.getPluginCompletions(input, cursor) || []
+          completions = [...new Set([...completions, ...pluginCompletions])]
+        } catch (error) {
+          console.warn('Error getting plugin completions:', error)
+        }
+      }
+
+      // Apply filtering and sorting
+      const filtered = completions.filter(c => c && c.trim().length > 0)
+      const maxSuggestions = shell.config.completion?.maxSuggestions || 10
+      
+      return filtered
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .slice(0, maxSuggestions)
+
+    } catch (error) {
+      console.warn('Error generating completions:', error)
+      return []
+    }
+  }
+
+  private getCommandCompletions(prefix: string, shell: any): string[] {
+    const builtins = Array.from(shell.builtins.keys()) as string[]
+    const aliases = Object.keys(shell.aliases || {})
+    const pathCommands = this.getPathCommands()
+    const caseSensitive = shell.config.completion?.caseSensitive ?? false
+
+    const match = (s: string) =>
+      caseSensitive ? s.startsWith(prefix) : s.toLowerCase().startsWith(prefix.toLowerCase())
+
+    const b = builtins.filter(match)
+    const a = aliases.filter(match)
+    const p = pathCommands.filter(match)
+
+    // Keep order: builtins, aliases, then PATH commands; dedupe while preserving order
+    const ordered = [...b, ...a, ...p]
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const cmd of ordered) {
+      if (!seen.has(cmd)) {
+        seen.add(cmd)
+        result.push(cmd)
+      }
+    }
+
+    return result
+  }
+
+  private getArgumentCompletions(partial: string, _shell: any): string[] {
+    // File and directory completions
+    try {
+      let searchPath = partial
+      let prefix = ''
+
+      if (partial.includes('/')) {
+        searchPath = dirname(partial)
+        prefix = basename(partial)
+      } else {
+        searchPath = '.'
+        prefix = partial
+      }
+
+      // Handle ~ expansion
+      if (searchPath.startsWith('~')) {
+        searchPath = searchPath.replace(/^~/, homedir())
+      }
+
+      const fullPath = resolve(searchPath)
+      const entries = readdirSync(fullPath)
+
+      return entries
+        .filter((entry: string) => entry.startsWith(prefix))
+        .map((entry: string) => {
+          const entryPath = join(fullPath, entry)
+          const isDir = statSync(entryPath).isDirectory()
+          const result = partial.includes('/') 
+            ? join(searchPath, entry) 
+            : entry
+          return isDir ? `${result}/` : result
+        })
+        .slice(0, 20) // Limit file completions
+    } catch {
+      return []
+    }
+  }
+
+  private getPathCommands(): string[] {
+    const pathCache = this.cache.get('PATH_COMMANDS')
+    const now = Date.now()
+    
+    if (pathCache && (pathCache.timestamp + this.cacheTtl) > now) {
+      return pathCache.completions
+    }
+
+    try {
+      const pathDirs = (process.env.PATH || '').split(':').filter(Boolean)
+      const commands = new Set<string>()
+
+      for (const dir of pathDirs) {
+        try {
+          const entries = readdirSync(dir)
+          for (const entry of entries) {
+            try {
+              const fullPath = join(dir, entry)
+              const stat = statSync(fullPath)
+              if (stat.isFile() && (stat.mode & 0o111)) {
+                commands.add(entry)
+              }
+            } catch {
+              // Skip inaccessible files
+            }
+          }
+        } catch {
+          // Skip inaccessible directories
+        }
+      }
+
+      const result = Array.from(commands).sort()
+      
+      // Cache the result
+      this.cache.set('PATH_COMMANDS', {
+        timestamp: now,
+        completions: result,
+      })
+
+      return result
+    } catch {
+      return []
+    }
+  }
+
+  private tokenize(input: string): string[] {
+    const tokens: string[] = []
+    let current = ''
+    let inQuotes = false
+    let quoteChar = ''
+    let escapeNext = false
+
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i]
+
+      if (escapeNext) {
+        current += char
+        escapeNext = false
+        continue
+      }
+
+      if (char === '\\' && (!inQuotes || (inQuotes && quoteChar === '"'))) {
+        escapeNext = true
+        continue
+      }
+
+      if ((char === '"' || char === '\'') && !escapeNext) {
+        if (inQuotes && char === quoteChar) {
+          current += char
+          inQuotes = false
+          quoteChar = ''
+        } else if (!inQuotes) {
+          inQuotes = true
+          quoteChar = char
+          current += char
+        } else {
+          current += char
+        }
+      } else if (char === ' ' && !inQuotes) {
+        if (current) {
+          tokens.push(current)
+          current = ''
+        }
+      } else {
+        current += char
+      }
+    }
+
+    if (current) {
+      tokens.push(current)
+    }
+
+    return tokens
   }
 
   public clearCache(): void {

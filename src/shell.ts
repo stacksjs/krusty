@@ -1,11 +1,11 @@
 import type { ChildProcess } from 'node:child_process'
+import type * as readline from 'node:readline'
 import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell, ThemeConfig } from './types'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import * as readline from 'node:readline'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
 import { defaultConfig, loadKrustyConfig } from './config'
@@ -487,7 +487,7 @@ export class KrustyShell implements Shell {
       this.hookManager.executeHooks('completion:before', { input, cursor })
         .catch(err => this.log.error('completion:before hook error:', err))
 
-      // Get completions from the completion provider
+      // Get completions from the completion provider (keeping existing logic for now)
       let completions: string[] = []
 
       try {
@@ -526,24 +526,13 @@ export class KrustyShell implements Shell {
           ? s.startsWith(prefix)
           : s.toLowerCase().startsWith(prefix.toLowerCase())
 
-        const builtinMatches = Array.from(this.builtins.keys()).filter(startsWith)
-        if (builtinMatches.length > 0) {
-          // If none of the builtin matches are in the current slice but exist in the full list, swap one in
-          const present = completions.some(c => this.builtins.has(c) && startsWith(c))
-          if (!present) {
-            const candidate = allSorted.find(c => this.builtins.has(c) && startsWith(c))
-            if (candidate) {
-              if (!completions.includes(candidate)) {
-                if (completions.length < max) {
-                  completions.push(candidate)
-                }
-                else {
-                  completions[completions.length - 1] = candidate
-                }
-                // Re-sort to preserve alphabetical order
-                completions.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-              }
-            }
+        // Check if we have at least one builtin that matches
+        const hasMatchingBuiltin = Array.from(this.builtins.keys()).some(startsWith)
+        if (!hasMatchingBuiltin) {
+          // Add the first matching builtin if none exist
+          const firstBuiltin = Array.from(this.builtins.keys()).find(startsWith)
+          if (firstBuiltin && !allSorted.includes(firstBuiltin)) {
+            completions = [firstBuiltin, ...allSorted].slice(0, max)
           }
         }
       }
@@ -1179,13 +1168,13 @@ export class KrustyShell implements Shell {
   private async readLine(prompt: string): Promise<string | null> {
     // Use auto-suggest input for better user experience
     const result = await this.autoSuggestInput.readLine(prompt)
-    
+
     // Add to history if not empty
     if (result && result.trim()) {
       this.historyManager.add(result.trim()).catch(console.error)
       this.history = this.historyManager.getHistory()
     }
-    
+
     return result
   }
 
