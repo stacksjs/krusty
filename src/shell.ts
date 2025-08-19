@@ -11,6 +11,7 @@ import { CompletionProvider } from './completion'
 import { defaultConfig, loadKrustyConfig } from './config'
 import { HistoryManager } from './history'
 import { HookManager } from './hooks'
+import { AutoSuggestInput } from './input/auto-suggest-input'
 import { Logger } from './logger'
 import { CommandParser } from './parser'
 import { PluginManager } from './plugins/plugin-manager'
@@ -44,6 +45,7 @@ export class KrustyShell implements Shell {
   private themeManager: ThemeManager
   private hookManager: HookManager
   public log: Logger
+  private autoSuggestInput: AutoSuggestInput
 
   // Getter for testing access
   get testHookManager(): HookManager {
@@ -90,6 +92,7 @@ export class KrustyShell implements Shell {
     this.pluginManager = new PluginManager(this, this.config)
     this.hookManager = new HookManager(this, this.config)
     this.log = new Logger(this.config.verbose, 'shell')
+    this.autoSuggestInput = new AutoSuggestInput(this)
 
     // Load history
     this.loadHistory()
@@ -1183,22 +1186,18 @@ export class KrustyShell implements Shell {
     }
   }
 
-  // Read a single line with completion, returns null on EOF (Ctrl+D)
+  // Read a single line with auto-suggestions, returns null on EOF (Ctrl+D)
   private async readLine(prompt: string): Promise<string | null> {
-    return new Promise((resolve) => {
-      const rl = this.rl
-      if (!rl)
-        return resolve(null)
-
-      rl.question(prompt, (answer) => {
-        const trimmed = answer.trim()
-        if (trimmed) {
-          this.historyManager.add(trimmed).catch(console.error)
-          this.history = this.historyManager.getHistory()
-        }
-        resolve(trimmed || null)
-      })
-    })
+    // Use auto-suggest input for better user experience
+    const result = await this.autoSuggestInput.readLine(prompt)
+    
+    // Add to history if not empty
+    if (result && result.trim()) {
+      this.historyManager.add(result.trim()).catch(console.error)
+      this.history = this.historyManager.getHistory()
+    }
+    
+    return result
   }
 
   // Execute a command providing stdin input (used for pipes)
