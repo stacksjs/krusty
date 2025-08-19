@@ -5,8 +5,15 @@ export * from '../types'
 // Job status type
 export type JobStatus = 'running' | 'stopped' | 'done'
 
-// Use Shell interface directly from base types (now compatible with JobManager)
-export interface Shell extends BaseShell {}
+// Extended Shell interface with job management methods
+export interface Shell extends BaseShell {
+  getJobByPid?: (pid: number) => {
+    id: number
+    pid: number
+    command: string
+    status: 'running' | 'stopped' | 'done'
+  } | undefined
+}
 
 export interface BuiltinCommand extends Omit<BaseBuiltinCommand, 'execute'> {
   execute: (args: string[], shell: Shell) => Promise<{

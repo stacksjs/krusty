@@ -13,9 +13,9 @@ import { defaultConfig, loadKrustyConfig } from './config'
 import { HistoryManager } from './history'
 import { HookManager } from './hooks'
 import { AutoSuggestInput } from './input/auto-suggest-input'
+import { JobManager } from './jobs/job-manager'
 import { Logger } from './logger'
 import { CommandParser } from './parser'
-import { JobManager } from './jobs/job-manager'
 import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 import { ThemeManager } from './theme/theme-manager'
@@ -383,10 +383,8 @@ export class KrustyShell implements Shell {
       //   output: process.stdout,
       // })
 
-      // Handle Ctrl+C directly on process
-      process.on('SIGINT', () => {
-        this.log.info('(To exit, press Ctrl+D or type "exit")')
-      })
+      // The JobManager handles signal processing, so we don't need to set up handlers here
+      // The JobManager will handle Ctrl+C (SIGINT) and Ctrl+Z (SIGTSTP) appropriately
 
       // Main REPL loop
       while (this.running) {
@@ -448,6 +446,14 @@ export class KrustyShell implements Shell {
     }
     catch (error) {
       this.log.error('Error saving history:', error)
+    }
+
+    // Shutdown job manager
+    try {
+      this.jobManager.shutdown()
+    }
+    catch (error) {
+      this.log.error('Error shutting down job manager:', error)
     }
 
     // Execute shell:stop hooks
@@ -1140,8 +1146,9 @@ export class KrustyShell implements Shell {
       }
     }
 
-    // Stream output and await completion
-    return this.setupStreamingProcess(child, start, command)
+    // Add job to JobManager and stream output
+    const jobId = this.addJob(command.raw || `${command.name} ${command.args.join(' ')}`, child, command.background)
+    return this.setupStreamingProcess(child, start, command, undefined, false, jobId)
   }
 
   /**
@@ -1207,8 +1214,9 @@ export class KrustyShell implements Shell {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    // Pass input to child's stdin and stream
-    return this.setupStreamingProcess(child, start, command, input)
+    // Add job to JobManager and pass input to child's stdin and stream
+    const jobId = this.addJob(command.raw || `${command.name} ${command.args.join(' ')}`, child, false)
+    return this.setupStreamingProcess(child, start, command, input, false, jobId)
   }
 
   /**
@@ -1221,6 +1229,7 @@ export class KrustyShell implements Shell {
     command: any,
     input?: string,
     skipStdoutCapture = false,
+    jobId?: number,
   ): Promise<CommandResult> {
     return new Promise((resolve) => {
       let stdout = ''
@@ -1331,9 +1340,7 @@ export class KrustyShell implements Shell {
 
       // Handle background processes
       if (command.background) {
-        this.log.info(`[${child.pid}] ${command.raw}`)
-        // Add to jobs list
-        this.addJob(command.raw, child, true)
+        this.log.info(`[${jobId}] ${child.pid} ${command.raw || `${command.name} ${command.args.join(' ')}`}`)
         // For background processes, we don't wait for completion
         this.lastExitCode = 0
         resolve({

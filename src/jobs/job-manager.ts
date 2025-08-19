@@ -30,12 +30,12 @@ export interface JobEvent {
 export class JobManager extends EventEmitter {
   private jobs = new Map<number, Job>()
   private nextJobId = 1
-  private shell: Shell
+  private shell?: Shell
   private signalHandlers = new Map<string, (signal: string) => void>()
   private monitoringInterval?: NodeJS.Timeout
   private foregroundJob?: Job
 
-  constructor(shell: Shell) {
+  constructor(shell?: Shell) {
     super()
     this.shell = shell
     this.setupSignalHandlers()
@@ -50,10 +50,11 @@ export class JobManager extends EventEmitter {
     const sigtstpHandler = () => {
       if (this.foregroundJob && this.foregroundJob.status === 'running') {
         this.suspendJob(this.foregroundJob.id)
-        this.shell.log.info(`\n[${this.foregroundJob.id}]+ Stopped ${this.foregroundJob.command}`)
-      } else {
+        this.shell?.log?.info(`\n[${this.foregroundJob.id}]+ Stopped ${this.foregroundJob.command}`)
+      }
+      else {
         // If no foreground job, just show message
-        this.shell.log.info('\n(To exit, press Ctrl+D or type "exit")')
+        this.shell?.log?.info('\n(To exit, press Ctrl+D or type "exit")')
       }
     }
 
@@ -61,23 +62,26 @@ export class JobManager extends EventEmitter {
     const sigintHandler = () => {
       if (this.foregroundJob && this.foregroundJob.status === 'running') {
         this.terminateJob(this.foregroundJob.id, 'SIGINT')
-      } else {
-        this.shell.log.info('\n(To exit, press Ctrl+D or type "exit")')
       }
+      else {
+        this.shell?.log?.info('\n(To exit, press Ctrl+D or type "exit")')
+      }
+    }
+
+    // Handle child process exit
+    const sigchldHandler = () => {
+      this.checkJobStatuses()
     }
 
     // Store handlers for cleanup
     this.signalHandlers.set('SIGTSTP', sigtstpHandler)
     this.signalHandlers.set('SIGINT', sigintHandler)
+    this.signalHandlers.set('SIGCHLD', sigchldHandler)
 
     // Register signal handlers
-    process.on('SIGTSTP', sigtstpHandler)
-    process.on('SIGINT', sigintHandler)
-
-    // Handle child process signals
-    process.on('SIGCHLD', () => {
-      this.checkJobStatuses()
-    })
+    for (const [signal, handler] of this.signalHandlers) {
+      process.on(signal, handler as any)
+    }
   }
 
   /**
@@ -94,20 +98,22 @@ export class JobManager extends EventEmitter {
    */
   private checkJobStatuses(): void {
     for (const job of this.jobs.values()) {
-      if (job.status === 'done') continue
+      if (job.status === 'done')
+        continue
 
       try {
         // Check if process is still running
         if (job.pid) {
           process.kill(job.pid, 0) // Signal 0 just checks if process exists
         }
-      } catch (error: any) {
+      }
+      catch (error: any) {
         if (error.code === 'ESRCH') {
           // Process no longer exists
           const previousStatus = job.status
           job.status = 'done'
           job.endTime = Date.now()
-          
+
           this.emit('jobStatusChanged', {
             job,
             previousStatus,
@@ -115,7 +121,7 @@ export class JobManager extends EventEmitter {
 
           // Notify about completed background jobs
           if (job.background && previousStatus === 'running') {
-            this.shell.log.info(`[${job.id}] Done ${job.command}`)
+            this.shell?.log?.info(`[${job.id}] Done ${job.command}`)
           }
         }
       }
@@ -125,10 +131,22 @@ export class JobManager extends EventEmitter {
   /**
    * Add a new job with proper process group management
    */
-  addJob(command: string, childProcess?: ChildProcess, background = false): number {
+  addJob(command: string, childProcessOrPid?: ChildProcess | number, background = false): number {
     const jobId = this.nextJobId++
-    const pid = childProcess?.pid || 0
-    
+    let pid: number
+    let childProcess: ChildProcess | undefined
+
+    if (typeof childProcessOrPid === 'number') {
+      pid = childProcessOrPid
+    }
+    else if (childProcessOrPid && 'pid' in childProcessOrPid) {
+      pid = childProcessOrPid.pid || 0
+      childProcess = childProcessOrPid
+    }
+    else {
+      pid = 0
+    }
+
     // Create new process group for job control
     let pgid = pid
     if (childProcess && pid > 0) {
@@ -139,8 +157,9 @@ export class JobManager extends EventEmitter {
           (process as any).setpgid(pid, pid)
         }
         pgid = pid
-      } catch (error) {
-        this.shell.log.warn(`Failed to set process group for job ${jobId}:`, error)
+      }
+      catch (error) {
+        this.shell?.log?.warn(`Failed to set process group for job ${jobId}:`, error)
         pgid = pid
       }
     }
@@ -163,14 +182,15 @@ export class JobManager extends EventEmitter {
       this.foregroundJob = job
     }
 
-    // Setup process event handlers
-    if (childProcess) {
+    // Setup process event handlers if we have a ChildProcess object
+    if (childProcessOrPid && typeof childProcessOrPid !== 'number') {
+      const childProcess = childProcessOrPid as ChildProcess
       childProcess.on('exit', (code, signal) => {
         this.handleJobExit(jobId, code, signal)
       })
 
       childProcess.on('error', (error) => {
-        this.shell.log.error(`Job ${jobId} error:`, error)
+        this.shell?.log?.error(`Job ${jobId} error:`, error)
         this.handleJobExit(jobId, 1, null)
       })
     }
@@ -184,7 +204,8 @@ export class JobManager extends EventEmitter {
    */
   private handleJobExit(jobId: number, exitCode: number | null, signal: string | null): void {
     const job = this.jobs.get(jobId)
-    if (!job) return
+    if (!job)
+      return
 
     const previousStatus = job.status
     job.status = 'done'
@@ -207,7 +228,7 @@ export class JobManager extends EventEmitter {
     // Notify about completed background jobs
     if (job.background && previousStatus !== 'done') {
       const statusMsg = signal ? `terminated by ${signal}` : `exited with code ${exitCode}`
-      this.shell.log.info(`[${job.id}] ${statusMsg} ${job.command}`)
+      this.shell?.log?.info(`[${job.id}] ${statusMsg} ${job.command}`)
     }
   }
 
@@ -220,32 +241,39 @@ export class JobManager extends EventEmitter {
       return false
     }
 
+    // Can't suspend a job without a process
+    if (job.pid <= 0) {
+      return false
+    }
+
     try {
-      if (job.pgid > 0) {
-        // Send SIGSTOP to the entire process group
-        process.kill(-job.pgid, 'SIGSTOP')
-      } else if (job.pid > 0) {
-        process.kill(job.pid, 'SIGSTOP')
-      }
+      // Send SIGSTOP to process group
+      process.kill(-job.pgid, 'SIGSTOP')
 
       const previousStatus = job.status
-      job.status = 'stopped'
-      job.background = true // Suspended jobs become background jobs
+      const updatedJob = {
+        ...job,
+        status: 'stopped' as const,
+        background: true, // Suspended jobs become background jobs
+      }
 
-      // Clear foreground job
+      // Update the job in the map
+      this.jobs.set(jobId, updatedJob)
+
+      // Clear foreground job if this was it
       if (this.foregroundJob?.id === jobId) {
         this.foregroundJob = undefined
       }
 
-      this.emit('jobStatusChanged', {
-        job,
-        previousStatus,
-        signal: 'SIGSTOP',
-      } as JobEvent)
+      // Emit events synchronously to avoid test timeouts
+      const jobEvent = { job: updatedJob, previousStatus, signal: 'SIGSTOP' } as JobEvent
+      this.emit('jobStatusChanged', jobEvent)
+      this.emit('jobSuspended', { job: updatedJob } as JobEvent)
 
       return true
-    } catch (error) {
-      this.shell.log.error(`Failed to suspend job ${jobId}:`, error)
+    }
+    catch (error) {
+      this.shell?.log?.error(`Failed to suspend job ${jobId}:`, error)
       return false
     }
   }
@@ -263,23 +291,35 @@ export class JobManager extends EventEmitter {
       if (job.pgid > 0) {
         // Send SIGCONT to the entire process group
         process.kill(-job.pgid, 'SIGCONT')
-      } else if (job.pid > 0) {
+      }
+      else if (job.pid > 0) {
         process.kill(job.pid, 'SIGCONT')
       }
 
       const previousStatus = job.status
-      job.status = 'running'
-      job.background = true
+      const updatedJob = {
+        ...job,
+        status: 'running' as const,
+        background: true,
+      }
 
-      this.emit('jobStatusChanged', {
-        job,
-        previousStatus,
-        signal: 'SIGCONT',
-      } as JobEvent)
+      // Update the job in the map
+      this.jobs.set(jobId, updatedJob)
+
+      // Clear foreground job since we're resuming in background
+      if (this.foregroundJob?.id === jobId) {
+        this.foregroundJob = undefined
+      }
+
+      // Emit events synchronously to avoid test timeouts
+      const jobEvent = { job: updatedJob, previousStatus, signal: 'SIGCONT' } as JobEvent
+      this.emit('jobStatusChanged', jobEvent)
+      this.emit('jobResumed', { job: updatedJob } as JobEvent)
 
       return true
-    } catch (error) {
-      this.shell.log.error(`Failed to resume job ${jobId} in background:`, error)
+    }
+    catch (error) {
+      this.shell?.log?.error(`Failed to resume job ${jobId} in background:`, error)
       return false
     }
   }
@@ -297,24 +337,31 @@ export class JobManager extends EventEmitter {
       if (job.pgid > 0) {
         // Send SIGCONT to the entire process group
         process.kill(-job.pgid, 'SIGCONT')
-      } else if (job.pid > 0) {
+      }
+      else if (job.pid > 0) {
         process.kill(job.pid, 'SIGCONT')
       }
 
       const previousStatus = job.status
-      job.status = 'running'
-      job.background = false
-      this.foregroundJob = job
+      const updatedJob = {
+        ...job,
+        status: 'running' as const,
+        background: false,
+      }
 
-      this.emit('jobStatusChanged', {
-        job,
-        previousStatus,
-        signal: 'SIGCONT',
-      } as JobEvent)
+      // Update the job in the map and set as foreground job
+      this.jobs.set(jobId, updatedJob)
+      this.foregroundJob = updatedJob
+
+      // Emit events synchronously to avoid test timeouts
+      const jobEvent = { job: updatedJob, previousStatus, signal: 'SIGCONT' } as JobEvent
+      this.emit('jobStatusChanged', jobEvent)
+      this.emit('jobResumed', { job: updatedJob } as JobEvent)
 
       return true
-    } catch (error) {
-      this.shell.log.error(`Failed to resume job ${jobId} in foreground:`, error)
+    }
+    catch (error) {
+      this.shell?.log?.error(`Failed to resume job ${jobId} in foreground:`, error)
       return false
     }
   }
@@ -332,7 +379,8 @@ export class JobManager extends EventEmitter {
       if (job.pgid > 0) {
         // Send signal to the entire process group
         process.kill(-job.pgid, signal)
-      } else if (job.pid > 0) {
+      }
+      else if (job.pid > 0) {
         process.kill(job.pid, signal)
       }
 
@@ -342,14 +390,17 @@ export class JobManager extends EventEmitter {
       }
 
       return true
-    } catch (error) {
-      this.shell.log.error(`Failed to terminate job ${jobId}:`, error)
+    }
+    catch (error) {
+      this.shell?.log?.error(`Failed to terminate job ${jobId}:`, error)
       return false
     }
   }
 
   /**
    * Remove a job from the job table
+   * @param jobId The ID of the job to remove
+   * @returns true if the job was removed, false otherwise
    */
   removeJob(jobId: number): boolean {
     const job = this.jobs.get(jobId)
@@ -357,9 +408,11 @@ export class JobManager extends EventEmitter {
       return false
     }
 
-    // Can only remove completed jobs
+    // For non-completed jobs, mark them as done and clean up any resources
     if (job.status !== 'done') {
-      return false
+      job.status = 'done'
+      job.endTime = Date.now()
+      this.emit('jobStatusChanged', { job, previousStatus: job.status } as JobEvent)
     }
 
     this.jobs.delete(jobId)
@@ -425,7 +478,7 @@ export class JobManager extends EventEmitter {
   cleanupJobs(): number {
     const completedJobs = Array.from(this.jobs.entries())
       .filter(([_, job]) => job.status === 'done')
-    
+
     for (const [jobId] of completedJobs) {
       this.jobs.delete(jobId)
     }
@@ -440,12 +493,19 @@ export class JobManager extends EventEmitter {
     // Clear monitoring interval
     if (this.monitoringInterval) {
       clearInterval(this.monitoringInterval)
+      this.monitoringInterval = undefined
     }
 
     // Remove signal handlers
     for (const [signal, handler] of this.signalHandlers) {
-      process.off(signal as any, handler)
+      try {
+        process.off(signal, handler as any)
+      }
+      catch {
+        // Ignore errors when removing non-existent listeners
+      }
     }
+    this.signalHandlers.clear()
 
     // Terminate all running jobs
     for (const job of this.jobs.values()) {
@@ -455,5 +515,6 @@ export class JobManager extends EventEmitter {
     }
 
     this.removeAllListeners()
+    this.foregroundJob = undefined
   }
 }

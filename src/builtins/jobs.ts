@@ -43,7 +43,7 @@ export const jobsCommand: BuiltinCommand = {
 
       line += ` ${job.command}`
 
-      if (job.fg) {
+      if (job.background) {
         line += ' &'
       }
 

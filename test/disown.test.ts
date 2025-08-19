@@ -77,9 +77,44 @@ describe('disown builtin', () => {
   })
 
   it('reports pid-less jobs as errors', async () => {
-    const id = shell.addJob('sleep 1', 33333)
-    // Force pid-less condition to exercise error path
-    ;(shell as any).jobs = (shell as any).jobs.map((j: any) => j.id === id ? { ...j, pid: undefined } : j)
+    // Create a mock child process with a valid PID
+    const mockProcess = {
+      pid: 33333,
+      on: () => {},
+      kill: () => {},
+      unref: () => {},
+      ref: () => {},
+      removeListener: () => {},
+      removeAllListeners: () => {},
+      addListener: () => {},
+      once: () => {},
+      off: () => {},
+      listeners: () => [],
+      setMaxListeners: () => {},
+      getMaxListeners: () => 0,
+      emit: () => false,
+      prependListener: () => {},
+      prependOnceListener: () => {},
+      eventNames: () => [],
+      listenerCount: () => 0,
+      rawListeners: () => [],
+    }
+    
+    // Add the job with the mock process
+    const id = shell.jobManager.addJob('sleep 1', mockProcess as any, false)
+    
+    // Get the job and modify it to be pid-less
+    const job = shell.getJob(id)
+    if (job) {
+      // Force the job to be pid-less by directly manipulating the job manager's internal state
+      const jobs = (shell.jobManager as any).jobs as Map<number, any>
+      const jobEntry = Array.from(jobs.entries()).find(([_, j]) => j.id === id)
+      if (jobEntry) {
+        const [jobId, jobData] = jobEntry
+        const pidLessJob = { ...jobData, pid: undefined as unknown as number }
+        jobs.set(jobId, pidLessJob)
+      }
+    }
 
     const res = await shell.execute(`disown ${id}`)
     expect(res.exitCode).toBe(1)
