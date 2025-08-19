@@ -16,9 +16,12 @@ Krusty is a modern, feature-rich shell built with TypeScript and Bun. It provide
 - 🔍 **Intelligent Tab Completion** - Context-aware command and file completion
 - 📝 **Scripting Support** - Write complex shell scripts with JavaScript/TypeScript
 - 🔧 **Extensible** - Easily add custom commands and plugins
-- 🎨 **Themable** - Customize the look and feel to your preference
+- 🎨 **Themable** - Customize the look and feel to your preference with built-in theme support
 - 🔄 **Modern Syntax** - Supports modern shell features and operators
 - 📦 **Built-in Package Manager** - Manage your shell extensions with ease
+- 🔌 **Plugin System** - Extend functionality with plugins
+- 🎯 **Git Integration** - Built-in Git status in prompt
+- ⚡ **Async by Default** - Non-blocking command execution
 - 🧪 **Tested** - Comprehensive test suite for reliability
 
 ## Installation
@@ -43,11 +46,36 @@ Krusty comes with a variety of built-in commands:
 - `cd` - Change directory
 - `ls` - List directory contents
 - `pwd` - Print working directory
+- `cat` - Display file contents
+- `mkdir` - Create directories
+- `rm` - Remove files or directories
+- `cp` - Copy files
+- `mv` - Move or rename files
 
 ### Process Management
 
 - `jobs` - List background jobs
 - `fg` - Bring job to foreground
+- `bg` - Run job in background
+- `kill` - Terminate processes
+
+### System Information
+
+- `date` - Display current date and time
+- `whoami` - Print current user
+- `hostname` - Print system hostname
+- `env` - List environment variables
+- `echo` - Display a line of text
+- `export` - Set environment variables
+- `unset` - Remove environment variables
+
+### Shell Features
+
+- `alias` - Create command aliases
+- `unalias` - Remove aliases
+- `history` - Command history
+- `exit` - Exit the shell
+- `clear` - Clear the terminal screen
 - `bg` - Run job in background
 - `kill` - Send signal to process
 

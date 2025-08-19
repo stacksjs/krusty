@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'bun:test'
-import { supportsColor, dim, bold, cyan, yellow, green, red, color256, hexTo256, banner, ansi } from '../src/utils/style'
+import { describe, expect, it } from 'bun:test'
+import { ansi, banner, bold, color256, cyan, dim, green, hexTo256, red, supportsColor, yellow } from '../src/utils/style'
 
 describe('style utils', () => {
   it('supportsColor respects overrides', () => {
@@ -29,7 +29,7 @@ describe('style utils', () => {
     expect(s3.startsWith(ansi.codes.yellow)).toBe(true)
     expect(s4.startsWith(ansi.codes.green)).toBe(true)
     expect(s5.startsWith(ansi.codes.red)).toBe(true)
-    ;[s1, s2, s3, s4, s5].forEach(s => {
+    ;[s1, s2, s3, s4, s5].forEach((s) => {
       expect(s.endsWith(ansi.codes.reset)).toBe(true)
     })
   })

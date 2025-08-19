@@ -16,7 +16,7 @@ export const brCommand: BuiltinCommand = {
       // Default to 'start' if no script provided
       const script = args[0] || 'start'
       const scriptArgs = args[0] ? args.slice(1) : []
-      
+
       const res = await shell.executeCommand('bun', ['run', script, ...scriptArgs])
       if (res.exitCode === 0)
         return { exitCode: 0, stdout: res.stdout, stderr: '', duration: performance.now() - start }

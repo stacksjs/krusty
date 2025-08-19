@@ -18,11 +18,11 @@ export const bfCommand: BuiltinCommand = {
       const hasPickier = await shell.executeCommand('sh', ['-c', 'command -v pickier >/dev/null 2>&1'])
       if (hasPickier.exitCode === 0) {
         const res = await shell.executeCommand('pickier', ['--fix', '.', ...args])
-        return { 
-          exitCode: res.exitCode, 
-          stdout: res.stdout, 
-          stderr: res.stderr, 
-          duration: performance.now() - start 
+        return {
+          exitCode: res.exitCode,
+          stdout: res.stdout,
+          stderr: res.stderr,
+          duration: performance.now() - start,
         }
       }
 
@@ -30,19 +30,19 @@ export const bfCommand: BuiltinCommand = {
       const hasPrettier = await shell.executeCommand('sh', ['-c', 'command -v prettier >/dev/null 2>&1'])
       if (hasPrettier.exitCode === 0) {
         const res = await shell.executeCommand('prettier', ['--write', '.', ...args])
-        return { 
-          exitCode: res.exitCode, 
-          stdout: res.stdout, 
-          stderr: res.stderr, 
-          duration: performance.now() - start 
+        return {
+          exitCode: res.exitCode,
+          stdout: res.stdout,
+          stderr: res.stderr,
+          duration: performance.now() - start,
         }
       }
 
-      return { 
-        exitCode: 1, 
-        stdout: '', 
-        stderr: 'bf: no formatter found (tried: package.json format script, pickier, prettier)\n', 
-        duration: performance.now() - start 
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'bf: no formatter found (tried: package.json format script, pickier, prettier)\n',
+        duration: performance.now() - start,
       }
     }
     finally {

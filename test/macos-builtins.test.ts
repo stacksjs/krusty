@@ -1,6 +1,6 @@
+import type { Shell } from '../src/types'
 import { describe, expect, it } from 'bun:test'
 import { createBuiltins } from '../src/builtins'
-import type { Shell } from '../src/types'
 
 // Minimal shell stub shared with other tests
 function makeShell(): Shell {
@@ -47,7 +47,8 @@ function makeShell(): Shell {
 
 function runBuiltin(shell: Shell, name: string, args: string[] = []) {
   const cmd = shell.builtins.get(name)
-  if (!cmd) throw new Error(`Builtin not found: ${name}`)
+  if (!cmd)
+    throw new Error(`Builtin not found: ${name}`)
   return cmd.execute(args, shell)
 }
 
@@ -57,7 +58,8 @@ describe('macOS helper builtins', () => {
     const res = await runBuiltin(shell, 'reloaddns')
     if (res.exitCode === 0) {
       expect(res.stdout).toContain('DNS cache')
-    } else {
+    }
+    else {
       expect(res.stderr).toMatch(/reloaddns:/)
     }
   })

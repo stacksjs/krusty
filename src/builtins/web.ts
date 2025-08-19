@@ -1,6 +1,7 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
-import { resolve } from 'node:path'
 import { existsSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+import process from 'node:process'
 
 export const webCommand: BuiltinCommand = {
   name: 'web',

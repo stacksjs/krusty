@@ -102,22 +102,34 @@ export const wipCommand: BuiltinCommand = {
         }
 
         const commitArgs = [
-          '-c', 'color.ui=always',
-          '-c', 'commit.gpgsign=false',
-          '-c', 'core.hooksPath=',
-          '-c', 'commit.template=',
+          '-c',
+          'color.ui=always',
+          '-c',
+          'commit.gpgsign=false',
+          '-c',
+          'core.hooksPath=',
+          '-c',
+          'commit.template=',
           // Use --quiet to avoid printing duplicate summary (we show diffstat ourselves)
-          'commit', '--quiet', '--no-verify', '--no-gpg-sign', '-m', msg,
+          'commit',
+          '--quiet',
+          '--no-verify',
+          '--no-gpg-sign',
+          '-m',
+          msg,
         ]
-        if (opts.amend) commitArgs.push('--amend', '--no-edit')
+        if (opts.amend)
+          commitArgs.push('--amend', '--no-edit')
         const commit = await shell.executeCommand('git', commitArgs)
         if (commit.exitCode === 0) {
           // Print a concise colored one-line commit header after committing
           if (!opts.quiet) {
             const last = await shell.executeCommand('git', [
               '--no-pager',
-              '-c', 'color.ui=always',
-              'log', '-1',
+              '-c',
+              'color.ui=always',
+              'log',
+              '-1',
               '--pretty=format:%C(auto)%h %s',
             ])
             if (last.stdout)
@@ -126,8 +138,10 @@ export const wipCommand: BuiltinCommand = {
         }
         else {
           // Commit failed; include error details but continue
-          if (!opts.quiet && commit.stdout) out.push(commit.stdout.trimEnd())
-          if (!opts.quiet && commit.stderr) out.push(commit.stderr.trimEnd())
+          if (!opts.quiet && commit.stdout)
+            out.push(commit.stdout.trimEnd())
+          if (!opts.quiet && commit.stderr)
+            out.push(commit.stderr.trimEnd())
         }
       }
       else {

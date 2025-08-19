@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
 
@@ -8,7 +8,7 @@ describe('Custom simple builtins', () => {
     const res = await shell.execute('c')
     expect(res.exitCode).toBe(0)
     // ESC [ 2J ESC [ H
-    expect(res.stdout).toContain('\u001b')
+    expect(res.stdout).toContain('\u001B')
     shell.stop()
   })
 

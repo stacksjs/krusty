@@ -8,16 +8,16 @@ export interface ThemeColors {
   error: Color
   warning: Color
   info: Color
-  
+
   // Text colors
   text: Color
   textDim: Color
   textInverted: Color
-  
+
   // Background colors
   bg: Color
   bgHighlight: Color
-  
+
   // Git status colors
   gitAdded: Color
   gitModified: Color
@@ -43,7 +43,7 @@ export interface PromptSegment {
 export interface Theme {
   name: string
   colors: ThemeColors
-  
+
   // Prompt configuration
   prompt: {
     left: (segments: PromptSegment[]) => string
@@ -51,7 +51,7 @@ export interface Theme {
     separator: string
     separatorColor: Color
   }
-  
+
   // Apply theme to shell
   apply?: () => void
 }

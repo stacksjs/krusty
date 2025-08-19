@@ -18,11 +18,11 @@ export const blCommand: BuiltinCommand = {
       const hasPickier = await shell.executeCommand('sh', ['-c', 'command -v pickier >/dev/null 2>&1'])
       if (hasPickier.exitCode === 0) {
         const res = await shell.executeCommand('pickier', ['.', ...args])
-        return { 
-          exitCode: res.exitCode, 
-          stdout: res.stdout, 
-          stderr: res.stderr, 
-          duration: performance.now() - start 
+        return {
+          exitCode: res.exitCode,
+          stdout: res.stdout,
+          stderr: res.stderr,
+          duration: performance.now() - start,
         }
       }
 
@@ -30,19 +30,19 @@ export const blCommand: BuiltinCommand = {
       const hasEslint = await shell.executeCommand('sh', ['-c', 'command -v eslint >/dev/null 2>&1'])
       if (hasEslint.exitCode === 0) {
         const res = await shell.executeCommand('eslint', ['.', ...args])
-        return { 
-          exitCode: res.exitCode, 
-          stdout: res.stdout, 
-          stderr: res.stderr, 
-          duration: performance.now() - start 
+        return {
+          exitCode: res.exitCode,
+          stdout: res.stdout,
+          stderr: res.stderr,
+          duration: performance.now() - start,
         }
       }
 
-      return { 
-        exitCode: 1, 
-        stdout: '', 
-        stderr: 'bl: no linter found (tried: package.json lint script, pickier, eslint)\n', 
-        duration: performance.now() - start 
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'bl: no linter found (tried: package.json lint script, pickier, eslint)\n',
+        duration: performance.now() - start,
       }
     }
     finally {

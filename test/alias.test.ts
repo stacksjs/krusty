@@ -116,7 +116,8 @@ describe('Alias Support', () => {
       expect(result.exitCode).toBe(0)
       expect(result.stderr).toBe('')
       expect(result.stdout).toBe(content)
-    } finally {
+    }
+    finally {
       const fs = await import('node:fs/promises')
       await fs.rm(filename, { force: true })
     }
@@ -142,7 +143,8 @@ describe('Alias Support', () => {
       expect(result.exitCode).toBe(0)
       expect(result.stdout).toContain('hello-stdin-2')
       expect(result.stdout).not.toContain('fail')
-    } finally {
+    }
+    finally {
       const fs = await import('node:fs/promises')
       await fs.rm(filename, { force: true })
     }
