@@ -1,22 +1,108 @@
-import type { Plugin, PluginConfig, PluginContext } from '../types'
+import type { KrustyConfig, Plugin, PluginConfig, PluginContext, Shell } from '../types'
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { config } from '../config'
-import { themeManager } from '../theme/theme-manager'
 
 export class PluginManager {
   private plugins: Map<string, Plugin> = new Map()
   private pluginDir: string
   private updateInterval: NodeJS.Timeout | null = null
+  private shell: Shell
+  private config: KrustyConfig
 
-  constructor() {
-    this.pluginDir = this.resolvePath(config.plugins?.[0]?.directory || '~/.krusty/plugins')
+  constructor(shell: Shell, shellConfig: KrustyConfig) {
+    this.shell = shell
+    this.config = shellConfig
+    this.pluginDir = this.resolvePath(shellConfig.plugins?.[0]?.directory || config.plugins?.[0]?.directory || '~/.krusty/plugins')
     this.ensurePluginDir()
   }
 
   private resolvePath(path: string): string {
     return path.replace(/^~(?=$|\/|\\)/, homedir())
+  }
+
+  private async loadBuiltinPlugin(name: string, _config?: Record<string, any>): Promise<void> {
+    // Create a temporary plugin entry to get context
+    const tempPlugin: Plugin = { name, version: '1.0.0' }
+    this.plugins.set(name, tempPlugin)
+
+    const context = this.getPluginContext(name)
+    if (!context)
+      return
+
+    if (name === 'auto-suggest') {
+      const plugin: Plugin = {
+        name: 'auto-suggest',
+        version: '1.0.0',
+        description: 'Provides auto-suggestions based on history and aliases',
+        commands: {
+          suggest: {
+            description: 'Get suggestions for a command',
+            execute: async (_args: string[]) => ({
+              exitCode: 0,
+              stdout: 'Auto-suggest functionality',
+              stderr: '',
+              duration: 0,
+            }),
+          },
+        },
+        completions: [{
+          command: '*', // Apply to all commands
+          complete: (input: string, cursor: number, context: any) => {
+            // Provide history-based completions
+            const history = context.shell.history || []
+            const currentInput = input.slice(0, cursor).trim()
+
+            if (!currentInput)
+              return []
+
+            // Find matching history entries
+            const historyMatches = history
+              .filter((cmd: string) => cmd.startsWith(currentInput) && cmd !== currentInput)
+              .slice(0, 5) // Limit to 5 suggestions
+
+            // Also check aliases for completions
+            const aliases = context.shell.aliases || {}
+            const aliasMatches = Object.keys(aliases)
+              .filter((alias: string) => alias.startsWith(currentInput) && alias !== currentInput)
+              .slice(0, 3) // Limit to 3 alias suggestions
+
+            return [...historyMatches, ...aliasMatches]
+          },
+        }],
+      }
+
+      this.plugins.set(name, plugin)
+      if (plugin.initialize)
+        await plugin.initialize(context)
+      if (plugin.activate)
+        await plugin.activate(context)
+    }
+    else if (name === 'highlight') {
+      const plugin: Plugin = {
+        name: 'highlight',
+        version: '1.0.0',
+        description: 'Provides syntax highlighting for commands',
+        commands: {
+          'highlight:demo': {
+            description: 'Demo command that outputs colored text',
+            execute: async (_args: string[], _context: any) => ({
+              exitCode: 0,
+              stdout: `\x1B[32mecho\x1B[0m \x1B[33mhi\x1B[0m\n`,
+              stderr: '',
+              duration: 0,
+            }),
+          },
+        },
+      }
+
+      this.plugins.set(name, plugin)
+      if (plugin.initialize)
+        await plugin.initialize(context)
+      if (plugin.activate)
+        await plugin.activate(context)
+    }
   }
 
   private ensurePluginDir(): void {
@@ -26,24 +112,76 @@ export class PluginManager {
   }
 
   public async loadPlugins(): Promise<void> {
-    if (!config.plugins?.length)
-      return
+    let pluginsToLoad = this.config.plugins || []
 
-    for (const pluginConfig of config.plugins) {
-      if (!pluginConfig.enabled)
+    // Inject default plugins if no plugins are configured
+    if (pluginsToLoad.length === 0) {
+      pluginsToLoad = [{
+        enabled: true,
+        list: [
+          { name: 'auto-suggest', enabled: true },
+          { name: 'highlight', enabled: true },
+        ],
+      }]
+    }
+    else {
+      // Check which default plugins are explicitly configured
+      const configuredPlugins = new Map<string, { enabled: boolean }>()
+      for (const config of pluginsToLoad) {
+        if (config.list) {
+          for (const item of config.list) {
+            configuredPlugins.set(item.name, { enabled: item.enabled !== false })
+          }
+        }
+      }
+
+      const defaultPlugins = [
+        { name: 'auto-suggest', enabled: true },
+        { name: 'highlight', enabled: true },
+      ]
+
+      // Only add defaults that aren't explicitly configured
+      const missingDefaults = defaultPlugins.filter(p => !configuredPlugins.has(p.name))
+      if (missingDefaults.length > 0) {
+        pluginsToLoad.push({
+          enabled: true,
+          list: missingDefaults,
+        })
+      }
+    }
+
+    for (const pluginConfig of pluginsToLoad) {
+      if (pluginConfig.enabled === false)
         continue
+      await this.loadPlugin(pluginConfig)
+    }
+    this.startAutoUpdate()
+  }
 
-      try {
-        const pluginPath = pluginConfig.path
-          ? this.resolvePath(pluginConfig.path)
-          : join(this.pluginDir, pluginConfig.name)
+  public async loadPlugin(pluginConfig: PluginConfig): Promise<void> {
+    try {
+      const pluginList = pluginConfig.list || []
+
+      for (const pluginItem of pluginList) {
+        if (pluginItem.enabled === false)
+          continue
+
+        // Handle built-in default plugins
+        if (pluginItem.name === 'auto-suggest' || pluginItem.name === 'highlight') {
+          await this.loadBuiltinPlugin(pluginItem.name, pluginItem.config)
+          continue
+        }
+
+        const pluginPath = pluginItem.path
+          ? this.resolvePath(pluginItem.path)
+          : join(this.pluginDir, pluginItem.name)
 
         if (!existsSync(pluginPath)) {
-          if (pluginConfig.url) {
-            await this.installPlugin(pluginConfig)
+          if (pluginItem.url) {
+            await this.installPluginItem(pluginItem)
           }
           else {
-            console.warn(`Plugin not found: ${pluginConfig.name}`)
+            this.shell.log?.warn(`Plugin not found: ${pluginItem.name}`)
             continue
           }
         }
@@ -53,15 +191,19 @@ export class PluginManager {
 
         if (this.validatePlugin(plugin)) {
           this.plugins.set(plugin.name, plugin)
-          await this.initializePlugin(plugin, pluginConfig.config || {})
+          await this.initializePlugin(plugin, pluginItem.config || {})
         }
       }
-      catch (error) {
-        console.error(`Failed to load plugin ${pluginConfig.name}:`, error)
+    }
+    catch (error) {
+      // Use shell logger if available, fallback to console.error
+      if (this.shell.log) {
+        this.shell.log.error(`Failed to load plugin:`, error)
+      }
+      else {
+        console.error(`Failed to load plugin:`, error)
       }
     }
-
-    this.startAutoUpdate()
   }
 
   private validatePlugin(plugin: Plugin): boolean {
@@ -70,13 +212,37 @@ export class PluginManager {
 
   private async initializePlugin(plugin: Plugin, pluginConfig: any): Promise<void> {
     const context: PluginContext = {
-      config: pluginConfig,
-      theme: themeManager,
+      shell: this.shell,
+      config: this.config,
+      pluginConfig,
       logger: {
-        debug: console.debug.bind(console, `[${plugin.name}]`),
-        info: console.info.bind(console, `[${plugin.name}]`),
+        debug: console.warn.bind(console, `[DEBUG ${plugin.name}]`),
+        info: console.warn.bind(console, `[INFO ${plugin.name}]`),
         warn: console.warn.bind(console, `[${plugin.name}]`),
         error: console.error.bind(console, `[${plugin.name}]`),
+      },
+      utils: {
+        exec: async (command: string, _options?: any) => {
+          const result = await this.shell.execute(command)
+          return {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          }
+        },
+        readFile: async (path: string) => {
+          const { readFile } = await import('node:fs/promises')
+          return readFile(path, 'utf-8')
+        },
+        writeFile: async (path: string, content: string) => {
+          const { writeFile } = await import('node:fs/promises')
+          await writeFile(path, content, 'utf-8')
+        },
+        exists: (path: string) => existsSync(path),
+        expandPath: (path: string) => this.resolvePath(path),
+        formatTemplate: (template: string, variables: Record<string, string>) => {
+          return template.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] || '')
+        },
       },
     }
 
@@ -84,12 +250,14 @@ export class PluginManager {
       await plugin.initialize(context)
     }
 
-    await plugin.activate(context)
+    if (plugin.activate) {
+      await plugin.activate(context)
+    }
   }
 
-  public async installPlugin(pluginConfig: PluginConfig): Promise<void> {
+  private async installPluginItem(pluginItem: { name: string, url?: string, version?: string }): Promise<void> {
     // Implementation for installing plugins from npm or git
-    console.log(`Installing plugin: ${pluginConfig.name}`)
+    console.warn(`Installing plugin: ${pluginItem.name}`)
     // TODO: Implement actual installation logic
   }
 
@@ -98,7 +266,7 @@ export class PluginManager {
     if (!plugin)
       return
 
-    console.log(`Updating plugin: ${name}`)
+    console.warn(`Updating plugin: ${name}`)
     // TODO: Implement update logic
   }
 
@@ -123,7 +291,7 @@ export class PluginManager {
     }
   }
 
-  public async unloadPlugins(): Promise<void> {
+  public async shutdown(): Promise<void> {
     if (this.updateInterval) {
       clearInterval(this.updateInterval)
       this.updateInterval = null
@@ -132,7 +300,20 @@ export class PluginManager {
     for (const [name, plugin] of this.plugins) {
       try {
         if (plugin.deactivate) {
-          await plugin.deactivate({} as any) // Simplified context for deactivation
+          const context: PluginContext = {
+            shell: this.shell,
+            config: this.config,
+            logger: {
+              // eslint-disable-next-line no-console
+              debug: console.debug.bind(console, `[${plugin.name}]`),
+              // eslint-disable-next-line no-console
+              info: console.info.bind(console, `[${plugin.name}]`),
+              warn: console.warn.bind(console, `[${plugin.name}]`),
+              error: console.error.bind(console, `[${plugin.name}]`),
+            },
+            utils: {} as any, // Simplified for shutdown
+          }
+          await plugin.deactivate(context)
         }
       }
       catch (error) {
@@ -142,6 +323,102 @@ export class PluginManager {
 
     this.plugins.clear()
   }
+
+  public getPlugin(name: string): Plugin | undefined {
+    return this.plugins.get(name)
+  }
+
+  public getAllPlugins(): Map<string, Plugin> {
+    return this.plugins
+  }
+
+  public getPluginContext(name: string): PluginContext | undefined {
+    const plugin = this.plugins.get(name)
+    if (!plugin)
+      return undefined
+
+    return {
+      shell: this.shell,
+      config: this.config,
+      logger: {
+        debug: console.warn.bind(console, `[DEBUG ${plugin.name}]`),
+        info: console.warn.bind(console, `[INFO ${plugin.name}]`),
+        warn: console.warn.bind(console, `[${plugin.name}]`),
+        error: console.error.bind(console, `[${plugin.name}]`),
+      },
+      utils: {
+        exec: async (command: string, _options?: any) => {
+          const result = await this.shell.execute(command)
+          return {
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          }
+        },
+        readFile: async (path: string) => {
+          const { readFile } = await import('node:fs/promises')
+          return readFile(path, 'utf-8')
+        },
+        writeFile: async (path: string, content: string) => {
+          const { writeFile } = await import('node:fs/promises')
+          await writeFile(path, content, 'utf-8')
+        },
+        exists: (path: string) => existsSync(path),
+        expandPath: (path: string) => this.resolvePath(path),
+        formatTemplate: (template: string, variables: Record<string, string>) => {
+          return template.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] || '')
+        },
+      },
+    }
+  }
+
+  public getPluginCompletions(input: string, cursor: number): string[] {
+    const completions: string[] = []
+
+    for (const [name, plugin] of this.plugins) {
+      if (plugin.completions) {
+        for (const completion of plugin.completions) {
+          try {
+            const context = this.getPluginContext(name)
+            if (context) {
+              const pluginCompletions = completion.complete(input, cursor, context)
+              completions.push(...pluginCompletions)
+            }
+          }
+          catch (error) {
+            // Use shell logger if available, fallback to console.error
+            if (this.shell.log) {
+              this.shell.log.error(`Error getting completions from plugin ${name}:`, error)
+            }
+            else {
+              console.error(`Error getting completions from plugin ${name}:`, error)
+            }
+          }
+        }
+      }
+    }
+
+    return completions
+  }
+
+  public async unloadPlugin(name: string): Promise<void> {
+    const plugin = this.plugins.get(name)
+    if (!plugin)
+      return
+
+    try {
+      if (plugin.deactivate) {
+        const context = this.getPluginContext(name)
+        if (context) {
+          await plugin.deactivate(context)
+        }
+      }
+      this.plugins.delete(name)
+    }
+    catch (error) {
+      console.error(`Error unloading plugin ${name}:`, error)
+    }
+  }
 }
 
-export const pluginManager: PluginManager = new PluginManager()
+// Export class only, instances should be created with shell and config

@@ -212,12 +212,20 @@ export interface Command {
   pipes?: Command[]
 }
 
+export interface Redirection {
+  type: 'file' | 'fd' | 'here-doc' | 'here-string' | 'process-substitution'
+  direction: 'input' | 'output' | 'append' | 'error' | 'error-append' | 'both'
+  target: string
+  fd?: number
+}
+
 export interface ParsedCommand {
   commands: Command[]
+  redirections?: Redirection[]
   redirects?: {
+    stdin?: string
     stdout?: string
     stderr?: string
-    stdin?: string
   }
 }
 
@@ -246,7 +254,7 @@ export interface Shell {
   // Core methods
   execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>
-  parseCommand: (input: string) => ParsedCommand
+  parseCommand: (input: string) => Promise<ParsedCommand>
   changeDirectory: (path: string) => boolean
   reload: () => Promise<CommandResult>
 
@@ -788,7 +796,7 @@ export interface HookConfig {
   function?: string
   plugin?: string
   priority?: number
-  conditions?: HookCondition[]
+  conditions?: (HookCondition | string)[]
   async?: boolean
   timeout?: number
 }

@@ -94,6 +94,7 @@ export const wipCommand: BuiltinCommand = {
         // - disable GPG signing
         // - disable hooks (core.hooksPath)
         // - disable commit templates
+        // - disable editor opening
         // Show colored staged diff summary before committing
         if (!opts.quiet) {
           const diff = await shell.executeCommand('git', ['-c', 'color.ui=always', 'diff', '--cached', '--stat'])

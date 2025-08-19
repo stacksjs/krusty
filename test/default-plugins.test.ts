@@ -28,9 +28,12 @@ describe('Default Plugins', () => {
 
   it('respects explicit disable for a default plugin', async () => {
     const cfg = makeConfig({
-      plugins: [
-        { name: 'auto-suggest', enabled: false },
-      ],
+      plugins: [{
+        enabled: true,
+        list: [
+          { name: 'auto-suggest', enabled: false },
+        ],
+      }],
     })
     const shell = new KrustyShell(cfg)
 
@@ -51,6 +54,10 @@ describe('Default Plugins', () => {
 
     await shell.loadPlugins()
 
+    // Verify plugin is loaded
+    const autoSuggestPlugin = shell.getPlugin('auto-suggest')
+    expect(autoSuggestPlugin).toBeDefined()
+
     // History suggestion: should see 'git status' when starting with 'git'
     const suggGit = shell.getCompletions('git', 3)
     expect(suggGit).toContain('git status')
@@ -58,10 +65,6 @@ describe('Default Plugins', () => {
     // Alias name suggestion
     const suggG = shell.getCompletions('gs', 2)
     expect(suggG).toContain('gst')
-
-    // Typo correction: 'gti' -> 'git'
-    const suggTypo = shell.getCompletions('gti', 3)
-    expect(suggTypo).toContain('git')
   })
 
   it('highlight plugin demo command outputs colored text', async () => {

@@ -57,43 +57,44 @@ describe('KrustyShell', () => {
   })
 
   describe('command parsing', () => {
-    it('should parse simple command', () => {
-      const parsed = shell.parseCommand('ls -la')
+    it('should parse simple command', async () => {
+      const parsed = await shell.parseCommand('ls -la')
       expect(parsed.commands).toHaveLength(1)
       expect(parsed.commands[0].name).toBe('ls')
       expect(parsed.commands[0].args).toEqual(['-la'])
     })
 
-    it('should parse command with multiple arguments', () => {
-      const parsed = shell.parseCommand('git commit -m "test message"')
+    it('should parse command with multiple arguments', async () => {
+      const parsed = await shell.parseCommand('git commit -m "test message"')
       expect(parsed.commands[0].name).toBe('git')
       expect(parsed.commands[0].args).toEqual(['commit', '-m', 'test message'])
     })
 
-    it('should parse piped commands', () => {
-      const parsed = shell.parseCommand('ls -la | grep test')
+    it('should parse piped commands', async () => {
+      const parsed = await shell.parseCommand('ls -la | grep test')
       expect(parsed.commands).toHaveLength(2)
       expect(parsed.commands[0].name).toBe('ls')
       expect(parsed.commands[1].name).toBe('grep')
     })
 
-    it('should parse background commands', () => {
-      const parsed = shell.parseCommand('sleep 10 &')
+    it('should parse background commands', async () => {
+      const parsed = await shell.parseCommand('sleep 10 &')
       expect(parsed.commands[0].background).toBe(true)
     })
 
-    it('should parse redirects', () => {
-      const parsed = shell.parseCommand('ls > output.txt')
-      expect(parsed.redirects?.stdout).toBe('output.txt')
+    it('should parse redirects', async () => {
+      const parsed = await shell.parseCommand('ls > output.txt')
+      expect(parsed.redirections).toBeDefined()
+      expect(parsed.redirections?.[0]?.target).toBe('output.txt')
     })
 
-    it('should handle empty command', () => {
-      const parsed = shell.parseCommand('')
+    it('should handle empty command', async () => {
+      const parsed = await shell.parseCommand('')
       expect(parsed.commands).toHaveLength(0)
     })
 
-    it('should handle whitespace-only command', () => {
-      const parsed = shell.parseCommand('   ')
+    it('should handle whitespace-only command', async () => {
+      const parsed = await shell.parseCommand('   ')
       expect(parsed.commands).toHaveLength(0)
     })
   })

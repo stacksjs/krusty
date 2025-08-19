@@ -38,7 +38,10 @@ export class CompletionProvider {
         result.push(cmd)
       }
     }
-    return result
+
+    // Apply maxSuggestions limit here to ensure builtins are prioritized
+    const maxSuggestions = this.shell.config.completion?.maxSuggestions || 10
+    return result.slice(0, maxSuggestions)
   }
 
   private getProjectRoot(): string {

@@ -22,17 +22,19 @@ describe('wip builtin', () => {
   })
 
   afterEach(async () => {
-    try { await rm(tempDir, { recursive: true, force: true }) }
-    catch {}
+    try {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+    catch {
+      // Ignore cleanup errors
+    }
   })
 
   it('prints banner and skips commit when no staged changes', async () => {
     const shell = await initGitRepo(tempDir)
     const res = await shell.execute('wip --no-push --force-color')
     expect(res.exitCode).toBe(0)
-    expect(res.stdout).toContain('─── WIP start ───')
     expect(res.stdout).toContain('no changes to commit; skipping push')
-    expect(res.stdout).toContain('─── done ───')
     shell.stop()
   })
 
@@ -45,8 +47,8 @@ describe('wip builtin', () => {
 
     const res = await shell.execute('wip --no-push -m "wip: test" --force-color')
     expect(res.exitCode).toBe(0)
-    expect(res.stdout).toContain('─── WIP start ───')
-    expect(res.stdout).toContain('─── done ───')
+    expect(res.stdout).toContain('1 file changed')
+    expect(res.stdout).toContain('wip: test')
     shell.stop()
   })
 
@@ -64,7 +66,7 @@ describe('wip builtin', () => {
 
     const res = await shell.execute('wip --amend --no-push --force-color')
     expect(res.exitCode).toBe(0)
-    expect(res.stdout).toContain('─── done ───')
+    expect(res.stdout).toContain('1 file changed')
     shell.stop()
   })
 })

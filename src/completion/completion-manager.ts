@@ -135,8 +135,8 @@ export class CompletionManager {
   }
 
   private async generateCompletions(
-    input: string,
-    context: Record<string, any>,
+    _input: string,
+    _context: Record<string, any>,
   ): Promise<string[]> {
     // This is a simplified implementation
     // In a real implementation, you would:

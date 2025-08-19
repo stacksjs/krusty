@@ -30,16 +30,16 @@ export interface Shell {
   log: Logger
   umask: number
   jobs: Job[]
-  
+
   // Core methods
-  execute(command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult>
-  executeCommand(command: string, args: string[]): Promise<CommandResult>
-  parseCommand(input: string): ParsedCommand
-  addJob(command: string, pid?: number): number
-  removeJob(id: number): void
-  getJob(id: number): Job | undefined
-  getJobs(): Job[]
-  setJobStatus(id: number, status: 'running' | 'stopped' | 'done'): void
+  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
+  executeCommand: (command: string, args: string[]) => Promise<CommandResult>
+  parseCommand: (input: string) => ParsedCommand
+  addJob: (command: string, pid?: number) => number
+  removeJob: (id: number) => void
+  getJob: (id: number) => Job | undefined
+  getJobs: () => Job[]
+  setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => void
 }
 
 export interface CommandResult {
@@ -60,7 +60,7 @@ export interface BuiltinCommand {
   (args: string[]): Promise<number> | number
   description?: string
   usage?: string
-  options?: Record<string, { alias?: string; description: string; type: 'string' | 'boolean' | 'number' }>
+  options?: Record<string, { alias?: string, description: string, type: 'string' | 'boolean' | 'number' }>
   execute?: (args: string[], shell: Shell) => Promise<CommandResult> | CommandResult
 }
 
@@ -80,8 +80,8 @@ export interface Logger {
 }
 
 export interface PromptRenderer {
-  render(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string>
-  renderRight(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string>
+  render: (cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number) => Promise<string>
+  renderRight: (cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number) => Promise<string>
 }
 
 export interface SystemInfo {
@@ -104,7 +104,7 @@ export interface GitInfo {
 }
 
 export interface CompletionProvider {
-  getCompletions(line: string, cursor: number): Promise<Completion[]>
+  getCompletions: (line: string, cursor: number) => Promise<Completion[]>
 }
 
 export interface Completion {

@@ -1,7 +1,5 @@
-import type { Theme } from './theme-manager'
 import process from 'node:process'
 import { config } from './config'
-import { themeManager } from './theme-manager'
 
 /**
  * Log level type
@@ -47,18 +45,11 @@ export class Logger {
   private verbose: boolean
   private scopeName?: string
   private useColors: boolean
-  private theme: Theme
 
   constructor(verbose = false, scopeName?: string) {
     this.verbose = verbose || config.verbose
     this.scopeName = scopeName
     this.useColors = process.stdout.isTTY && !process.env.NO_COLOR
-    this.theme = themeManager.getCurrentTheme()
-
-    // Update theme when it changes
-    themeManager.onThemeChange((newTheme) => {
-      this.theme = newTheme
-    })
   }
 
   /**
@@ -183,6 +174,3 @@ export class Logger {
 
 // Create a default logger instance
 export const logger: Logger = new Logger(config.verbose)
-
-// Export the theme manager for direct access if needed
-export { themeManager }

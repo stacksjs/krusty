@@ -1,5 +1,5 @@
-import type { HookManager } from '../hooks/hook-manager'
 import type { HistoryManager } from '../history/history-manager'
+import type { HookManager } from '../hooks/hook-manager'
 
 // Logger interface
 export interface Logger {
@@ -15,10 +15,10 @@ export interface KrustyConfig {
   prompt?: string
   /** Maximum number of commands to keep in history */
   historySize: number
-  
+
   /** Path to the history file */
   historyFile: string
-  
+
   // Other config properties
   [key: string]: unknown
 }
@@ -60,7 +60,7 @@ export interface CommandResult {
 export interface ParsedCommand {
   command: string
   args: string[]
-  commands: Array<{ name: string; args: string[] }>
+  commands: Array<{ name: string, args: string[] }>
   input?: string
   output?: string
   background?: boolean
@@ -101,7 +101,7 @@ export interface Shell {
   // Methods
   start: () => Promise<void>
   stop: () => void
-  execute: (input: string, options?: { bypassAliases?: boolean; bypassFunctions?: boolean }) => Promise<CommandResult>
+  execute: (input: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<number>
   executeBuiltin: (command: string, args: string[]) => Promise<number>
   executeExternal: (command: string, args: string[]) => Promise<number>
@@ -109,11 +109,11 @@ export interface Shell {
   getPrompt: () => Promise<string>
   addJob: (pid: number, command: string) => number
   removeJob: (id: number) => void
-  getJob: (id: number) => { id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' } | undefined
-  getJobs: () => Array<{ id: number; pid: number; command: string; status: 'running' | 'stopped' | 'done' }>
+  getJob: (id: number) => { id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' } | undefined
+  getJobs: () => Array<{ id: number, pid: number, command: string, status: 'running' | 'stopped' | 'done' }>
   initializeEnhancedFeatures: () => Promise<void>
   executeParsedCommand: (parsed: ParsedCommand) => Promise<number>
-  executeCommandChain: (parsed: ParsedCommand, options?: { bypassAliases?: boolean; bypassFunctions?: boolean }) => Promise<CommandResult>
-  executeSingleCommand: (command: any, options?: { bypassAliases?: boolean; bypassFunctions?: boolean }) => Promise<CommandResult>
-  executePipedCommands: (commands: any[], options?: { bypassAliases?: boolean; bypassFunctions?: boolean }) => Promise<CommandResult>
+  executeCommandChain: (parsed: ParsedCommand, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
+  executeSingleCommand: (command: any, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
+  executePipedCommands: (commands: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
 }

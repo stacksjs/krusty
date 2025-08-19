@@ -1,4 +1,5 @@
 import type { ThemeColors, ThemeConfig, ThemeGitColors, ThemeGitSymbols, ThemeSymbols } from '../types'
+import process from 'node:process'
 import { config } from '../config'
 
 export class ThemeManager {
@@ -6,22 +7,25 @@ export class ThemeManager {
   private colorScheme: 'light' | 'dark' | 'auto' = 'auto'
   private systemColorScheme: 'light' | 'dark' = 'light'
 
-  constructor() {
-    this.currentTheme = config.theme || {}
+  constructor(themeConfig?: ThemeConfig) {
+    this.currentTheme = themeConfig || config.theme || {}
     this.detectSystemColorScheme()
     this.applyColorScheme()
   }
 
   private detectSystemColorScheme(): void {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches
-      this.systemColorScheme = darkMode ? 'dark' : 'light'
+    // In a terminal environment, we can check environment variables or terminal capabilities
+    // For now, default to dark mode as most terminal environments use dark themes
+    const termProgram = process.env.TERM_PROGRAM
+    const _colorTerm = process.env.COLORTERM
 
-      // Listen for system color scheme changes
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        this.systemColorScheme = e.matches ? 'dark' : 'light'
-        this.applyColorScheme()
-      })
+    // Basic heuristic: assume dark mode for most terminal environments
+    this.systemColorScheme = 'dark'
+
+    // Could be extended to check specific terminal programs or user preferences
+    if (termProgram === 'Apple_Terminal' || termProgram === 'iTerm.app') {
+      // Could potentially detect light/dark mode through other means
+      this.systemColorScheme = 'dark'
     }
   }
 
@@ -30,10 +34,9 @@ export class ThemeManager {
       ? this.systemColorScheme
       : this.colorScheme
 
-    // Apply color scheme to document
-    if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', scheme)
-    }
+    // In terminal environment, we don't manipulate DOM but could set environment variables
+    // or update internal state for theme-aware components
+    process.env.KRUSTY_THEME = scheme
   }
 
   public setColorScheme(scheme: 'light' | 'dark' | 'auto'): void {
@@ -122,4 +125,4 @@ export class ThemeManager {
   }
 }
 
-export const themeManager = new ThemeManager()
+export const themeManager: ThemeManager = new ThemeManager()

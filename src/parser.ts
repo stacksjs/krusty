@@ -1,29 +1,69 @@
-import type { Command, ParsedCommand } from './types'
+import type { Command, ParsedCommand, Redirection } from './types'
+import { ExpansionEngine, ExpansionUtils } from './utils/expansion'
+import { RedirectionHandler } from './utils/redirection'
 
 export class CommandParser {
-  parse(input: string): ParsedCommand {
+  async parse(input: string, shell?: any): Promise<ParsedCommand> {
     const trimmed = input.trim()
     if (!trimmed) {
       return { commands: [] }
     }
 
-    // Handle command chaining (;, &&, ||)
+    // Handle command chaining (;, &&, ||) first, before expansion
     const segments = this.splitByOperators(trimmed)
     const commands: Command[] = []
-    let redirects: ParsedCommand['redirects']
+    const redirections: Redirection[] = []
 
     for (const segment of segments) {
-      const { command, segmentRedirects } = this.parseSegment(segment)
+      const { command, segmentRedirections } = await this.parseSegment(segment, shell)
       if (command) {
         commands.push(command)
-        if (segmentRedirects) {
-          redirects = { ...redirects, ...segmentRedirects }
+        if (segmentRedirections) {
+          redirections.push(...segmentRedirections)
         }
       }
     }
 
-    return { commands, redirects }
+    // Convert redirections to the expected format
+    const redirects = this.convertRedirectionsToFormat(redirections)
+    
+    return { 
+      commands, 
+      redirections: redirections.length > 0 ? redirections : undefined,
+      redirects
+    }
   }
+
+  private convertRedirectionsToFormat(redirections: Redirection[]) {
+    if (redirections.length === 0) return undefined
+    
+    const redirects: { stdin?: string; stdout?: string; stderr?: string } = {}
+    
+    for (const redirection of redirections) {
+      if (redirection.type === 'file') {
+        switch (redirection.direction) {
+          case 'input':
+            redirects.stdin = redirection.target
+            break
+          case 'output':
+          case 'append':
+            redirects.stdout = redirection.target
+            break
+          case 'error':
+          case 'error-append':
+            redirects.stderr = redirection.target
+            break
+          case 'both':
+            redirects.stdout = redirection.target
+            redirects.stderr = redirection.target
+            break
+        }
+      }
+    }
+    
+    return Object.keys(redirects).length > 0 ? redirects : undefined
+  }
+
 
   private splitByOperators(input: string): string[] {
     // For now, handle pipes. More complex operators (&&, ||, ;) can be added later
@@ -99,13 +139,7 @@ export class CommandParser {
       const char = input[i]
 
       if (escaped) {
-        // Handle escaped characters
-        if (char === '$' || char === quoteChar || char === '\\') {
-          current += char // Add the escaped character without the backslash
-        }
-        else {
-          current += `\\${char}` // Keep the backslash for other characters
-        }
+        current += `\\${char}` // Keep the backslash for all escaped characters
         escaped = false
         continue
       }
@@ -116,24 +150,15 @@ export class CommandParser {
       }
 
       if (!inQuotes && (char === '"' || char === '\'')) {
-        // Start a quoted section if we're at a token boundary (no current content)
-        // OR if the quote follows an '=' (e.g., name="value with spaces").
-        // Otherwise, treat the quote as a literal inside the current token (e.g., it's)
-        const prevChar = i > 0 ? input[i - 1] : ''
-        if (current === '' || prevChar === '=') {
-          inQuotes = true
-          quoteChar = char
-          continue
-        }
-        else {
-          current += char
-          continue
-        }
+        inQuotes = true
+        quoteChar = char
+        current += char
+        continue
       }
 
       if (inQuotes && char === quoteChar) {
         inQuotes = false
-        quoteChar = ''
+        current += char
         continue
       }
 
@@ -155,10 +180,10 @@ export class CommandParser {
     return tokens
   }
 
-  private parseSegment(segment: string): {
+  private async parseSegment(segment: string, shell?: any): Promise<{
     command: Command | null
-    segmentRedirects?: ParsedCommand['redirects']
-  } {
+    segmentRedirections?: Redirection[]
+  }> {
     // Check for background process
     const isBackground = segment.endsWith('&') && !this.isInQuotes(segment, segment.length - 1)
     if (isBackground) {
@@ -166,7 +191,18 @@ export class CommandParser {
     }
 
     // Extract redirections
-    const { cleanSegment, redirects } = this.extractRedirections(segment)
+    const { cleanCommand, redirections } = RedirectionHandler.parseRedirections(segment)
+    let cleanSegment = cleanCommand
+
+    // Apply expansions to the clean command
+    if (shell && ExpansionUtils.hasExpansion(cleanSegment)) {
+      const expansionEngine = new ExpansionEngine({
+        shell,
+        cwd: shell.cwd,
+        environment: shell.environment,
+      })
+      cleanSegment = await expansionEngine.expand(cleanSegment)
+    }
 
     // Parse command and arguments
     const tokens = this.tokenize(cleanSegment)
@@ -182,42 +218,9 @@ export class CommandParser {
       background: isBackground,
     }
 
-    return { command, segmentRedirects: redirects }
+    return { command, segmentRedirections: redirections.length > 0 ? redirections : undefined }
   }
 
-  private extractRedirections(segment: string): {
-    cleanSegment: string
-    redirects?: ParsedCommand['redirects']
-  } {
-    let cleanSegment = segment
-    const redirects: ParsedCommand['redirects'] = {}
-
-    // Handle stdout redirection (>, >>)
-    const stdoutMatch = cleanSegment.match(/\s+(>>?)\s+(\S+)/)
-    if (stdoutMatch) {
-      redirects.stdout = stdoutMatch[2]
-      cleanSegment = cleanSegment.replace(stdoutMatch[0], ' ')
-    }
-
-    // Handle stderr redirection (2>, 2>>)
-    const stderrMatch = cleanSegment.match(/\s+2(>>?)\s+(\S+)/)
-    if (stderrMatch) {
-      redirects.stderr = stderrMatch[2]
-      cleanSegment = cleanSegment.replace(stderrMatch[0], ' ')
-    }
-
-    // Handle stdin redirection (<)
-    const stdinMatch = cleanSegment.match(/\s+<\s+(\S+)/)
-    if (stdinMatch) {
-      redirects.stdin = stdinMatch[1]
-      cleanSegment = cleanSegment.replace(stdinMatch[0], ' ')
-    }
-
-    return {
-      cleanSegment: cleanSegment.trim(),
-      redirects: Object.keys(redirects).length > 0 ? redirects : undefined,
-    }
-  }
 
   private isInQuotes(input: string, position: number): boolean {
     let inQuotes = false
@@ -252,4 +255,5 @@ export class CommandParser {
 
     return inQuotes
   }
+
 }

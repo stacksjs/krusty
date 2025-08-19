@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell } from './types'
+import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell, ThemeConfig } from './types'
 import { spawn } from 'node:child_process'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -13,8 +13,9 @@ import { HistoryManager } from './history'
 import { HookManager } from './hooks'
 import { Logger } from './logger'
 import { CommandParser } from './parser'
-import { PluginManager } from './plugins'
+import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
+import { ThemeManager } from './theme/theme-manager'
 
 export class KrustyShell implements Shell {
   public config: KrustyConfig
@@ -40,8 +41,15 @@ export class KrustyShell implements Shell {
   private gitInfoProvider: GitInfoProvider
   private completionProvider: CompletionProvider
   private pluginManager: PluginManager
+  private themeManager: ThemeManager
   private hookManager: HookManager
   public log: Logger
+
+  // Getter for testing access
+  get testHookManager(): HookManager {
+    return this.hookManager
+  }
+
   private rl: readline.Interface | null = null
   private running = false
 
@@ -58,6 +66,11 @@ export class KrustyShell implements Shell {
     this.environment = Object.fromEntries(
       Object.entries(process.env).filter(([_, value]) => value !== undefined),
     ) as Record<string, string>
+    
+    // Override with config environment if provided
+    if (this.config.environment) {
+      Object.assign(this.environment, this.config.environment)
+    }
     this.history = []
     // Honor configured history settings
     this.historyManager = new HistoryManager(this.config.history)
@@ -69,6 +82,7 @@ export class KrustyShell implements Shell {
     this.historyManager.initialize().catch(console.error)
 
     this.parser = new CommandParser()
+    this.themeManager = new ThemeManager(this.config.theme)
     this.promptRenderer = new PromptRenderer(this.config)
     this.systemInfoProvider = new SystemInfoProvider()
     this.gitInfoProvider = new GitInfoProvider()
@@ -147,6 +161,16 @@ export class KrustyShell implements Shell {
 
   getPlugin(name: string): Plugin | undefined {
     return this.pluginManager.getPlugin(name)
+  }
+
+  // Public proxies for theme operations
+  getThemeManager(): ThemeManager {
+    return this.themeManager
+  }
+
+  setTheme(themeConfig: ThemeConfig): void {
+    this.themeManager = new ThemeManager(themeConfig)
+    this.config.theme = themeConfig
   }
 
   // Reload configuration, hooks, and plugins at runtime
@@ -243,7 +267,7 @@ export class KrustyShell implements Shell {
       this.addToHistory(command)
 
       // Parse the command
-      const parsed = this.parseCommand(command)
+      const parsed = await this.parseCommand(command)
 
       if (parsed.commands.length === 0) {
         return {
@@ -279,8 +303,8 @@ export class KrustyShell implements Shell {
     }
   }
 
-  parseCommand(input: string): ParsedCommand {
-    return this.parser.parse(input)
+  async parseCommand(input: string): Promise<ParsedCommand> {
+    return await this.parser.parse(input, this)
   }
 
   changeDirectory(path: string): boolean {
@@ -317,7 +341,7 @@ export class KrustyShell implements Shell {
     }
   }
 
-  async start(): Promise<void> {
+  async start(interactive: boolean = true): Promise<void> {
     if (this.running)
       return
 
@@ -335,6 +359,11 @@ export class KrustyShell implements Shell {
 
     // Execute shell:start hooks
     await this.hookManager.executeHooks('shell:start', {})
+
+    // Skip interactive mode for tests or when explicitly disabled
+    if (!interactive || process.env.NODE_ENV === 'test') {
+      return
+    }
 
     try {
       // Setup readline interface
@@ -541,14 +570,14 @@ export class KrustyShell implements Shell {
 
   private async executeCommandChain(parsed: ParsedCommand, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     if (parsed.commands.length === 1) {
-      return this.executeSingleCommand(parsed.commands[0], options)
+      return this.executeSingleCommand(parsed.commands[0], parsed.redirections, options)
     }
 
-    // Handle piped commands
-    return this.executePipedCommands(parsed.commands, options)
+    // Handle piped commands with redirections
+    return this.executePipedCommands(parsed.commands, parsed.redirections, options)
   }
 
-  private async executeSingleCommand(command: any, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
+  private async executeSingleCommand(command: any, redirections?: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     if (!command?.name) {
       return {
         exitCode: 0,
@@ -561,7 +590,41 @@ export class KrustyShell implements Shell {
     // Prefer builtins over aliases to ensure builtin behavior is not shadowed by alias names
     if (!options?.bypassFunctions && this.builtins.has(command.name)) {
       const builtin = this.builtins.get(command.name)!
-      return builtin.execute(command.args, this)
+      
+      // Handle background processes for builtins
+      if (command.background) {
+        // For background builtins, execute asynchronously and add to jobs
+        const jobId = this.addJob(command.raw)
+        
+        // Execute builtin in background (don't await)
+        builtin.execute(command.args, this).then(async (result) => {
+          // Apply redirections if needed
+          if (redirections && redirections.length > 0) {
+            await this.applyRedirectionsToBuiltinResult(result, redirections)
+          }
+          // Mark job as done
+          this.setJobStatus(jobId, 'done')
+        }).catch(() => {
+          this.setJobStatus(jobId, 'done')
+        })
+        
+        return {
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          duration: 0,
+        }
+      }
+      
+      const result = await builtin.execute(command.args, this)
+      
+      // Apply redirections to builtin output if needed
+      if (redirections && redirections.length > 0) {
+        await this.applyRedirectionsToBuiltinResult(result, redirections)
+        return { ...result, stdout: '' } // Clear stdout since it was redirected
+      }
+      
+      return result
     }
 
     // Expand aliases with cycle detection
@@ -576,7 +639,7 @@ export class KrustyShell implements Shell {
       ]
       // These are already expanded; avoid re-expanding aliases
       const execOptions = { ...(options || {}), bypassAliases: true }
-      return this.executePipedCommands(commands, execOptions)
+      return this.executePipedCommands(commands, undefined, execOptions)
     }
 
     // If the expanded command is a chain of sequential/conditional commands from alias expansion
@@ -590,7 +653,7 @@ export class KrustyShell implements Shell {
         const nodeToRun: any = { ...current }
         if (nodeToRun.next)
           delete nodeToRun.next
-        const res = await this.executeSingleCommand(nodeToRun, { ...(options || {}), bypassAliases: true })
+        const res = await this.executeSingleCommand(nodeToRun, undefined, { ...(options || {}), bypassAliases: true })
         lastExit = res.exitCode
         if (!aggregate) {
           aggregate = { ...res }
@@ -629,11 +692,32 @@ export class KrustyShell implements Shell {
     // Check if it's a builtin command
     if (!options?.bypassFunctions && this.builtins.has(expandedCommand.name)) {
       const builtin = this.builtins.get(expandedCommand.name)!
-      return builtin.execute(expandedCommand.args, this)
+      const result = await builtin.execute(expandedCommand.args, this)
+      
+      // Apply redirections to builtin output if needed
+      if (redirections && redirections.length > 0) {
+        await this.applyRedirectionsToBuiltinResult(result, redirections)
+        return { ...result, stdout: '' } // Clear stdout since it was redirected
+      }
+      
+      return result
+    }
+
+    // Check if it's a plugin command
+    if (!options?.bypassFunctions) {
+      for (const [_, plugin] of this.pluginManager.getAllPlugins()) {
+        if (plugin.commands && plugin.commands[expandedCommand.name]) {
+          const pluginCommand = plugin.commands[expandedCommand.name]
+          const context = this.pluginManager.getPluginContext(plugin.name)
+          if (context) {
+            return pluginCommand.execute(expandedCommand.args, context)
+          }
+        }
+      }
     }
 
     // Execute external command
-    return this.executeExternalCommand(expandedCommand)
+    return this.executeExternalCommand(expandedCommand, redirections)
   }
 
   /**
@@ -661,7 +745,7 @@ export class KrustyShell implements Shell {
     return this.expandAliasWithCycleDetection(expanded, visited)
   }
 
-  private async executePipedCommands(commands: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
+  private async executePipedCommands(commands: any[], redirections?: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
     // For now, implement simple pipe execution
     // This is a simplified version - full pipe implementation would be more complex
 
@@ -678,7 +762,7 @@ export class KrustyShell implements Shell {
 
       if (i === 0) {
         // First command
-        lastResult = await this.executeSingleCommand(command, options)
+        lastResult = await this.executeSingleCommand(command, redirections, options)
       }
       else {
         // Pipe previous output to current command
@@ -747,6 +831,33 @@ export class KrustyShell implements Shell {
     processedValue = processedValue.replace(/\$([A-Z_]\w*)/gi, (_, varName) => {
       return this.environment[varName] || ''
     })
+
+    // Apply brace expansion to the alias value
+    if (processedValue.includes('{') && processedValue.includes('}')) {
+      // Simple brace expansion for aliases
+      const braceRegex = /([^{}\s]*)\{([^{}]+)\}([^{}\s]*)/g
+      processedValue = processedValue.replace(braceRegex, (match, prefix, content, suffix) => {
+        if (content.includes(',')) {
+          const items = content.split(',').map((item: string) => item.trim())
+          return items.map((item: string) => `${prefix}${item}${suffix}`).join(' ')
+        }
+        if (content.includes('..')) {
+          const [start, end] = content.split('..', 2)
+          const startNum = Number.parseInt(start.trim(), 10)
+          const endNum = Number.parseInt(end.trim(), 10)
+          if (!Number.isNaN(startNum) && !Number.isNaN(endNum)) {
+            const range = []
+            if (startNum <= endNum) {
+              for (let i = startNum; i <= endNum; i++) range.push(i)
+            } else {
+              for (let i = startNum; i >= endNum; i--) range.push(i)
+            }
+            return range.map(num => `${prefix}${num}${suffix}`).join(' ')
+          }
+        }
+        return match
+      })
+    }
 
     // Handle argument substitution
     if (hasArgs) {
@@ -957,7 +1068,7 @@ export class KrustyShell implements Shell {
     return result
   }
 
-  private async executeExternalCommand(command: any): Promise<CommandResult> {
+  private async executeExternalCommand(command: any, redirections?: any[]): Promise<CommandResult> {
     const start = performance.now()
 
     // Create a clean environment object without undefined values
@@ -971,14 +1082,73 @@ export class KrustyShell implements Shell {
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
 
+    // Configure stdio based on redirections
+    const stdio: any = ['pipe', 'pipe', 'pipe']
+    let outputFile: string | undefined
+    let inputFile: string | undefined
+    
+    if (redirections && redirections.length > 0) {
+      for (const redirection of redirections) {
+        if (redirection.type === 'file') {
+          if (redirection.direction === 'output') {
+            outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
+          } else if (redirection.direction === 'input') {
+            inputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
+          }
+        }
+      }
+    }
+
     const child = spawn(command.name, command.args, {
       cwd: this.cwd,
       env: cleanEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio,
     })
+
+    // Handle file redirections manually
+    if (outputFile) {
+      const { createWriteStream } = await import('node:fs')
+      const outStream = createWriteStream(outputFile)
+      child.stdout?.pipe(outStream)
+      // Use streaming process but skip stdout capture since it's redirected
+      return this.setupStreamingProcess(child, start, command, undefined, true)
+    }
+    
+    if (inputFile) {
+      const { createReadStream, existsSync } = await import('node:fs')
+      if (existsSync(inputFile)) {
+        const inStream = createReadStream(inputFile)
+        inStream.pipe(child.stdin!)
+      }
+    }
 
     // Stream output and await completion
     return this.setupStreamingProcess(child, start, command)
+  }
+
+  /**
+   * Apply redirections to builtin command results
+   */
+  private async applyRedirectionsToBuiltinResult(result: CommandResult, redirections: any[]): Promise<void> {
+    for (const redirection of redirections) {
+      if (redirection.type === 'file') {
+        const outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
+        
+        if (redirection.direction === 'output') {
+          const { writeFileSync } = await import('node:fs')
+          writeFileSync(outputFile, result.stdout)
+        } else if (redirection.direction === 'append') {
+          const { appendFileSync } = await import('node:fs')
+          appendFileSync(outputFile, result.stdout)
+        } else if (redirection.direction === 'error') {
+          const { writeFileSync } = await import('node:fs')
+          writeFileSync(outputFile, result.stderr)
+        } else if (redirection.direction === 'error-append') {
+          const { appendFileSync } = await import('node:fs')
+          appendFileSync(outputFile, result.stderr)
+        }
+      }
+    }
   }
 
   // Read a single line with completion, returns null on EOF (Ctrl+D)
@@ -1033,6 +1203,7 @@ export class KrustyShell implements Shell {
     start: number,
     command: any,
     input?: string,
+    skipStdoutCapture = false,
   ): Promise<CommandResult> {
     return new Promise((resolve) => {
       let stdout = ''
@@ -1041,16 +1212,18 @@ export class KrustyShell implements Shell {
       // Stream output in real-time by default, unless explicitly disabled or running in background
       const shouldStream = !command.background && this.config.streamOutput !== false
 
-      // Handle stdout
-      child.stdout?.on('data', (data) => {
-        const dataStr = data.toString()
-        stdout += dataStr
+      // Handle stdout (skip if redirected to file)
+      if (!skipStdoutCapture) {
+        child.stdout?.on('data', (data) => {
+          const dataStr = data.toString()
+          stdout += dataStr
 
-        // Stream output to console in real-time
-        if (shouldStream) {
-          process.stdout.write(dataStr)
-        }
-      })
+          // Stream output to console in real-time
+          if (shouldStream) {
+            process.stdout.write(dataStr)
+          }
+        })
+      }
 
       // Handle stderr
       child.stderr?.on('data', (data) => {
@@ -1121,15 +1294,18 @@ export class KrustyShell implements Shell {
               catch {}
             })
             rs.pipe(child.stdin)
-          } catch (err) {
+          }
+          catch (err) {
             try {
               this.log.error('Error opening stdin file:', err)
-            } catch (logError) {
+            }
+            catch (logError) {
               console.error(logError)
             }
             try {
               child.stdin.end()
-            } catch (endError) {
+            }
+            catch (endError) {
               console.error(endError)
             }
           }
@@ -1139,6 +1315,8 @@ export class KrustyShell implements Shell {
       // Handle background processes
       if (command.background) {
         this.log.info(`[${child.pid}] ${command.raw}`)
+        // Add to jobs list
+        this.addJob(command.raw, child.pid)
         // For background processes, we don't wait for completion
         this.lastExitCode = 0
         resolve({

@@ -7,14 +7,145 @@ import type {
   KrustyConfig,
   Shell,
 } from '../types'
-import { exec } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { promisify } from 'node:util'
 
-const execAsync = promisify(exec)
+// Helper function to execute commands without shell dependency
+function execCommand(command: string, options: { cwd?: string, env?: Record<string, string>, timeout?: number }): Promise<{ stdout: string, stderr: string }> {
+  return new Promise((resolve, reject) => {
+    // Check if this is a script file (starts with quotes and has executable extension)
+    const isScript = command.startsWith('"') && (command.includes('.sh') || command.includes('.js') || command.includes('.py'))
+
+    let cmd: string
+    let args: string[]
+
+    if (isScript) {
+      // For script files, remove quotes and execute directly
+      cmd = command.replace(/"/g, '')
+      args = []
+    }
+    else {
+      // Parse regular commands into parts - handle quoted arguments properly
+      const parts = []
+      let current = ''
+      let inQuotes = false
+      let quoteChar = ''
+
+      for (let i = 0; i < command.length; i++) {
+        const char = command[i]
+        if (!inQuotes && (char === '"' || char === '\'')) {
+          inQuotes = true
+          quoteChar = char
+        }
+        else if (inQuotes && char === quoteChar) {
+          inQuotes = false
+          quoteChar = ''
+        }
+        else if (!inQuotes && char === ' ') {
+          if (current.trim()) {
+            parts.push(current.trim())
+            current = ''
+          }
+        }
+        else {
+          current += char
+        }
+      }
+      if (current.trim()) {
+        parts.push(current.trim())
+      }
+
+      cmd = parts[0]
+      args = parts.slice(1)
+    }
+
+    // Try to find the command in common locations if it's not an absolute path
+    if (!cmd.startsWith('/')) {
+      const commonPaths = ['/usr/bin', '/bin', '/usr/local/bin', '/opt/homebrew/bin']
+      for (const path of commonPaths) {
+        const fullPath = `${path}/${cmd}`
+        try {
+          if (statSync(fullPath).isFile()) {
+            cmd = fullPath
+            break
+          }
+        }
+        catch {
+          // Continue to next path
+        }
+      }
+    }
+
+    // Ensure we have a robust environment with proper PATH
+    const env = {
+      ...process.env,
+      ...options.env,
+      PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin',
+      // Ensure shell is available for script execution
+      SHELL: process.env.SHELL || '/bin/bash',
+    }
+
+    const child = spawn(cmd, args, {
+      cwd: options.cwd || process.cwd(),
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let timeoutId: NodeJS.Timeout | undefined
+    let completed = false
+
+    // Set up timeout if specified
+    if (options.timeout) {
+      timeoutId = setTimeout(() => {
+        if (!completed) {
+          completed = true
+          child.kill('SIGKILL') // Use SIGKILL for more reliable termination
+          reject(new Error(`Command timed out after ${options.timeout}ms`))
+        }
+      }, options.timeout)
+    }
+
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    child.on('close', (code) => {
+      if (completed)
+        return
+      completed = true
+      if (timeoutId)
+        clearTimeout(timeoutId)
+
+      if (code === 0) {
+        resolve({ stdout, stderr })
+      }
+      else {
+        const error = new Error(`Command failed with exit code ${code}`)
+        ;(error as any).stdout = stdout
+        ;(error as any).stderr = stderr
+        reject(error)
+      }
+    })
+
+    child.on('error', (error) => {
+      if (completed)
+        return
+      completed = true
+      if (timeoutId)
+        clearTimeout(timeoutId)
+      reject(error)
+    })
+  })
+}
 
 // Hook manager
 export class HookManager {
@@ -80,10 +211,10 @@ export class HookManager {
         let result: HookResult = { success: true }
 
         if (config.command) {
-          result = await this.executeCommand(config.command, context)
+          result = await this.executeCommand(config.command, context, config.timeout)
         }
         else if (config.script) {
-          result = await this.executeScript(config.script, context)
+          result = await this.executeScript(config.script, context, config.timeout)
         }
         else if (config.function) {
           result = await this.executeFunction(config.function, context)
@@ -104,12 +235,25 @@ export class HookManager {
   }
 
   // Execute command hook
-  private async executeCommand(command: string, context: HookContext): Promise<HookResult> {
+  private async executeCommand(command: string, context: HookContext, timeout?: number): Promise<HookResult> {
     try {
       const expandedCommand = this.expandTemplate(command, context)
-      const { stdout, stderr } = await execAsync(expandedCommand, {
-        cwd: context.cwd,
-        env: { ...process.env, ...context.environment },
+      const { stdout, stderr } = await execCommand(expandedCommand, {
+        cwd: context.cwd || process.cwd(),
+        timeout,
+        env: {
+          ...process.env,
+          ...context.environment,
+          EDITOR: 'true',
+          GIT_EDITOR: 'true',
+          VISUAL: 'true',
+          GIT_ASKPASS: 'true',
+          VSCODE_GIT_ASKPASS_NODE: '',
+          VSCODE_GIT_ASKPASS_MAIN: '',
+          VSCODE_GIT_ASKPASS_EXTRA_ARGS: '',
+          VSCODE_GIT_IPC_HANDLE: '',
+          PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+        },
       })
 
       return {
@@ -127,7 +271,7 @@ export class HookManager {
   }
 
   // Execute script hook
-  private async executeScript(scriptPath: string, context: HookContext): Promise<HookResult> {
+  private async executeScript(scriptPath: string, context: HookContext, timeout?: number): Promise<HookResult> {
     const expandedPath = this.expandPath(scriptPath)
 
     if (!existsSync(expandedPath)) {
@@ -138,17 +282,35 @@ export class HookManager {
     }
 
     try {
-      const { stdout, stderr } = await execAsync(`"${expandedPath}"`, {
-        cwd: context.cwd,
+      // Determine the interpreter based on file extension
+      let command = `"${expandedPath}"`
+      if (expandedPath.endsWith('.js')) {
+        command = `node "${expandedPath}"`
+      }
+      else if (expandedPath.endsWith('.py')) {
+        command = `python3 "${expandedPath}"`
+      }
+      else if (expandedPath.endsWith('.sh')) {
+        command = `sh "${expandedPath}"`
+      }
+
+      const { stdout, stderr } = await execCommand(command, {
+        cwd: context.cwd || process.cwd(),
+        timeout,
         env: {
           ...process.env,
           ...context.environment,
-          krusty_HOOK_EVENT: context.event,
-          krusty_HOOK_DATA: JSON.stringify(context.data),
-          krusty_CWD: context.cwd,
+          EDITOR: 'true',
+          GIT_EDITOR: 'true',
+          VISUAL: 'true',
+          GIT_ASKPASS: 'true',
+          VSCODE_GIT_ASKPASS_NODE: '',
+          VSCODE_GIT_ASKPASS_MAIN: '',
+          VSCODE_GIT_ASKPASS_EXTRA_ARGS: '',
+          VSCODE_GIT_IPC_HANDLE: '',
+          PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
         },
       })
-
       return {
         success: true,
         data: { stdout, stderr },
@@ -225,12 +387,30 @@ export class HookManager {
   }
 
   // Check hook conditions
-  private checkConditions(conditions: HookCondition[], context: HookContext): boolean {
+  private checkConditions(conditions: (HookCondition | string)[], context: HookContext): boolean {
     return conditions.every(condition => this.checkCondition(condition, context))
   }
 
   // Check single condition
-  private checkCondition(condition: HookCondition, context: HookContext): boolean {
+  private checkCondition(condition: HookCondition | string, context: HookContext): boolean {
+    // Handle string conditions (shell commands)
+    if (typeof condition === 'string') {
+      try {
+        execSync(condition, {
+          stdio: 'ignore',
+          env: {
+            ...process.env,
+            PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+          },
+        })
+        return true
+      }
+      catch {
+        return false
+      }
+    }
+
+    // Handle object conditions
     const { type, value, operator = 'equals' } = condition
     let result = false
 
@@ -256,8 +436,6 @@ export class HookManager {
       case 'command': {
         // For command conditions, we check if the command exists
         try {
-          // eslint-disable-next-line ts/no-require-imports
-          const { execSync } = require('node:child_process')
           execSync(`which ${value}`, { stdio: 'ignore' })
           result = true
         }
