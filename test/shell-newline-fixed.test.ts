@@ -36,6 +36,9 @@ describe('Shell Newline Fix Verification', () => {
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
     const prompt = '~/Code/krusty ⎇ main [●1○6?5] via 🧅 1.2.21❯ '
 
+    // Enable shell mode since prompt is managed externally
+    autoSuggestInput.setShellMode(true)
+
     console.log('=== Fixed shell flow ===')
 
     // Step 1: Shell writes prompt (like shell.ts does now)
@@ -82,6 +85,9 @@ describe('Shell Newline Fix Verification', () => {
 
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
     const prompt = '~/Code/krusty ⎇ main [●1○6?5] via 🧅 1.2.21❯ '
+
+    // Enable shell mode since prompt is managed externally
+    autoSuggestInput.setShellMode(true)
 
     console.log('=== Testing multiple characters ===')
 

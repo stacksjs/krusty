@@ -45,6 +45,7 @@ import { testCommand } from './test'
 import { timeCommand } from './time'
 import { timesCommand } from './times'
 import { trapCommand } from './trap'
+import { timeoutCommand } from './timeout'
 import { typeCommand } from './type'
 import { umaskCommand } from './umask'
 import { unaliasCommand } from './unalias'
@@ -105,6 +106,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('test', testCommand)
   builtins.set('[', { ...testCommand, name: '[' }) // POSIX alias for test
   builtins.set('time', timeCommand)
+  builtins.set('timeout', timeoutCommand)
   builtins.set('times', timesCommand)
   builtins.set('trap', trapCommand)
   builtins.set('type', typeCommand)

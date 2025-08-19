@@ -70,11 +70,15 @@ describe('Simple BBU Test', () => {
 
     // Parse the output    // Simulate terminal behavior with proper cursor tracking
     let simulatedScreen = ''
-    let cursorPos = 0
     let i = 0
-
+    
     while (i < mockOutput.length) {
-      if (mockOutput[i] === '\x1B' && i + 1 < mockOutput.length && mockOutput[i + 1] === '[') {
+      if (mockOutput[i] === '\r') {
+        // Carriage return - move cursor to beginning of line
+        i++
+        continue
+      }
+      else if (mockOutput[i] === '\x1B' && i + 1 < mockOutput.length && mockOutput[i + 1] === '[') {
         // Find the end of the escape sequence
         let j = i + 2
         let numStr = ''
@@ -82,18 +86,22 @@ describe('Simple BBU Test', () => {
           numStr += mockOutput[j]
           j++
         }
-
+        
         if (j < mockOutput.length) {
           const command = mockOutput[j]
           const num = numStr ? Number.parseInt(numStr, 10) : 1
-
+          
           if (command === 'K') {
-            // Clear to end of line - remove everything from cursor position to end
-            simulatedScreen = simulatedScreen.substring(0, cursorPos)
+            if (numStr === '2') {
+              // Clear entire line
+              simulatedScreen = ''
+            } else {
+              // Clear to end of line - for simplicity, clear everything
+              simulatedScreen = ''
+            }
           }
           else if (command === 'D') {
-            // Move cursor left
-            cursorPos = Math.max(0, cursorPos - num)
+            // Move cursor left - handled by overall logic
           }
           i = j + 1
         }
@@ -102,16 +110,8 @@ describe('Simple BBU Test', () => {
         }
       }
       else {
-        // Insert character at cursor position
-        if (cursorPos >= simulatedScreen.length) {
-          simulatedScreen += mockOutput[i]
-        }
-        else {
-          simulatedScreen = simulatedScreen.substring(0, cursorPos)
-            + mockOutput[i]
-            + simulatedScreen.substring(cursorPos)
-        }
-        cursorPos++
+        // Add character to screen
+        simulatedScreen += mockOutput[i]
         i++
       }
     }

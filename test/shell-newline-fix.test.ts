@@ -35,6 +35,9 @@ describe('Shell Newline Fix Verification', () => {
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
     const prompt = '~/Code/krusty ⎇ main [●1○1] via 🧅 1.2.21❯ '
 
+    // Enable shell mode since prompt is managed externally
+    autoSuggestInput.setShellMode(true)
+
     // Shell writes initial prompt
     console.log('=== Shell writes initial prompt ===')
     process.stdout.write(prompt)

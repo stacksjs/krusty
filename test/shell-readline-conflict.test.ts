@@ -45,10 +45,12 @@ describe('Shell Readline Interface Conflict', () => {
 
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
 
+    // Enable shell mode since prompt is managed externally
+    autoSuggestInput.setShellMode(true)
+
     console.log('=== User types b ===')
-    autoSuggestInput.currentInput = 'b'
-    autoSuggestInput.cursorPosition = 1
-    autoSuggestInput.updateDisplay(prompt)
+    autoSuggestInput.setInputForTesting('b', 1)
+    autoSuggestInput.updateDisplayForTesting(prompt)
 
     console.log(`Output: ${JSON.stringify(mockOutput)}`)
 
@@ -57,8 +59,9 @@ describe('Shell Readline Interface Conflict', () => {
     console.log(`Character 'b' count: ${bCount}`)
     expect(bCount).toBe(1)
 
-    // Should have clean output pattern
-    expect(mockOutput).toMatch(/❯ \x1B\[Kb$/)
+    // Should have clean output pattern with cursor positioning and auto-suggestion
+    // eslint-disable-next-line no-control-regex
+    expect(mockOutput).toMatch(/❯ \x1B\[\d+G\x1B\[Kb\x1B\[90mundle\x1B\[0m\x1B\[\d+G$/)
   })
 
   it('should demonstrate the readline conflict issue', () => {

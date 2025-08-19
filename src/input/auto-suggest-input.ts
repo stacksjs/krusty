@@ -50,6 +50,10 @@ export class AutoSuggestInput {
       this.isNavigatingSuggestions = false
 
       // Don't write prompt - shell already wrote it via renderPrompt()
+      // If shell mode is enabled, mark prompt as already written
+      if (this.shellMode) {
+        this.promptAlreadyWritten = true
+      }
 
       const cleanup = () => {
         stdin.setRawMode(false)
@@ -180,7 +184,8 @@ export class AutoSuggestInput {
       this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
       this.selectedIndex = 0
       this.updateSuggestion()
-    } catch {
+    }
+    catch {
       this.suggestions = []
       this.currentSuggestion = ''
     }
@@ -228,8 +233,10 @@ export class AutoSuggestInput {
 
   private lastDisplayedInput = ''
   private lastDisplayedSuggestion = ''
+  private promptAlreadyWritten = false
+  private shellMode = false
 
-  private updateDisplay(_prompt: string) {
+  private updateDisplay(prompt: string) {
     const stdout = process.stdout
 
     // Only update if input or suggestion actually changed
@@ -238,37 +245,72 @@ export class AutoSuggestInput {
       return
     }
 
-    // Move cursor to beginning of current line content (after prompt)
-    const lastDisplayedLength = this.lastDisplayedInput.length + 
-      (this.lastDisplayedSuggestion ? this.lastDisplayedSuggestion.length : 0)
-    
-    if (lastDisplayedLength > 0) {
-      // Move cursor back to start of input area
-      stdout.write(`\x1B[${lastDisplayedLength}D`)
-    }
+    // Calculate visible prompt length (excluding ANSI escape sequences)
+    const visiblePromptLength = this.getVisibleLength(prompt)
 
-    // Clear from current position to end of line
-    stdout.write('\x1B[0K')
-    
-    // Write current input
-    stdout.write(this.currentInput)
+    if (this.shellMode && this.promptAlreadyWritten) {
+      // Shell mode: only update input area, don't rewrite prompt
+      // Move to start of input area and clear to end of line
+      const inputStartColumn = visiblePromptLength + 1
+      stdout.write(`\x1B[${inputStartColumn}G\x1B[K`)
+      stdout.write(this.currentInput)
+    } else {
+      // Isolated mode: always clear line and write prompt + input
+      stdout.write('\r\x1B[2K')
+      stdout.write(prompt + this.currentInput)
+      this.promptAlreadyWritten = true
+    }
 
     // Show inline suggestion if available
     if (this.options.showInline && this.currentSuggestion) {
       stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
     }
 
-    // Move cursor to correct position
-    const totalLength = this.currentInput.length + (this.currentSuggestion ? this.currentSuggestion.length : 0)
-    const moveBack = totalLength - this.cursorPosition
-    
-    if (moveBack > 0) {
-      stdout.write(`\x1B[${moveBack}D`)
-    }
+    // Move cursor to correct position using absolute positioning
+    // Terminal columns are 1-based, cursorPosition indicates position within input
+    const cursorColumn = visiblePromptLength + this.cursorPosition
+    stdout.write(`\x1B[${cursorColumn}G`)
 
     // Remember what we displayed
     this.lastDisplayedInput = this.currentInput
     this.lastDisplayedSuggestion = this.currentSuggestion
+  }
+
+  // Helper method to calculate visible length of text (excluding ANSI escape sequences)
+  private getVisibleLength(text: string): number {
+    // Remove ANSI escape sequences to get actual visible length
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1B\[[0-9;]*[mGKH]/g, '').length
+  }
+
+  // Method to enable shell mode where prompt is managed externally
+  setShellMode(enabled: boolean): void {
+    this.shellMode = enabled
+    if (enabled) {
+      this.promptAlreadyWritten = true
+    }
+  }
+
+  // Method to reset state when starting fresh input
+  reset(): void {
+    this.currentInput = ''
+    this.currentSuggestion = ''
+    this.cursorPosition = 0
+    this.lastDisplayedInput = ''
+    this.lastDisplayedSuggestion = ''
+    this.promptAlreadyWritten = false
+  }
+
+  // Method for testing - allows setting input state directly
+  setInputForTesting(input: string, cursorPos?: number): void {
+    this.currentInput = input
+    this.cursorPosition = cursorPos ?? input.length
+    this.updateSuggestions()
+  }
+
+  // Method for testing - triggers display update with given prompt
+  updateDisplayForTesting(prompt: string): void {
+    this.updateDisplay(prompt)
   }
 
   // Removed all suggestion list display methods to prevent UI clutter
