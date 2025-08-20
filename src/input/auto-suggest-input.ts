@@ -172,6 +172,34 @@ export class AutoSuggestInput {
     return `(reverse-i-search) '${q}': ${cur}`
   }
 
+  // Format reverse search status to fit in available width
+  private formatReverseStatusForWidth(prompt: string): string {
+    const raw = this.reverseSearchStatus()
+    if (!raw)
+      return ''
+    const totalCols = process.stdout.columns ?? 80
+    // For multi-line prompts/inputs, only the last line width matters for remaining columns
+    const promptLastLine = prompt.slice(prompt.lastIndexOf('\n') + 1)
+    const inputLastLine = (() => {
+      const nl = this.currentInput.lastIndexOf('\n')
+      return nl >= 0 ? this.currentInput.slice(nl + 1) : this.currentInput
+    })()
+    const used = this.getVisibleLength(promptLastLine) + this.getVisibleLength(inputLastLine)
+    const available = Math.max(0, totalCols - used - 1) // space before status
+    if (available <= 0)
+      return ''
+    if (this.getVisibleLength(raw) <= available)
+      return raw
+    // Truncate with ellipsis, prefer trimming current match first
+    const base = `(reverse-i-search) '${this.reverseSearchQuery}': `
+    const remain = Math.max(0, available - this.getVisibleLength(base) - 1)
+    if (remain <= 0)
+      return base.trimEnd()
+    const cur = (this.reverseSearchMatches[this.reverseSearchIndex] || '')
+    const trimmed = `${cur.slice(0, remain)}…`
+    return `${base}${trimmed}`
+  }
+
   // Current line prefix up to cursor (after last newline)
   private getCurrentLinePrefix(): string {
     const upto = this.currentInput.slice(0, this.cursorPosition)
@@ -428,8 +456,17 @@ export class AutoSuggestInput {
 
           // Handle Tab - accept current suggestion
           if (key.name === 'tab') {
+            // If we have a visible inline suggestion, accept it
             if (this.currentSuggestion) {
               this.acceptSuggestion()
+              this.updateDisplay(prompt)
+              return
+            }
+            // Otherwise, try to apply the selected completion directly
+            this.updateSuggestions()
+            if (this.suggestions.length > 0) {
+              this.applySelectedCompletion()
+              this.updateSuggestions()
               this.updateDisplay(prompt)
             }
             return
@@ -619,12 +656,18 @@ export class AutoSuggestInput {
       const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
 
       // Handle different completion scenarios
+      // Case 1: brand new input
       if (inputBeforeCursor.trim() === '') {
-      // Empty input - show full suggestion
+        // Empty input - show full suggestion
+        this.currentSuggestion = selected
+      }
+      // Case 2: starting a new token (cursor preceded by whitespace)
+      else if (/\s$/.test(inputBeforeCursor)) {
+        // Show the full selected completion for the new token
         this.currentSuggestion = selected
       }
       else {
-      // Find the last token to complete
+        // Case 3: we're in the middle of a token - complete the suffix if it matches
         const tokens = inputBeforeCursor.trim().split(/\s+/)
         const lastToken = tokens[tokens.length - 1] || ''
 
@@ -653,6 +696,43 @@ export class AutoSuggestInput {
     }
   }
 
+  // Apply the currently selected completion item even when no inline suffix is visible.
+  // If the cursor is at a token boundary (preceded by whitespace), insert the full selection.
+  // Otherwise, replace the last token before the cursor with the full selection.
+  private applySelectedCompletion() {
+    if (!this.suggestions || this.suggestions.length === 0)
+      return
+    const selected = this.suggestions[this.selectedIndex] || ''
+    if (!selected)
+      return
+
+    const before = this.currentInput.slice(0, this.cursorPosition)
+    const after = this.currentInput.slice(this.cursorPosition)
+
+    // New token: just insert selected at cursor
+    if (/\s$/.test(before) || before.length === 0) {
+      this.currentInput = before + selected + after
+      this.cursorPosition = before.length + selected.length
+      this.currentSuggestion = ''
+      return
+    }
+
+    // Replace the last token before the cursor
+    const m = before.match(/(^|\s)(\S+)$/)
+    if (m) {
+      const lastTok = m[2] || ''
+      const tokenStart = this.cursorPosition - lastTok.length
+      this.currentInput = this.currentInput.slice(0, tokenStart) + selected + after
+      this.cursorPosition = tokenStart + selected.length
+    }
+    else {
+      // Fallback: prepend selected at cursor
+      this.currentInput = selected + after
+      this.cursorPosition = selected.length
+    }
+    this.currentSuggestion = ''
+  }
+
   private lastDisplayedInput = ''
   private lastDisplayedSuggestion = ''
   private promptAlreadyWritten = false
@@ -667,17 +747,15 @@ export class AutoSuggestInput {
       return
     }
 
-    // Calculate visible prompt length (excluding ANSI escape sequences)
-    const visiblePromptLength = this.getVisibleLength(prompt)
-    const cursorColumn = visiblePromptLength + this.cursorPosition + 1 // +1 for 1-based column
+    // Calculate visible prompt length for the LAST line (handles multi-line prompts)
+    const promptLastLine = prompt.slice(prompt.lastIndexOf('\n') + 1)
+    const visiblePromptLastLen = this.getVisibleLength(promptLastLine)
+    const cursorColumn = visiblePromptLastLen + this.cursorPosition + 1 // +1 for 1-based column
 
     const hasNewlines = this.currentInput.includes('\n')
     if (this.shellMode && this.promptAlreadyWritten && !hasNewlines) {
       // Shell mode: only update input area, don't rewrite prompt
-      const inputStartColumn = visiblePromptLength + 1
-
-      // Save current cursor position
-      stdout.write('\x1B7')
+      const inputStartColumn = visiblePromptLastLen + 1
 
       // Move to start of input, clear to end of line, and write input (with optional highlighting)
       const renderedSingle = this.options.syntaxHighlight
@@ -687,13 +765,13 @@ export class AutoSuggestInput {
 
       // Show reverse search status inline (dim)
       if (this.reverseSearchActive) {
-        const status = this.reverseSearchStatus()
+        const status = this.formatReverseStatusForWidth(prompt)
         if (status)
           stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
       }
 
       // Show inline suggestion if available
-      if (this.options.showInline && this.currentSuggestion) {
+      if (!this.reverseSearchActive && this.options.showInline && this.currentSuggestion) {
         stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
       }
 
@@ -710,7 +788,7 @@ export class AutoSuggestInput {
       // Restore cursor position if we're not at the end
       if (this.cursorPosition < this.currentInput.length) {
         // Calculate the actual cursor position in the line
-        const actualCursorColumn = visiblePromptLength + this.cursorPosition + 1
+        const actualCursorColumn = visiblePromptLastLen + this.cursorPosition + 1
         stdout.write(`\x1B[${actualCursorColumn}G`)
       }
     }
@@ -724,7 +802,7 @@ export class AutoSuggestInput {
           : this.currentInput
         stdout.write(`${prompt}${renderedSingle}\x1B[0m`)
 
-        if (this.options.showInline && this.currentSuggestion) {
+        if (!this.reverseSearchActive && this.options.showInline && this.currentSuggestion) {
           stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
         }
         stdout.write(`\x1B[${cursorColumn}G`)
@@ -739,7 +817,7 @@ export class AutoSuggestInput {
         const firstLineRendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[0]) : lines[0]
         stdout.write(`${prompt}${firstLineRendered}\x1B[0m`)
         if (this.reverseSearchActive) {
-          const status = this.reverseSearchStatus()
+          const status = this.formatReverseStatusForWidth(prompt)
           if (status)
             stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
         }
@@ -771,7 +849,8 @@ export class AutoSuggestInput {
         if (linesUp > 0)
           stdout.write(`\x1B[${linesUp}A`)
         // Set column based on prompt length for the target row
-        const baseLen = lineIndex === 0 ? visiblePromptLength : visibleContLen
+        // When the first prompt is multi-line, only the last line width applies to the first input line
+        const baseLen = lineIndex === 0 ? visiblePromptLastLen : visibleContLen
         const targetCol = baseLen + colInLine + 1
         stdout.write(`\x1B[${targetCol}G`)
       }
@@ -880,7 +959,18 @@ export class AutoSuggestInput {
 
   // Method for testing - triggers display update with given prompt
   updateDisplayForTesting(prompt: string): void {
-    this.updateDisplay(prompt)
+    // Force isolated rendering for tests so the prompt is included in output
+    const savedShellMode = this.shellMode
+    const savedPromptWritten = this.promptAlreadyWritten
+    try {
+      this.shellMode = false
+      this.promptAlreadyWritten = false
+      this.updateDisplay(prompt)
+    }
+    finally {
+      this.shellMode = savedShellMode
+      this.promptAlreadyWritten = savedPromptWritten
+    }
   }
 
   // Method for testing - get current input

@@ -91,6 +91,10 @@ export class KrustyShell implements Shell {
     this.hookManager = new HookManager(this, this.config)
     this.log = new Logger(this.config.verbose, 'shell')
     this.autoSuggestInput = new AutoSuggestInput(this)
+    // Let AutoSuggestInput know that the shell manages the prompt. This ensures
+    // input updates do not clear/overwrite the prompt and fixes cases where the
+    // prompt might not be visible due to display updates.
+    this.autoSuggestInput.setShellMode(true)
     this.jobManager = new JobManager(this)
     this.scriptManager = new ScriptManager(this)
 

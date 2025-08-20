@@ -15,12 +15,13 @@ export default {
 
   // Prompt configuration - Starship-inspired but familiar
   prompt: {
-    format: '\x1B[1m{path}\x1B[0m{git} via {modules}\n{symbol} ',
-    // format: '{user}@{host} \x1B[1m{path}\x1B[0m{git} via {modules}\n{symbol} ',
+    // Single-line: path + git + modules + symbol
+    format: '{path}{git} {modules} \n{symbol} ',
+    // format: '{user}@{host} \x1B[1m{path}\x1B[0m{git} {modules} {symbol} ',
     showGit: true,
     showTime: false,
-    showUser: true,
-    showHost: true,
+    showUser: false,
+    showHost: false,
     showPath: true,
     showExitCode: true,
     transient: false,
@@ -199,7 +200,7 @@ export default {
   // Module configuration - development environment focused
   modules: {
     // Language modules - prioritize what you use most
-    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🥟' },
+    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🧅' },
     deno: { enabled: true, format: 'via {symbol} {version}', symbol: '🦕' },
     nodejs: { enabled: true, format: 'via {symbol} {version}', symbol: '⬢' },
     python: { enabled: true, format: 'via {symbol} {version}', symbol: '🐍' },

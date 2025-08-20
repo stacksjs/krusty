@@ -1,4 +1,7 @@
 import type { KrustyConfig } from './types'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import process from 'node:process'
 import { loadConfig } from 'bunfig'
 
 export const defaultConfig: KrustyConfig = {
@@ -13,11 +16,15 @@ export const defaultConfig: KrustyConfig = {
     },
   },
   prompt: {
-    format: '{user}@{host} {path}{git} {symbol} ',
+    // Default prompt focuses on path, git status, and runtime module info (e.g. bun)
+    // Example: "~/Code/krusty ⎇ main [●1○1?1] via 🧅 1.2.21 ❯"
+    // Note: we keep this single-line for robust cursor handling
+    format: '{path}{git} {modules} {symbol} ',
     showGit: true,
     showTime: false,
-    showUser: true,
-    showHost: true,
+    // Hide user/host by default to match the expected style
+    showUser: false,
+    showHost: false,
     showPath: true,
     showExitCode: true,
     transient: false,
@@ -301,9 +308,33 @@ export const config: KrustyConfig = (() => {
 })()
 
 // Provide a reusable loader that always fetches the latest config from disk
-export async function loadKrustyConfig(): Promise<KrustyConfig> {
+// Options:
+// - path: explicit path to a config file; if provided, we load it directly
+export async function loadKrustyConfig(options?: { path?: string }): Promise<KrustyConfig> {
+  // 1) Explicit path wins
+  const explicitPath = options?.path || process.env.KRUSTY_CONFIG
+  if (explicitPath) {
+    try {
+      const abs = resolvePath(explicitPath)
+      const mod = await import(abs)
+      const userCfg = mod.default ?? mod
+      return { ...defaultConfig, ...(userCfg as KrustyConfig) }
+    }
+    catch {
+      // Fall back to bunfig loading
+    }
+  }
+
+  // 2) bunfig search (current dir up, then user config locations)
   return await loadConfig({
     name: 'krusty',
     defaultConfig,
   })
+}
+
+function resolvePath(p: string): string {
+  // Support tilde expansion and relative paths
+  if (p.startsWith('~'))
+    return resolve(homedir(), p.slice(1))
+  return resolve(p)
 }

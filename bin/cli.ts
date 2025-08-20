@@ -2,7 +2,7 @@
 import process from 'node:process'
 import { CAC } from 'cac'
 import { version } from '../package.json'
-import { config } from '../src/config'
+import { config as defaultConfig, loadKrustyConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
 
 const cli = new CAC('krusty')
@@ -21,9 +21,11 @@ cli
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (args: string[], options: CliOptions) => {
+    const cfg = await loadKrustyConfig({ path: options.config })
+    const base = { ...defaultConfig, ...cfg }
     // If arguments are provided, execute them as a command
     if (args.length > 0) {
-      const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
       const command = args.join(' ')
       const result = await shell.execute(command)
 
@@ -38,7 +40,7 @@ cli
     }
     else {
       // Start interactive shell
-      const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+      const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
       // Welcome message
       process.stdout.write(`Welcome to krusty v${version}\n`)
@@ -85,7 +87,9 @@ cli
   .option('--verbose', 'Enable verbose logging')
   .option('--config <config>', 'Path to config file')
   .action(async (options: CliOptions) => {
-    const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const cfg = await loadKrustyConfig({ path: options.config })
+    const base = { ...defaultConfig, ...cfg }
+    const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
     // Welcome message
     process.stdout.write(`Welcome to krusty v${version}\n`)
@@ -128,8 +132,11 @@ cli
 cli
   .command('exec <command>', 'Execute a single command')
   .option('--verbose', 'Enable verbose logging')
+  .option('--config <config>', 'Path to config file')
   .action(async (command: string, options: CliOptions) => {
-    const shell = new KrustyShell({ ...config, verbose: options.verbose ?? config.verbose })
+    const cfg = await loadKrustyConfig({ path: options.config })
+    const base = { ...defaultConfig, ...cfg }
+    const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
     const result = await shell.execute(command)
 
     if (!result.streamed) {
