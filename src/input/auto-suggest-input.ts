@@ -1,6 +1,7 @@
 import type { Shell } from '../types'
 import process from 'node:process'
 import { emitKeypressEvents } from 'node:readline'
+import { sharedHistory } from '../history'
 
 export interface AutoSuggestOptions {
   maxSuggestions?: number
@@ -11,6 +12,18 @@ export interface AutoSuggestOptions {
   keymap?: 'emacs' | 'vi'
   // Enable lightweight syntax highlighting in input rendering
   syntaxHighlight?: boolean
+  // Optional fine-grained colors for syntax tokens
+  syntaxColors?: Partial<{
+    command: string
+    subcommand: string
+    string: string
+    operator: string
+    variable: string
+    flag: string
+    number: string
+    path: string
+    comment: string
+  }>
 }
 
 export class AutoSuggestInput {
@@ -25,6 +38,11 @@ export class AutoSuggestInput {
   private isNavigatingSuggestions = false
   // Vi mode state (only used when keymap === 'vi')
   private viMode: 'insert' | 'normal' = 'insert'
+  // Reverse search state
+  private reverseSearchActive = false
+  private reverseSearchQuery = ''
+  private reverseSearchMatches: string[] = []
+  private reverseSearchIndex = 0
 
   constructor(shell: Shell, options: AutoSuggestOptions = {}) {
     this.shell = shell
@@ -35,9 +53,123 @@ export class AutoSuggestInput {
       suggestionColor: '\x1B[36m', // Cyan
       keymap: 'emacs',
       syntaxHighlight: true,
+      syntaxColors: {
+        command: '\x1B[36m', // cyan
+        subcommand: '\x1B[94m', // bright blue
+        string: '\x1B[90m', // gray
+        operator: '\x1B[90m', // gray
+        variable: '\x1B[90m', // gray
+        flag: '\x1B[33m', // yellow
+        number: '\x1B[35m', // magenta
+        path: '\x1B[32m', // green
+        comment: '\x1B[90m', // gray
+      },
       ...options,
     }
+  }
 
+  // ===== History Expansion and Reverse Search Helpers =====
+  // Expand history references: !!, !n, !string
+  private expandHistory(input: string): string {
+    const hist = this.getHistoryArray()
+    if (!hist || hist.length === 0)
+      return input
+
+    // !! -> last command (allow space or end after !!)
+    input = input.replace(/(^|\s)!!(?=\s|$)/g, (_m: string, pre: string) => {
+      const last = hist[hist.length - 1]
+      return `${pre}${last ?? ''}`
+    })
+
+    // !n -> nth command (1-based)
+    input = input.replace(/(^|\s)!(\d+)(?:\b|$)/g, (_m, pre: string, n: string) => {
+      const idx = Number.parseInt(n, 10)
+      const cmd = idx >= 1 && idx <= hist.length ? hist[idx - 1] : ''
+      return `${pre}${cmd}`
+    })
+
+    // !string -> most recent command starting with string
+    input = input.replace(/(^|\s)!([a-z][\w-]*)(?:\b|$)/gi, (_m, pre: string, prefix: string) => {
+      for (let i = hist.length - 1; i >= 0; i--) {
+        if (hist[i].startsWith(prefix))
+          return `${pre}${hist[i]}`
+      }
+      return `${pre}`
+    })
+
+    return input
+  }
+
+  private getHistoryArray(): string[] | undefined {
+    const arr = (this.shell as any)?.history as string[] | undefined
+    if (arr && Array.isArray(arr))
+      return arr
+    try {
+      const shared = sharedHistory as any
+      if (shared && typeof shared.getHistory === 'function')
+        return shared.getHistory()
+    }
+    catch {}
+    return undefined
+  }
+
+  private startReverseSearch() {
+    this.reverseSearchActive = true
+    this.reverseSearchQuery = ''
+    this.reverseSearchMatches = this.computeReverseMatches()
+    this.reverseSearchIndex = Math.max(0, this.reverseSearchMatches.length - 1)
+  }
+
+  private updateReverseSearch(ch: string) {
+    if (ch === '\\b') {
+      this.reverseSearchQuery = this.reverseSearchQuery.slice(0, -1)
+    }
+    else {
+      this.reverseSearchQuery += ch
+    }
+    this.reverseSearchMatches = this.computeReverseMatches()
+    this.reverseSearchIndex = Math.max(0, this.reverseSearchMatches.length - 1)
+    const cur = this.reverseSearchMatches[this.reverseSearchIndex]
+    if (cur) {
+      this.currentInput = cur
+      this.cursorPosition = this.currentInput.length
+    }
+  }
+
+  private cycleReverseSearch() {
+    if (!this.reverseSearchActive)
+      return
+    if (this.reverseSearchMatches.length === 0)
+      return
+    this.reverseSearchIndex = (this.reverseSearchIndex - 1 + this.reverseSearchMatches.length) % this.reverseSearchMatches.length
+    const cur = this.reverseSearchMatches[this.reverseSearchIndex]
+    if (cur) {
+      this.currentInput = cur
+      this.cursorPosition = this.currentInput.length
+    }
+  }
+
+  private cancelReverseSearch() {
+    this.reverseSearchActive = false
+    this.reverseSearchQuery = ''
+    this.reverseSearchMatches = []
+    this.reverseSearchIndex = 0
+  }
+
+  private computeReverseMatches(): string[] {
+    const hist = this.getHistoryArray() || []
+    if (!this.reverseSearchQuery)
+      return hist.slice()
+    const q = this.reverseSearchQuery.toLowerCase()
+    return hist.filter(h => h.toLowerCase().includes(q))
+  }
+
+  private reverseSearchStatus(): string {
+    if (!this.reverseSearchActive)
+      return ''
+    const q = this.reverseSearchQuery
+    const cur = this.reverseSearchMatches[this.reverseSearchIndex] || ''
+    return `(reverse-i-search) '${q}': ${cur}`
   }
 
   // Current line prefix up to cursor (after last newline)
@@ -49,7 +181,8 @@ export class AutoSuggestInput {
 
   // Suggest from history: entries starting with prefix, most recent first, deduped
   private getHistorySuggestions(prefix: string): string[] {
-    const history = (this.shell as any)?.history as string[] | undefined
+    const history = ((this.shell as any)?.history as string[] | undefined)
+      ?? (sharedHistory?.getHistory ? sharedHistory.getHistory() : undefined)
     if (!history || !prefix)
       return []
     const seen = new Set<string>()
@@ -57,12 +190,16 @@ export class AutoSuggestInput {
     // iterate from most recent to oldest
     for (let i = history.length - 1; i >= 0; i--) {
       const h = history[i]
-      if (typeof h !== 'string') continue
-      if (!h.startsWith(prefix)) continue
-      if (seen.has(h)) continue
+      if (typeof h !== 'string')
+        continue
+      if (!h.startsWith(prefix))
+        continue
+      if (seen.has(h))
+        continue
       seen.add(h)
       out.push(h)
-      if (out.length >= (this.options.maxSuggestions ?? 10)) break
+      if (out.length >= (this.options.maxSuggestions ?? 10))
+        break
     }
     return out
   }
@@ -118,7 +255,17 @@ export class AutoSuggestInput {
 
           // Handle Enter
           if (key.name === 'return') {
-            const result = this.currentInput.trim()
+            // If reverse search active, accept current match
+            if (this.reverseSearchActive) {
+              const match = this.reverseSearchMatches[this.reverseSearchIndex]
+              if (match) {
+                this.currentInput = match
+                this.cursorPosition = this.currentInput.length
+              }
+              this.cancelReverseSearch()
+            }
+            const expanded = this.expandHistory(this.currentInput)
+            const result = expanded.trim()
             cleanup()
             stdout.write('\n')
             resolve(result || null)
@@ -144,6 +291,37 @@ export class AutoSuggestInput {
             this.promptAlreadyWritten = false
             this.updateDisplay(prompt)
             return
+          }
+
+          // Reverse search (Ctrl+R)
+          if (key.ctrl && key.name === 'r') {
+            if (!this.reverseSearchActive) {
+              this.startReverseSearch()
+            }
+            else {
+              this.cycleReverseSearch()
+            }
+            this.updateDisplay(prompt)
+            return
+          }
+
+          // While reverse search active: handle typing/backspace/cancel
+          if (this.reverseSearchActive) {
+            if (str && str.length === 1 && !key.ctrl && !key.meta && !key.sequence?.startsWith('\u001B')) {
+              this.updateReverseSearch(str)
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'backspace') {
+              this.updateReverseSearch('\b')
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'escape' || (key.ctrl && key.name === 'g')) {
+              this.cancelReverseSearch()
+              this.updateDisplay(prompt)
+              return
+            }
           }
 
           // If using vi keymap, handle mode switches and normal-mode keys
@@ -411,58 +589,58 @@ export class AutoSuggestInput {
         }
       }
 
-stdin.on('keypress', handleKeypress)
-})
+      stdin.on('keypress', handleKeypress)
+    })
   }
 
-private updateSuggestions() {
-  try {
+  private updateSuggestions() {
+    try {
     // Get suggestions from shell (includes plugin completions)
-    this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
-    this.selectedIndex = 0
-    // If no plugin completions, fall back to history-based matches
-    if (this.suggestions.length === 0) {
-      const prefix = this.getCurrentLinePrefix()
-      const hist = this.getHistorySuggestions(prefix)
-      if (hist.length > 0)
-        this.suggestions = hist
+      this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
+      this.selectedIndex = 0
+      // If no plugin completions, fall back to history-based matches
+      if (this.suggestions.length === 0) {
+        const prefix = this.getCurrentLinePrefix()
+        const hist = this.getHistorySuggestions(prefix)
+        if (hist.length > 0)
+          this.suggestions = hist
+      }
+      this.updateSuggestion()
     }
-    this.updateSuggestion()
+    catch {
+      this.suggestions = []
+      this.currentSuggestion = ''
+    }
   }
-  catch {
-    this.suggestions = []
-    this.currentSuggestion = ''
-  }
-}
 
-private updateSuggestion() {
-  if (this.suggestions.length > 0) {
-    const selected = this.suggestions[this.selectedIndex]
-    const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
+  private updateSuggestion() {
+    if (this.suggestions.length > 0) {
+      const selected = this.suggestions[this.selectedIndex]
+      const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
 
-    // Handle different completion scenarios
-    if (inputBeforeCursor.trim() === '') {
+      // Handle different completion scenarios
+      if (inputBeforeCursor.trim() === '') {
       // Empty input - show full suggestion
-      this.currentSuggestion = selected
-    }
-    else {
-      // Find the last token to complete
-      const tokens = inputBeforeCursor.trim().split(/\s+/)
-      const lastToken = tokens[tokens.length - 1] || ''
-
-      // Only show suggestion if it starts with the current token
-      if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
-        this.currentSuggestion = selected.slice(lastToken.length)
+        this.currentSuggestion = selected
       }
       else {
-        this.currentSuggestion = ''
+      // Find the last token to complete
+        const tokens = inputBeforeCursor.trim().split(/\s+/)
+        const lastToken = tokens[tokens.length - 1] || ''
+
+        // Only show suggestion if it starts with the current token
+        if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
+          this.currentSuggestion = selected.slice(lastToken.length)
+        }
+        else {
+          this.currentSuggestion = ''
+        }
       }
     }
+    else {
+      this.currentSuggestion = ''
+    }
   }
-  else {
-    this.currentSuggestion = ''
-  }
-}
 
   private acceptSuggestion() {
     if (this.currentSuggestion) {
@@ -506,6 +684,13 @@ private updateSuggestion() {
         ? this.renderHighlighted(this.currentInput)
         : this.currentInput
       stdout.write(`\x1B[${inputStartColumn}G\x1B[K${renderedSingle}\x1B[0m`)
+
+      // Show reverse search status inline (dim)
+      if (this.reverseSearchActive) {
+        const status = this.reverseSearchStatus()
+        if (status)
+          stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
+      }
 
       // Show inline suggestion if available
       if (this.options.showInline && this.currentSuggestion) {
@@ -553,6 +738,11 @@ private updateSuggestion() {
         // Write first line with main prompt
         const firstLineRendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[0]) : lines[0]
         stdout.write(`${prompt}${firstLineRendered}\x1B[0m`)
+        if (this.reverseSearchActive) {
+          const status = this.reverseSearchStatus()
+          if (status)
+            stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
+        }
         // Write subsequent lines with continuation prompt
         for (let i = 1; i < lines.length; i++) {
           const rendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[i]) : lines[i]
@@ -603,17 +793,63 @@ private updateSuggestion() {
   // Lightweight syntax highlighting for rendering only (does not affect state)
   private renderHighlighted(text: string): string {
     const reset = '\x1B[0m'
-    const cyan = this.options.suggestionColor ?? '\x1B[36m'
-    const gray = this.options.highlightColor ?? '\x1B[90m'
+    const colors = {
+      command: this.options.syntaxColors?.command ?? '\x1B[36m',
+      subcommand: this.options.syntaxColors?.subcommand ?? '\x1B[94m',
+      string: this.options.syntaxColors?.string ?? (this.options.highlightColor ?? '\x1B[90m'),
+      operator: this.options.syntaxColors?.operator ?? (this.options.highlightColor ?? '\x1B[90m'),
+      variable: this.options.syntaxColors?.variable ?? (this.options.highlightColor ?? '\x1B[90m'),
+      flag: this.options.syntaxColors?.flag ?? '\x1B[33m',
+      number: this.options.syntaxColors?.number ?? '\x1B[35m',
+      path: this.options.syntaxColors?.path ?? '\x1B[32m',
+      comment: this.options.syntaxColors?.comment ?? (this.options.highlightColor ?? '\x1B[90m'),
+    }
+
+    // Handle comments first: color from first unquoted # to end
+    // Simple heuristic: split on first # not preceded by \
+    let commentIndex = -1
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '#') {
+        if (i === 0 || text[i - 1] !== '\\') {
+          commentIndex = i
+          break
+        }
+      }
+    }
+    if (commentIndex >= 0) {
+      const left = text.slice(0, commentIndex)
+      const comment = text.slice(commentIndex)
+      return `${this.renderHighlighted(left)}${colors.comment}${comment}${reset}`
+    }
+
     let out = text
-    // Highlight command at line start
-    out = out.replace(/^([\w./-]+)/, `${cyan}$1${reset}`)
-    // Highlight quoted strings
-    out = out.replace(/("[^"]*"|'[^']*')/g, `${gray}$1${reset}`)
-    // Highlight operators and pipes/redirections
-    out = out.replace(/(\|\||&&|;|<<?|>>?)/g, `${gray}$1${reset}`)
-    // Highlight variables like $VAR or $1
-    out = out.replace(/(\$[\w{}]+)/g, `${gray}$1${reset}`)
+
+    // Strings
+    out = out.replace(/("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')/g, `${colors.string}$1${reset}`)
+
+    // Common subcommands for tools like git/npm/yarn/bun: color the subcommand token
+    out = out.replace(/\b(git|npm|yarn|pnpm|bun)\s+([a-z][\w:-]*)/i, (_m, tool: string, sub: string) => {
+      return `${tool} ${colors.subcommand}${sub}${reset}`
+    })
+
+    // Command at line start
+    out = out.replace(/^([\w./-]+)/, `${colors.command}$1${reset}`)
+
+    // Flags: -a, -xyz, --long-flag
+    out = out.replace(/\s(--?[a-z][\w-]*)/gi, ` ${colors.flag}$1${reset}`)
+
+    // Variables $VAR, ${VAR}, $1
+    out = out.replace(/\$(?:\d+|\{?\w+\}?)/g, `${colors.variable}$&${reset}`)
+
+    // Operators and pipes/redirections
+    out = out.replace(/(\|\||&&|;|<<?|>>?)/g, `${colors.operator}$1${reset}`)
+
+    // Numbers
+    out = out.replace(/\b(\d+)\b/g, `${colors.number}$1${reset}`)
+
+    // Paths: ./foo, ../bar, /usr/bin, ~/x
+    out = out.replace(/((?:\.{1,2}|~)?\/[\w@%\-./]+)/g, `${colors.path}$1${reset}`)
+
     return out
   }
 
@@ -812,15 +1048,16 @@ private updateSuggestion() {
 
   private moveCursorUp() {
     const { line, col } = this.indexToLineCol(this.cursorPosition)
-    if (line === 0) return
+    if (line === 0)
+      return
     this.cursorPosition = this.lineColToIndex(line - 1, col)
   }
 
   private moveCursorDown() {
     const lines = this.getLines()
     const { line, col } = this.indexToLineCol(this.cursorPosition)
-    if (line >= lines.length - 1) return
+    if (line >= lines.length - 1)
+      return
     this.cursorPosition = this.lineColToIndex(line + 1, col)
   }
-
 }

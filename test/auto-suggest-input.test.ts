@@ -318,4 +318,154 @@ describe('AutoSuggestInput', () => {
       expect(autoSuggestInput['getCurrentInputForTesting']()).toBe('hlo\nworld')
     })
   })
+
+  describe('syntax highlighting', () => {
+    const prompt = '~/test ❯ '
+
+    it('highlights command at line start (cyan)', () => {
+      autoSuggestInput['currentInput'] = 'echo hello'
+      autoSuggestInput['cursorPosition'] = 'echo hello'.length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain('\x1B[36mecho\x1B[0m')
+    })
+
+    it('highlights subcommand for common tools (bright blue)', () => {
+      autoSuggestInput['currentInput'] = 'git commit -m "msg"'
+      autoSuggestInput['cursorPosition'] = autoSuggestInput['currentInput'].length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain('\x1B[36mgit\x1B[0m \x1B[94mcommit\x1B[0m')
+    })
+
+    it('highlights flags (yellow) and operators (gray)', () => {
+      autoSuggestInput['currentInput'] = 'ls -la && echo done'
+      autoSuggestInput['cursorPosition'] = autoSuggestInput['currentInput'].length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain(' \x1B[33m-la\x1B[0m')
+      expect(mockOutput).toContain('\x1B[90m&&\x1B[0m')
+    })
+
+    it('highlights variables (gray) and numbers (magenta)', () => {
+      autoSuggestInput['currentInput'] = 'echo $HOME 42'
+      autoSuggestInput['cursorPosition'] = autoSuggestInput['currentInput'].length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain('\x1B[90m$HOME\x1B[0m')
+      expect(mockOutput).toContain('\x1B[35m42\x1B[0m')
+    })
+
+    it('highlights paths (green)', () => {
+      autoSuggestInput['currentInput'] = 'cat ~/notes.txt'
+      autoSuggestInput['cursorPosition'] = autoSuggestInput['currentInput'].length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain('\x1B[32m~/notes.txt\x1B[0m')
+    })
+
+    it('highlights comments (gray) from # to end', () => {
+      autoSuggestInput['currentInput'] = 'echo ok # this is a comment'
+      autoSuggestInput['cursorPosition'] = autoSuggestInput['currentInput'].length
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+      expect(mockOutput).toContain('\x1B[90m# this is a comment\x1B[0m')
+    })
+  })
+})
+
+// Standalone tests (no stdout mocking required)
+describe('history expansion', () => {
+  it('expands !! to last command', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['echo ok', 'git status', 'npm run build'],
+    } as any)
+    const out = (inp as any)['expandHistory']('!!') as string
+    expect(out).toBe('npm run build')
+  })
+
+  it('expands !n to nth command (1-based)', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['echo ok', 'git status', 'npm run build'],
+    } as any)
+    const out = (inp as any)['expandHistory']('!2') as string
+    expect(out).toBe('git status')
+  })
+
+  it('expands !prefix to most recent matching command', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['git commit -m x', 'echo ok', 'git status'],
+    } as any)
+    const out = (inp as any)['expandHistory']('!git') as string
+    expect(out).toBe('git status')
+  })
+
+  it('mixed text preserves surrounding content', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['one', 'two'],
+    } as any)
+    const out = (inp as any)['expandHistory']('echo !! and !1') as string
+    // debug actual value if this fails
+    console.warn('[debug expandHistory mixed]', out)
+    expect(out).toBe('echo two and one')
+  })
+
+  it('unknown prefix leaves it removed but preserves prefix context', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['abc'],
+    } as any)
+    const out = (inp as any)['expandHistory']('echo !xyz') as string
+    expect(out).toBe('echo ')
+  })
+})
+
+describe('reverse search', () => {
+  it('activates and shows top match on update', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['echo ok', 'git status', 'git commit -m x', 'ls'],
+    } as any)
+    ;(inp as any)['startReverseSearch']()
+    ;(inp as any)['updateReverseSearch']('g')
+    const status = (inp as any)['reverseSearchStatus']() as string
+    expect(status).toContain('(reverse-i-search)')
+    expect(status).toContain('\'g\':')
+    expect((inp as any)['getCurrentInputForTesting']()).toBe('git commit -m x')
+  })
+
+  it('cycles through matches with cycleReverseSearch()', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['echo ok', 'git status', 'git commit -m x', 'git push', 'ls'],
+    } as any)
+    ;(inp as any)['startReverseSearch']()
+    ;(inp as any)['updateReverseSearch']('git')
+    const first = (inp as any)['getCurrentInputForTesting']()
+    ;(inp as any)['cycleReverseSearch']()
+    const second = (inp as any)['getCurrentInputForTesting']()
+    expect(second).not.toBe(first)
+    ;(inp as any)['cycleReverseSearch']()
+    const third = (inp as any)['getCurrentInputForTesting']()
+    expect(third).not.toBe(second)
+    expect([first, second]).not.toContain(third)
+  })
+
+  it('cancel clears status and deactivates', () => {
+    const inp = new AutoSuggestInput({
+      ...mockShell,
+      history: ['a', 'b'],
+    } as any)
+    ;(inp as any)['startReverseSearch']()
+    ;(inp as any)['updateReverseSearch']('a')
+    ;(inp as any)['cancelReverseSearch']()
+    const status = (inp as any)['reverseSearchStatus']() as string
+    expect(status).toBe('')
+    ;(inp as any)['cycleReverseSearch']()
+    expect((inp as any)['getCurrentInputForTesting']()).toBeDefined()
+  })
 })

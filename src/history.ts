@@ -21,7 +21,6 @@ export class HistoryManager {
       searchMode: 'fuzzy',
       ...config,
     }
-
     // Resolve the history file path
     this.historyPath = this.resolvePath(this.config.file || '~/.krusty_history')
 
@@ -240,3 +239,6 @@ export class HistoryManager {
     }
   }
 }
+
+// Shared singleton for cross-component history access
+export const sharedHistory: HistoryManager = new HistoryManager()
