@@ -306,6 +306,8 @@ export class AutoSuggestInput {
             if (!(this.options.keymap === 'vi' && this.viMode === 'normal')) {
               this.currentInput = `${this.currentInput.slice(0, this.cursorPosition)}\n${this.currentInput.slice(this.cursorPosition)}`
               this.cursorPosition++
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
             }
@@ -394,6 +396,8 @@ export class AutoSuggestInput {
               }
               if (key.name === 'x') {
                 this.deleteCharUnderCursor()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -426,6 +430,8 @@ export class AutoSuggestInput {
                 // For now, map 'd' to delete to end when followed by nothing
                 // and support common combos via Alt+d / Ctrl+w in emacs section
                 this.killToEnd()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -447,6 +453,8 @@ export class AutoSuggestInput {
               if (key.sequence === 'dd') {
                 this.currentInput = ''
                 this.cursorPosition = 0
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -454,22 +462,66 @@ export class AutoSuggestInput {
             }
           }
 
-          // Handle Tab - accept current suggestion
+          // Handle Tab - suggestions list open/cycle/accept
           if (key.name === 'tab') {
-            // If we have a visible inline suggestion, accept it
-            if (this.currentSuggestion) {
-              this.acceptSuggestion()
+            // Shift+Tab -> previous selection when list is open
+            if (key.shift && this.isShowingSuggestions && this.suggestions.length > 0) {
+              this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length
+              this.updateSuggestion()
               this.updateDisplay(prompt)
               return
             }
-            // Otherwise, try to apply the selected completion directly
+
+            // If suggestions list is already shown, cycle to next selection
+            if (this.isShowingSuggestions && this.suggestions.length > 0) {
+              this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+              return
+            }
+
+            // Otherwise, open the suggestions list or apply inline suggestion
             this.updateSuggestions()
             if (this.suggestions.length > 0) {
-              this.applySelectedCompletion()
-              this.updateSuggestions()
+              this.isShowingSuggestions = true
+              this.isNavigatingSuggestions = true
+              this.selectedIndex = 0
+              this.updateSuggestion()
               this.updateDisplay(prompt)
             }
             return
+          }
+
+          // Arrow navigation for suggestions list when open
+          if (this.isShowingSuggestions && this.suggestions.length > 0) {
+            if (key.name === 'down') {
+              this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'up') {
+              this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'escape') {
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'return') {
+              // Accept the selected suggestion
+              this.applySelectedCompletion()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+              return
+            }
           }
 
           // Handle Arrow keys: prefer multi-line cursor movement over suggestions
@@ -506,6 +558,8 @@ export class AutoSuggestInput {
               this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
                 + this.currentInput.slice(this.cursorPosition)
               this.cursorPosition--
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
             }
@@ -517,6 +571,8 @@ export class AutoSuggestInput {
             if (this.cursorPosition < this.currentInput.length) {
               this.currentInput = this.currentInput.slice(0, this.cursorPosition)
                 + this.currentInput.slice(this.cursorPosition + 1)
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
             }
@@ -559,12 +615,16 @@ export class AutoSuggestInput {
             // Kill to end/start
             if (key.ctrl && key.name === 'k') {
               this.killToEnd()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
               return
             }
             if (key.ctrl && key.name === 'u') {
               this.killToStart()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
               return
@@ -583,12 +643,16 @@ export class AutoSuggestInput {
             // Delete word forward/backward
             if (key.meta && (key.name === 'd')) {
               this.deleteWordRight()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
               return
             }
             if ((key.ctrl && key.name === 'w') || (key.meta && key.name === 'backspace')) {
               this.deleteWordLeft()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
               this.updateSuggestions()
               this.updateDisplay(prompt)
               return
@@ -616,6 +680,8 @@ export class AutoSuggestInput {
               + str
               + this.currentInput.slice(this.cursorPosition)
             this.cursorPosition++
+            this.isShowingSuggestions = false
+            this.isNavigatingSuggestions = false
             this.updateSuggestions()
             this.updateDisplay(prompt)
           }
@@ -632,7 +698,7 @@ export class AutoSuggestInput {
 
   private updateSuggestions() {
     try {
-    // Get suggestions from shell (includes plugin completions)
+      // Get suggestions from shell (includes plugin completions)
       this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
       this.selectedIndex = 0
       // If no plugin completions, fall back to history-based matches
@@ -857,6 +923,20 @@ export class AutoSuggestInput {
       this.promptAlreadyWritten = true
     }
 
+    // If suggestions list is open, render a compact one-line list and restore cursor
+    if (this.isShowingSuggestions && this.suggestions.length > 0) {
+      const reset = '\x1B[0m'
+      const selColor = this.options.suggestionColor ?? '\x1B[36m'
+      const dim = this.options.highlightColor ?? '\x1B[90m'
+      const items = this.suggestions.slice(0, this.options.maxSuggestions ?? 10)
+        .map((s, i) => i === this.selectedIndex ? `${selColor}[${s}]${reset}` : `${dim}${s}${reset}`)
+        .join('  ')
+      stdout.write(`\n${items}`)
+      // Move back to input line at correct column
+      stdout.write(`\x1B[1A`)
+      stdout.write(`\x1B[${cursorColumn}G`)
+    }
+
     // Remember what we displayed
     this.lastDisplayedInput = this.currentInput
     this.lastDisplayedSuggestion = this.currentSuggestion
@@ -935,9 +1015,8 @@ export class AutoSuggestInput {
   // Method to enable shell mode where prompt is managed externally
   setShellMode(enabled: boolean): void {
     this.shellMode = enabled
-    if (enabled) {
-      this.promptAlreadyWritten = true
-    }
+    // Reset so next render knows to draw fresh
+    this.promptAlreadyWritten = false
   }
 
   // Method to reset state when starting fresh input
