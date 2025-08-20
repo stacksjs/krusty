@@ -220,12 +220,12 @@ describe('Job Control Integration', () => {
     it('should emit resume events', (done) => {
       const jobId = jobManager.addJob('vim file.txt', mockChildProcess as ChildProcess, false)
       jobManager.suspendJob(jobId)
-      
+
       jobManager.on('jobResumed', (event) => {
         expect(event.job.id).toBe(jobId)
         done()
       })
-      
+
       jobManager.resumeJobBackground(jobId)
     })
   })

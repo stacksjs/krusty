@@ -1,4 +1,4 @@
-import type { Command, ParsedCommand } from '../types'
+import type { Command } from '../types'
 import { CommandParser } from '../parser'
 
 export interface ScriptBlock {
@@ -33,24 +33,37 @@ export interface ParsedScript {
 export class ScriptParser {
   private commandParser = new CommandParser()
   private keywords = new Set([
-    'if', 'then', 'else', 'elif', 'fi',
-    'for', 'while', 'until', 'do', 'done',
-    'case', 'in', 'esac',
-    'function', '{', '}'
+    'if',
+    'then',
+    'else',
+    'elif',
+    'fi',
+    'for',
+    'while',
+    'until',
+    'do',
+    'done',
+    'case',
+    'in',
+    'esac',
+    'function',
+    '{',
+    '}',
   ])
 
   async parseScript(input: string, shell?: any): Promise<ParsedScript> {
     const lines = this.preprocessScript(input)
     const statements: ScriptStatement[] = []
     const functions = new Map<string, ScriptBlock>()
-    
+
     let i = 0
     while (i < lines.length) {
       const result = await this.parseStatement(lines, i, shell)
       if (result.statement) {
         if (result.statement.block?.type === 'function' && result.statement.block.functionName) {
           functions.set(result.statement.block.functionName, result.statement.block)
-        } else {
+        }
+        else {
           statements.push(result.statement)
         }
       }
@@ -64,27 +77,29 @@ export class ScriptParser {
     // Split into lines and handle line continuations
     const rawLines = input.split('\n')
     const lines: string[] = []
-    
+
     for (let i = 0; i < rawLines.length; i++) {
       let line = rawLines[i].trim()
-      
+
       // Skip empty lines and comments
-      if (!line || line.startsWith('#')) continue
-      
+      if (!line || line.startsWith('#'))
+        continue
+
       // Handle line continuations
       while (line.endsWith('\\') && i + 1 < rawLines.length) {
-        line = line.slice(0, -1) + ' ' + rawLines[++i].trim()
+        line = `${line.slice(0, -1)} ${rawLines[++i].trim()}`
       }
-      
+
       // Handle semicolon-separated commands on same line
       if (line.includes(';')) {
         const parts = this.splitBySemicolon(line)
         lines.push(...parts)
-      } else {
+      }
+      else {
         lines.push(line)
       }
     }
-    
+
     return lines
   }
 
@@ -94,36 +109,36 @@ export class ScriptParser {
     let inQuotes = false
     let quoteChar = ''
     let escaped = false
-    
+
     for (let i = 0; i < line.length; i++) {
       const char = line[i]
-      
+
       if (escaped) {
         current += char
         escaped = false
         continue
       }
-      
+
       if (char === '\\') {
         escaped = true
         current += char
         continue
       }
-      
-      if (!inQuotes && (char === '"' || char === "'")) {
+
+      if (!inQuotes && (char === '"' || char === '\'')) {
         inQuotes = true
         quoteChar = char
         current += char
         continue
       }
-      
+
       if (inQuotes && char === quoteChar) {
         inQuotes = false
         quoteChar = ''
         current += char
         continue
       }
-      
+
       if (!inQuotes && char === ';') {
         if (current.trim()) {
           parts.push(current.trim())
@@ -131,14 +146,14 @@ export class ScriptParser {
         }
         continue
       }
-      
+
       current += char
     }
-    
+
     if (current.trim()) {
       parts.push(current.trim())
     }
-    
+
     return parts
   }
 
@@ -148,7 +163,7 @@ export class ScriptParser {
   }> {
     const line = lines[startIndex]
     const tokens = this.commandParser.tokenize(line)
-    
+
     if (tokens.length === 0) {
       return { statement: null, nextIndex: startIndex + 1 }
     }
@@ -184,27 +199,27 @@ export class ScriptParser {
   }> {
     const ifLine = lines[startIndex]
     const condition = this.extractCondition(ifLine, 'if')
-    
+
     const body: ScriptStatement[] = []
-    let elseBody: ScriptStatement[] = []
+    const elseBody: ScriptStatement[] = []
     let i = startIndex + 1
     let inElse = false
-    
+
     while (i < lines.length) {
       const line = lines[i].trim()
       const tokens = this.commandParser.tokenize(line)
-      
+
       if (tokens[0] === 'then') {
         i++
         continue
       }
-      
+
       if (tokens[0] === 'else') {
         inElse = true
         i++
         continue
       }
-      
+
       if (tokens[0] === 'elif') {
         // Handle elif as nested if-else
         const elifCondition = this.extractCondition(line, 'elif')
@@ -212,35 +227,37 @@ export class ScriptParser {
           type: 'if',
           condition: elifCondition,
           body: [],
-          elseBody: []
+          elseBody: [],
         }
-        
+
         const nestedStatement: ScriptStatement = {
           type: 'block',
           block: nestedIf,
-          raw: line
+          raw: line,
         }
-        
+
         if (inElse) {
           elseBody.push(nestedStatement)
-        } else {
+        }
+        else {
           body.push(nestedStatement)
         }
-        
+
         i++
         continue
       }
-      
+
       if (tokens[0] === 'fi') {
         i++
         break
       }
-      
+
       const result = await this.parseStatement(lines, i, shell)
       if (result.statement) {
         if (inElse) {
           elseBody.push(result.statement)
-        } else {
+        }
+        else {
           body.push(result.statement)
         }
       }
@@ -251,16 +268,16 @@ export class ScriptParser {
       type: 'if',
       condition,
       body,
-      elseBody: elseBody.length > 0 ? elseBody : undefined
+      elseBody: elseBody.length > 0 ? elseBody : undefined,
     }
 
     return {
       statement: {
         type: 'block',
         block,
-        raw: ifLine
+        raw: ifLine,
       },
-      nextIndex: i
+      nextIndex: i,
     }
   }
 
@@ -270,24 +287,24 @@ export class ScriptParser {
   }> {
     const forLine = lines[startIndex]
     const { variable, values } = this.parseForLoop(forLine)
-    
+
     const body: ScriptStatement[] = []
     let i = startIndex + 1
-    
+
     while (i < lines.length) {
       const line = lines[i].trim()
       const tokens = this.commandParser.tokenize(line)
-      
+
       if (tokens[0] === 'do') {
         i++
         continue
       }
-      
+
       if (tokens[0] === 'done') {
         i++
         break
       }
-      
+
       const result = await this.parseStatement(lines, i, shell)
       if (result.statement) {
         body.push(result.statement)
@@ -299,16 +316,16 @@ export class ScriptParser {
       type: 'for',
       variable,
       values,
-      body
+      body,
     }
 
     return {
       statement: {
         type: 'block',
         block,
-        raw: forLine
+        raw: forLine,
       },
-      nextIndex: i
+      nextIndex: i,
     }
   }
 
@@ -320,24 +337,24 @@ export class ScriptParser {
     const tokens = this.commandParser.tokenize(loopLine)
     const type = tokens[0] as 'while' | 'until'
     const condition = this.extractCondition(loopLine, type)
-    
+
     const body: ScriptStatement[] = []
     let i = startIndex + 1
-    
+
     while (i < lines.length) {
       const line = lines[i].trim()
       const lineTokens = this.commandParser.tokenize(line)
-      
+
       if (lineTokens[0] === 'do') {
         i++
         continue
       }
-      
+
       if (lineTokens[0] === 'done') {
         i++
         break
       }
-      
+
       const result = await this.parseStatement(lines, i, shell)
       if (result.statement) {
         body.push(result.statement)
@@ -348,16 +365,16 @@ export class ScriptParser {
     const block: ScriptBlock = {
       type,
       condition,
-      body
+      body,
     }
 
     return {
       statement: {
         type: 'block',
         block,
-        raw: loopLine
+        raw: loopLine,
       },
-      nextIndex: i
+      nextIndex: i,
     }
   }
 
@@ -367,52 +384,53 @@ export class ScriptParser {
   }> {
     const caseLine = lines[startIndex]
     const variable = this.extractCaseVariable(caseLine)
-    
+
     const cases: CasePattern[] = []
     let i = startIndex + 1
-    
+
     while (i < lines.length) {
       const line = lines[i].trim()
       const tokens = this.commandParser.tokenize(line)
-      
+
       if (tokens[0] === 'in') {
         i++
         continue
       }
-      
+
       if (tokens[0] === 'esac') {
         i++
         break
       }
-      
+
       // Parse case pattern
       if (line.includes(')')) {
         const pattern = line.split(')')[0].trim()
         const caseBody: ScriptStatement[] = []
         i++
-        
+
         // Parse case body until ;;
         while (i < lines.length) {
           const bodyLine = lines[i].trim()
-          
+
           if (bodyLine === ';;') {
             i++
             break
           }
-          
+
           if (bodyLine === 'esac') {
             break
           }
-          
+
           const result = await this.parseStatement(lines, i, shell)
           if (result.statement) {
             caseBody.push(result.statement)
           }
           i = result.nextIndex
         }
-        
+
         cases.push({ pattern, body: caseBody })
-      } else {
+      }
+      else {
         i++
       }
     }
@@ -421,16 +439,16 @@ export class ScriptParser {
       type: 'case',
       variable,
       cases,
-      body: [] // Not used for case statements
+      body: [], // Not used for case statements
     }
 
     return {
       statement: {
         type: 'block',
         block,
-        raw: caseLine
+        raw: caseLine,
       },
-      nextIndex: i
+      nextIndex: i,
     }
   }
 
@@ -440,22 +458,22 @@ export class ScriptParser {
   }> {
     const funcLine = lines[startIndex]
     const { name, parameters } = this.parseFunctionDefinition(funcLine, shortSyntax)
-    
+
     const body: ScriptStatement[] = []
     let i = startIndex + 1
     let braceCount = 0
     let foundOpenBrace = false
-    
+
     while (i < lines.length) {
       const line = lines[i].trim()
-      
+
       if (line === '{') {
         foundOpenBrace = true
         braceCount++
         i++
         continue
       }
-      
+
       if (line === '}') {
         braceCount--
         if (braceCount === 0 && foundOpenBrace) {
@@ -465,14 +483,15 @@ export class ScriptParser {
         i++
         continue
       }
-      
+
       if (foundOpenBrace) {
         const result = await this.parseStatement(lines, i, shell)
         if (result.statement) {
           body.push(result.statement)
         }
         i = result.nextIndex
-      } else {
+      }
+      else {
         i++
       }
     }
@@ -481,16 +500,16 @@ export class ScriptParser {
       type: 'function',
       functionName: name,
       parameters,
-      body
+      body,
     }
 
     return {
       statement: {
         type: 'block',
         block,
-        raw: funcLine
+        raw: funcLine,
       },
-      nextIndex: i
+      nextIndex: i,
     }
   }
 
@@ -505,21 +524,21 @@ export class ScriptParser {
       statement: {
         type: 'command',
         command,
-        raw: line
+        raw: line,
       },
-      nextIndex: (startIndex ?? 0) + 1
+      nextIndex: (startIndex ?? 0) + 1,
     }
   }
 
   private extractCondition(line: string, keyword: string): string {
     const keywordIndex = line.indexOf(keyword)
     const afterKeyword = line.substring(keywordIndex + keyword.length).trim()
-    
+
     // Remove 'then' if present
     if (afterKeyword.endsWith(' then')) {
       return afterKeyword.substring(0, afterKeyword.length - 5).trim()
     }
-    
+
     return afterKeyword
   }
 
@@ -527,12 +546,12 @@ export class ScriptParser {
     // Parse: for var in value1 value2 value3
     const tokens = this.commandParser.tokenize(line)
     const variable = tokens[1]
-    
+
     const inIndex = tokens.indexOf('in')
     if (inIndex === -1) {
       return { variable, values: [] }
     }
-    
+
     const values = tokens.slice(inIndex + 1).filter(token => token !== 'do')
     return { variable, values }
   }
@@ -548,7 +567,8 @@ export class ScriptParser {
       // Parse: funcname() { ... }
       const name = line.split('()')[0].trim()
       return { name, parameters: [] }
-    } else {
+    }
+    else {
       // Parse: function funcname { ... } or function funcname() { ... }
       const tokens = this.commandParser.tokenize(line)
       const name = tokens[1]

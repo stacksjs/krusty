@@ -72,7 +72,7 @@ export const fgCommand: BuiltinCommand = {
     if (success) {
       if (shell.config.verbose)
         shell.log.debug('[fg] set job %d to running (foreground)', jobId)
-      
+
       // Wait for the job to complete if waitForJob is available
       if (shell.waitForJob) {
         try {
@@ -95,7 +95,7 @@ export const fgCommand: BuiltinCommand = {
           }
         }
       }
-      
+
       const res: CommandResult = {
         exitCode: 0,
         stdout: `${job.command}\n`,

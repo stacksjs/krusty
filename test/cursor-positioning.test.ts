@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+/* eslint-disable no-console, no-control-regex */
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 describe('Cursor Positioning Tests', () => {

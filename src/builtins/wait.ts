@@ -10,7 +10,7 @@ export const waitCommand: BuiltinCommand = {
     if (args.length === 0) {
       // Wait for all background jobs to complete
       const jobs = shell.getJobs().filter(job => job.status === 'running')
-      
+
       if (jobs.length === 0) {
         return {
           exitCode: 0,
@@ -77,7 +77,7 @@ export const waitCommand: BuiltinCommand = {
           errors.push(`wait: ${id}: invalid id`)
           continue
         }
-        
+
         // Find job by PID and wait for it
         const jobs = shell.getJobs()
         const job = jobs.find(j => j.pid === pid)

@@ -308,7 +308,7 @@ export interface Shell {
     fg?: boolean
   }>
   setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => boolean
-  
+
   // Enhanced job control methods
   suspendJob?: (jobId: number) => boolean
   resumeJobBackground?: (jobId: number) => boolean

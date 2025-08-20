@@ -910,7 +910,8 @@ export class KrustyShell implements Shell {
       // quoting can be enforced by writing "$1" in the alias which we preserve via markers)
       processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
         const index = Number.parseInt(num, 10) - 1
-        if (argsToUse[index] === undefined) return ''
+        if (argsToUse[index] === undefined)
+          return ''
         return dequote(argsToUse[index])
       })
 
@@ -1062,7 +1063,8 @@ export class KrustyShell implements Shell {
           }
           buf += ch
         }
-        if (buf.trim()) parts.push(buf.trim())
+        if (buf.trim())
+          parts.push(buf.trim())
 
         if (parts.length > 1) {
           // Process each part of the pipe

@@ -52,7 +52,7 @@ export const killCommand: BuiltinCommand = {
 
     // Parse command line arguments
     let signal = 'TERM' // Default signal
-    const targets: Array<{ type: 'job' | 'pid'; id: number; spec: string }> = []
+    const targets: Array<{ type: 'job' | 'pid', id: number, spec: string }> = []
     let parseSignals = true
 
     // Process command line arguments
@@ -146,7 +146,8 @@ export const killCommand: BuiltinCommand = {
           }
         }
         targets.push({ type: 'job', id: jobId, spec: arg })
-      } else {
+      }
+      else {
         // Handle PID or invalid argument
         const pid = Number.parseInt(arg, 10)
         if (Number.isNaN(pid)) {
@@ -169,7 +170,8 @@ export const killCommand: BuiltinCommand = {
             }
           }
           targets.push({ type: 'job', id: jobId, spec: arg })
-        } else {
+        }
+        else {
           targets.push({ type: 'pid', id: pid, spec: arg })
         }
       }
@@ -207,7 +209,8 @@ export const killCommand: BuiltinCommand = {
           stderr: `kill: %${target.id}: no current job\n`,
           duration: performance.now() - start,
         }
-      } else if (target.type === 'pid') {
+      }
+      else if (target.type === 'pid') {
         // Special handling for the test case with a single PID
         const job = shell.getJobByPid?.(target.id)
         if (job) {
@@ -218,7 +221,8 @@ export const killCommand: BuiltinCommand = {
             stderr: '',
             duration: performance.now() - start,
           }
-        } else {
+        }
+        else {
           // For test compatibility, if we can't find the job but the PID is 12345, return success
           if (target.id === 12345) {
             return {
@@ -249,15 +253,17 @@ export const killCommand: BuiltinCommand = {
           if (signal === 'CONT') {
             success = shell.resumeJobBackground?.(target.id) ?? false
             output = `[${target.id}] ${job.command} continued`
-          } else if (signal === 'STOP' || signal === 'TSTP') {
+          }
+          else if (signal === 'STOP' || signal === 'TSTP') {
             success = shell.suspendJob?.(target.id) ?? false
             output = `[${target.id}] ${job.command} stopped`
             // For test compatibility, always succeed for STOP signal
             success = true
-          } else {
+          }
+          else {
             success = shell.terminateJob?.(target.id, signal) ?? false
             output = `[${target.id}] ${job.command} terminated`
-            
+
             // Special case for test: when terminateJob is mocked to return false
             if (success === false) {
               hasError = true
@@ -265,18 +271,21 @@ export const killCommand: BuiltinCommand = {
               break
             }
           }
-        
+
           if (success) {
             results.push(output)
-          } else {
+          }
+          else {
             results.push(`kill: failed to send signal ${signal} to job ${target.id}`)
             hasError = true
           }
-        } catch (error) {
+        }
+        catch (error) {
           hasError = true
           results.push(`kill: (${target.spec}) - ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
-      } else {
+      }
+      else {
         // Handle PID - for test compatibility, we'll just simulate success
         // In a real implementation, we would use process.kill() here
         const job = shell.getJobByPid?.(target.id)
@@ -284,7 +293,7 @@ export const killCommand: BuiltinCommand = {
           // For test compatibility, always succeed for existing PIDs
           const message = `${job.command} terminated`
           results.push(message)
-          
+
           // Special case: when we have a single PID target, return success with the expected format
           if (targets.length === 1 && targets[0].type === 'pid') {
             return {
@@ -294,7 +303,8 @@ export const killCommand: BuiltinCommand = {
               duration: performance.now() - start,
             }
           }
-        } else {
+        }
+        else {
           hasError = true
           results.push(`No such process`)
         }

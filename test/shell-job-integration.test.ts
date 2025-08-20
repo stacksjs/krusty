@@ -59,7 +59,7 @@ describe('Shell Job Integration', () => {
         pgid: 12345,
         command: 'test command',
         background: false,
-        status: 'running'
+        status: 'running',
       })
     })
 
@@ -172,7 +172,7 @@ describe('Shell Job Integration', () => {
     it('should execute external command and track as job', async () => {
       // Add a job directly to simulate command execution
       const jobId = shell.addJob('echo hello', mockChildProcess as any, false)
-      
+
       // Simulate job completion by triggering exit event
       const job = shell.getJob(jobId)
       if (job?.process) {
@@ -182,7 +182,7 @@ describe('Shell Job Integration', () => {
           exitHandler(0, null)
         }
       }
-      
+
       const jobs = shell.getJobs()
       expect(jobs).toHaveLength(1)
       expect(jobs[0].command).toBe('echo hello')
@@ -192,7 +192,7 @@ describe('Shell Job Integration', () => {
     it('should handle background commands properly', async () => {
       // Add a job directly to test background functionality
       const jobId = shell.addJob('sleep 10 &', undefined, true)
-      
+
       const jobs = shell.getJobs()
       expect(jobs.some(job => job.background)).toBe(true)
       expect(jobs.find(job => job.id === jobId)?.background).toBe(true)

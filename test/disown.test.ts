@@ -33,7 +33,7 @@ describe('disown builtin command', () => {
     // Create mock child processes with PIDs
     const mockChild1 = { pid: 12345, on: () => {}, removeAllListeners: () => {} } as any
     const mockChild2 = { pid: 23456, on: () => {}, removeAllListeners: () => {} } as any
-    
+
     const j1 = shell.addJob('sleep 1', mockChild1)
     const j2 = shell.addJob('sleep 2', mockChild2)
     expect(j1).toBe(1)
@@ -107,10 +107,10 @@ describe('disown builtin command', () => {
       listenerCount: () => 0,
       rawListeners: () => [],
     }
-    
+
     // Add the job with the mock process
     const id = shell.jobManager.addJob('sleep 1', mockProcess as any, false)
-    
+
     // Get the job and modify it to be pid-less
     const job = shell.getJob(id)
     if (job) {

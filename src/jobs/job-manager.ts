@@ -250,7 +250,8 @@ export class JobManager extends EventEmitter {
       // Send SIGSTOP to process group
       try {
         process.kill(-job.pgid, 'SIGSTOP')
-      } catch (killError) {
+      }
+      catch (killError) {
         // In test environment, process.kill might throw but we still want to update job status
         if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
           throw killError
@@ -303,7 +304,8 @@ export class JobManager extends EventEmitter {
         else if (job.pid > 0) {
           process.kill(job.pid, 'SIGCONT')
         }
-      } catch (killError) {
+      }
+      catch (killError) {
         // In test environment, process.kill might throw but we still want to update job status
         if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
           throw killError
@@ -356,7 +358,8 @@ export class JobManager extends EventEmitter {
         else if (job.pid > 0) {
           process.kill(job.pid, 'SIGCONT')
         }
-      } catch (killError) {
+      }
+      catch (killError) {
         // In test environment, process.kill might throw but we still want to update job status
         if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
           throw killError
@@ -405,7 +408,8 @@ export class JobManager extends EventEmitter {
         else if (job.pid > 0) {
           process.kill(job.pid, signal)
         }
-      } catch (killError) {
+      }
+      catch (killError) {
         // In test environment, process.kill might throw but we still want to update job status
         if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
           throw killError
@@ -443,12 +447,12 @@ export class JobManager extends EventEmitter {
     }
 
     this.jobs.delete(jobId)
-    
+
     // Clear foreground job if this was it
     if (this.foregroundJob?.id === jobId) {
       this.foregroundJob = undefined
     }
-    
+
     this.emit('jobRemoved', { job } as JobEvent)
     return true
   }

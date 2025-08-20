@@ -6,9 +6,11 @@ function parseDuration(input: string): number | null {
   // Supports float seconds with optional unit: s (seconds), m (minutes), h (hours), d (days)
   // Defaults to seconds if no unit.
   const m = input.match(/^(\d+(?:\.\d+)?|\.\d+)\s*([smhd])?$/)
-  if (!m) return null
+  if (!m)
+    return null
   const value = Number.parseFloat(m[1])
-  if (Number.isNaN(value) || value < 0) return null
+  if (Number.isNaN(value) || value < 0)
+    return null
   const unit = m[2] || 's'
   const multipliers: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }
   return Math.floor(value * multipliers[unit])
@@ -46,7 +48,8 @@ export const timeoutCommand: BuiltinCommand = {
     // Parse options like: -s SIGNAL | --signal=SIGNAL, -k DURATION | --kill-after=DURATION
     while (args.length && args[0].startsWith('-')) {
       const opt = args.shift()!
-      if (opt === '--') break
+      if (opt === '--')
+        break
       if (opt === '-s' || opt === '--signal') {
         const v = args.shift()
         if (!v) {
@@ -122,7 +125,8 @@ export const timeoutCommand: BuiltinCommand = {
         return { ...result, duration: performance.now() - start }
       }
       catch (error) {
-        if (timer) clearTimeout(timer)
+        if (timer)
+          clearTimeout(timer)
         return { exitCode: 1, stdout: '', stderr: `timeout: ${error instanceof Error ? error.message : 'execution failed'}\n`, duration: performance.now() - start }
       }
     }
@@ -164,12 +168,14 @@ export const timeoutCommand: BuiltinCommand = {
     child.stdout?.on('data', (d) => {
       const s = d.toString()
       stdout += s
-      if (shouldStream) process.stdout.write(s)
+      if (shouldStream)
+        process.stdout.write(s)
     })
     child.stderr?.on('data', (d) => {
       const s = d.toString()
       stderr += s
-      if (shouldStream) process.stderr.write(s)
+      if (shouldStream)
+        process.stderr.write(s)
     })
 
     const result: CommandResult = await new Promise((resolve) => {

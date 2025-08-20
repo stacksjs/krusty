@@ -337,58 +337,58 @@ describe('KrustyShell', () => {
     it('should maintain cursor position after typing a single character', async () => {
       // Reset mock output before test
       _mockOutput = ''
-      
+
       // Get the auto-suggest input instance
       const autoSuggestInput = (shell as any).autoSuggestInput as any
-      
+
       // Simulate the shell state after typing 'b'
       autoSuggestInput.currentInput = 'b'
       autoSuggestInput.cursorPosition = 1
-      
+
       // Update the display with a test prompt
       const prompt = '~/test ❯ '
       console.log('=== Starting cursor position test ===')
       console.log(`Prompt: "${prompt}" (length: ${prompt.length})`)
       console.log(`Current input: "${autoSuggestInput.currentInput}"`)
       console.log(`Cursor position: ${autoSuggestInput.cursorPosition}`)
-      
+
       autoSuggestInput.updateDisplayForTesting(prompt)
-      
+
       console.log('=== Output after updateDisplay ===')
       console.log(`Raw output: ${JSON.stringify(_mockOutput)}`)
-      
+
       // The output should contain the prompt and the 'b' character
       expect(_mockOutput).toContain(prompt)
       expect(_mockOutput).toContain('b')
-      
+
       // Check for the clear line sequence (ESC[2K)
       expect(_mockOutput).toContain('\x1B[2K')
-      
+
       // Extract all cursor position commands
-      const cursorPosMatches = [..._mockOutput.matchAll(/\u001b\[(\d+)G/g)]
+      const cursorPosMatches = [..._mockOutput.matchAll(/\u001B\[(\d+)G/g)]
       console.log(`Found ${cursorPosMatches.length} cursor position commands:`)
       cursorPosMatches.forEach((match, i) => {
         console.log(`  ${i + 1}. Column: ${match[1]}`)
       })
-      
+
       // Get the last cursor position command
       const lastCursorPosMatch = cursorPosMatches[cursorPosMatches.length - 1]
       if (!lastCursorPosMatch) {
         console.error('No cursor position control sequence found in output')
         throw new Error('No cursor position control sequence found')
       }
-      
+
       // Verify cursor is positioned after the 'b' character
       const cursorColumn = Number.parseInt(lastCursorPosMatch[1], 10)
       // The cursor should be at prompt length + cursor position (1) + 1 (for 1-based column)
       const expectedColumn = prompt.length + 1 + 1
-      
+
       console.log(`\n=== Test Verification ===`)
       console.log(`Expected cursor column: ${expectedColumn} (prompt length ${prompt.length} + 1 for 'b' + 1 for 1-based indexing)`)
       console.log(`Actual cursor column: ${cursorColumn}`)
-      
+
       expect(cursorColumn).toBe(expectedColumn)
-      
+
       // Reset for next test
       autoSuggestInput.currentInput = ''
       autoSuggestInput.cursorPosition = 0

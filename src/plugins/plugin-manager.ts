@@ -36,13 +36,14 @@ export class PluginManager {
       try {
         const autoSuggestPlugin = await import('./auto-suggest-plugin')
         const plugin = autoSuggestPlugin.default
-        
+
         this.plugins.set(name, plugin)
         if (plugin.initialize)
           await plugin.initialize(context)
         if (plugin.activate)
           await plugin.activate(context)
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Failed to load auto-suggest plugin:', error)
         // Fallback: remove the plugin entry
         this.plugins.delete(name)

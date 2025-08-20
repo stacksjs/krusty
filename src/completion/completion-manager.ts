@@ -140,7 +140,8 @@ export class CompletionManager {
     context: Record<string, any>,
   ): Promise<string[]> {
     const shell = context.shell
-    if (!shell) return []
+    if (!shell)
+      return []
 
     const cursor = context.cursor || input.length
     const tokens = this.tokenize(input)
@@ -154,7 +155,8 @@ export class CompletionManager {
         // Command completions (builtins, aliases, PATH commands)
         const partial = before.trim()
         completions = this.getCommandCompletions(partial, shell)
-      } else {
+      }
+      else {
         // Argument completions (files, directories, etc.)
         const lastToken = tokens[tokens.length - 1] || ''
         completions = this.getArgumentCompletions(lastToken, shell)
@@ -165,7 +167,8 @@ export class CompletionManager {
         try {
           const pluginCompletions = shell.pluginManager.getPluginCompletions(input, cursor) || []
           completions = [...new Set([...completions, ...pluginCompletions])]
-        } catch (error) {
+        }
+        catch (error) {
           console.warn('Error getting plugin completions:', error)
         }
       }
@@ -173,12 +176,12 @@ export class CompletionManager {
       // Apply filtering and sorting
       const filtered = completions.filter(c => c && c.trim().length > 0)
       const maxSuggestions = shell.config.completion?.maxSuggestions || 10
-      
+
       return filtered
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         .slice(0, maxSuggestions)
-
-    } catch (error) {
+    }
+    catch (error) {
       console.warn('Error generating completions:', error)
       return []
     }
@@ -220,7 +223,8 @@ export class CompletionManager {
       if (partial.includes('/')) {
         searchPath = dirname(partial)
         prefix = basename(partial)
-      } else {
+      }
+      else {
         searchPath = '.'
         prefix = partial
       }
@@ -238,13 +242,14 @@ export class CompletionManager {
         .map((entry: string) => {
           const entryPath = join(fullPath, entry)
           const isDir = statSync(entryPath).isDirectory()
-          const result = partial.includes('/') 
-            ? join(searchPath, entry) 
+          const result = partial.includes('/')
+            ? join(searchPath, entry)
             : entry
           return isDir ? `${result}/` : result
         })
         .slice(0, 20) // Limit file completions
-    } catch {
+    }
+    catch {
       return []
     }
   }
@@ -252,7 +257,7 @@ export class CompletionManager {
   private getPathCommands(): string[] {
     const pathCache = this.cache.get('PATH_COMMANDS')
     const now = Date.now()
-    
+
     if (pathCache && (pathCache.timestamp + this.cacheTtl) > now) {
       return pathCache.completions
     }
@@ -271,17 +276,19 @@ export class CompletionManager {
               if (stat.isFile() && (stat.mode & 0o111)) {
                 commands.add(entry)
               }
-            } catch {
+            }
+            catch {
               // Skip inaccessible files
             }
           }
-        } catch {
+        }
+        catch {
           // Skip inaccessible directories
         }
       }
 
       const result = Array.from(commands).sort()
-      
+
       // Cache the result
       this.cache.set('PATH_COMMANDS', {
         timestamp: now,
@@ -289,7 +296,8 @@ export class CompletionManager {
       })
 
       return result
-    } catch {
+    }
+    catch {
       return []
     }
   }
@@ -320,19 +328,23 @@ export class CompletionManager {
           current += char
           inQuotes = false
           quoteChar = ''
-        } else if (!inQuotes) {
+        }
+        else if (!inQuotes) {
           inQuotes = true
           quoteChar = char
           current += char
-        } else {
+        }
+        else {
           current += char
         }
-      } else if (char === ' ' && !inQuotes) {
+      }
+      else if (char === ' ' && !inQuotes) {
         if (current) {
           tokens.push(current)
           current = ''
         }
-      } else {
+      }
+      else {
         current += char
       }
     }

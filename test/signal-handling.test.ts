@@ -237,41 +237,41 @@ describe('signal Handling and Job Suspension', () => {
       const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)
 
       const success = jobManager.resumeJobBackground(jobId)
-  })
+    })
 
-  it('should resume suspended job in foreground', () => {
-    const jobId = jobManager.addJob('vim file.txt', mockChildProcess as ChildProcess, false)
-    jobManager.suspendJob(jobId)
+    it('should resume suspended job in foreground', () => {
+      const jobId = jobManager.addJob('vim file.txt', mockChildProcess as ChildProcess, false)
+      jobManager.suspendJob(jobId)
 
-    mockKill.mockClear()
-    const success = jobManager.resumeJobForeground(jobId)
-    const job = jobManager.getJob(jobId)!
+      mockKill.mockClear()
+      const success = jobManager.resumeJobForeground(jobId)
+      const job = jobManager.getJob(jobId)!
 
-    expect(success).toBe(true)
-    expect(job.status).toBe('running')
-    expect(job.background).toBe(false)
-    expect(mockKill).toHaveBeenCalledWith(-12345, 'SIGCONT')
-  })
+      expect(success).toBe(true)
+      expect(job.status).toBe('running')
+      expect(job.background).toBe(false)
+      expect(mockKill).toHaveBeenCalledWith(-12345, 'SIGCONT')
+    })
 
-  it('should not resume already running job', () => {
-    const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)
+    it('should not resume already running job', () => {
+      const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)
 
-    const success = jobManager.resumeJobBackground(jobId)
+      const success = jobManager.resumeJobBackground(jobId)
 
-    expect(success).toBe(false)
-    expect(mockKill).not.toHaveBeenCalled()
-  })
+      expect(success).toBe(false)
+      expect(mockKill).not.toHaveBeenCalled()
+    })
 
-  it('should not resume completed job', () => {
-    const jobId = jobManager.addJob('echo done', mockChildProcess as ChildProcess, false)
-    const job = jobManager.getJob(jobId)!
-    job.status = 'done'
+    it('should not resume completed job', () => {
+      const jobId = jobManager.addJob('echo done', mockChildProcess as ChildProcess, false)
+      const job = jobManager.getJob(jobId)!
+      job.status = 'done'
 
-    const success = jobManager.resumeJobBackground(jobId)
+      const success = jobManager.resumeJobBackground(jobId)
 
-    expect(success).toBe(false)
-    expect(mockKill).not.toHaveBeenCalled()
-  })
+      expect(success).toBe(false)
+      expect(mockKill).not.toHaveBeenCalled()
+    })
 
     it('should handle resume signal errors gracefully', () => {
       const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)

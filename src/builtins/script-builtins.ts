@@ -329,7 +329,7 @@ export function createScriptBuiltins(): Map<string, BuiltinCommand> {
     ],
     execute: async (args: string[], shell: Shell): Promise<CommandResult> => {
       let options = ''
-      let variables: string[] = []
+      const variables: string[] = []
 
       for (const arg of args) {
         if (arg.startsWith('-')) {

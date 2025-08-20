@@ -294,7 +294,8 @@ export const config: KrustyConfig = (() => {
       name: 'krusty',
       defaultConfig,
     }) as any
-  } catch {
+  }
+  catch {
     return defaultConfig
   }
 })()

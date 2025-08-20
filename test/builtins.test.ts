@@ -23,7 +23,7 @@ describe('Builtin Commands', () => {
     }
     shell = new KrustyShell(testConfig)
     tempDir = await mkdtemp(join(tmpdir(), 'krusty-test-'))
-    
+
     // Mock executeCommand to prevent actual command execution
     originalExecuteCommand = shell.executeCommand
     shell.executeCommand = mock(async (command: string, args: string[] = []) => {

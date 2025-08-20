@@ -1,5 +1,5 @@
 import type { CommandResult, Shell } from '../types'
-import type { CasePattern, ParsedScript, ScriptBlock, ScriptStatement } from './script-parser'
+import type { ParsedScript, ScriptBlock, ScriptStatement } from './script-parser'
 
 export interface ScriptContext {
   variables: Map<string, string>
@@ -19,7 +19,7 @@ export class ScriptExecutor {
       variables: new Map(),
       functions: new Map(script.functions),
       exitOnError: options.exitOnError ?? false,
-      shell
+      shell,
     }
 
     this.contexts.push(context)
@@ -51,7 +51,8 @@ export class ScriptExecutor {
       }
 
       return lastResult
-    } finally {
+    }
+    finally {
       this.contexts.pop()
     }
   }
@@ -59,7 +60,8 @@ export class ScriptExecutor {
   private async executeStatement(statement: ScriptStatement, context: ScriptContext): Promise<CommandResult> {
     if (statement.type === 'command') {
       return await this.executeCommand(statement, context)
-    } else if (statement.type === 'block') {
+    }
+    else if (statement.type === 'block') {
       return await this.executeBlock(statement.block!, context)
     }
 
@@ -72,21 +74,21 @@ export class ScriptExecutor {
     }
 
     const command = statement.command
-    
+
     // Handle built-in script commands
     switch (command.name) {
       case 'return':
-        context.returnValue = command.args.length > 0 ? parseInt(command.args[0]) || 0 : 0
+        context.returnValue = command.args.length > 0 ? Number.parseInt(command.args[0]) || 0 : 0
         return { success: true, exitCode: context.returnValue, stdout: '', stderr: '' }
-      
+
       case 'break':
-        context.breakLevel = command.args.length > 0 ? parseInt(command.args[0]) || 1 : 1
+        context.breakLevel = command.args.length > 0 ? Number.parseInt(command.args[0]) || 1 : 1
         return { success: true, exitCode: 0, stdout: '', stderr: '' }
-      
+
       case 'continue':
-        context.continueLevel = command.args.length > 0 ? parseInt(command.args[0]) || 1 : 1
+        context.continueLevel = command.args.length > 0 ? Number.parseInt(command.args[0]) || 1 : 1
         return { success: true, exitCode: 0, stdout: '', stderr: '' }
-      
+
       case 'local':
         // Handle local variable declarations
         for (const arg of command.args) {
@@ -96,7 +98,7 @@ export class ScriptExecutor {
           }
         }
         return { success: true, exitCode: 0, stdout: '', stderr: '' }
-      
+
       case 'set':
         // Handle set options
         if (command.args.includes('-e')) {
@@ -122,13 +124,14 @@ export class ScriptExecutor {
       }
       const result = await context.shell.executeCommand(command.name, expandedArgs)
       return result
-    } catch (error) {
+    }
+    catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       return {
         success: false,
         exitCode: 1,
         stdout: '',
-        stderr: errorMsg
+        stderr: errorMsg,
       }
     }
   }
@@ -159,10 +162,11 @@ export class ScriptExecutor {
     }
 
     const conditionResult = await this.evaluateCondition(block.condition, context)
-    
+
     if (conditionResult) {
       return await this.executeStatements(block.body, context)
-    } else if (block.elseBody) {
+    }
+    else if (block.elseBody) {
       return await this.executeStatements(block.elseBody, context)
     }
 
@@ -193,7 +197,8 @@ export class ScriptExecutor {
         if (context.breakLevel !== undefined) {
           if (context.breakLevel > 1) {
             context.breakLevel--
-          } else {
+          }
+          else {
             context.breakLevel = undefined
           }
           break
@@ -203,7 +208,8 @@ export class ScriptExecutor {
           if (context.continueLevel > 1) {
             context.continueLevel--
             break
-          } else {
+          }
+          else {
             context.continueLevel = undefined
             continue
           }
@@ -213,11 +219,13 @@ export class ScriptExecutor {
         if (!iterResult.success && context.exitOnError) {
           break
         }
-      } finally {
+      }
+      finally {
         // Restore old value
         if (oldValue !== undefined) {
           context.shell.environment[block.variable] = oldValue
-        } else {
+        }
+        else {
           delete context.shell.environment[block.variable]
         }
       }
@@ -245,7 +253,8 @@ export class ScriptExecutor {
       if (context.breakLevel !== undefined) {
         if (context.breakLevel > 1) {
           context.breakLevel--
-        } else {
+        }
+        else {
           context.breakLevel = undefined
         }
         break
@@ -255,7 +264,8 @@ export class ScriptExecutor {
         if (context.continueLevel > 1) {
           context.continueLevel--
           break
-        } else {
+        }
+        else {
           context.continueLevel = undefined
           continue
         }
@@ -289,7 +299,8 @@ export class ScriptExecutor {
       if (context.breakLevel !== undefined) {
         if (context.breakLevel > 1) {
           context.breakLevel--
-        } else {
+        }
+        else {
           context.breakLevel = undefined
         }
         break
@@ -299,7 +310,8 @@ export class ScriptExecutor {
         if (context.continueLevel > 1) {
           context.continueLevel--
           break
-        } else {
+        }
+        else {
           context.continueLevel = undefined
           continue
         }
@@ -337,7 +349,7 @@ export class ScriptExecutor {
         success: false,
         exitCode: 127,
         stdout: '',
-        stderr: `Function '${name}' not found`
+        stderr: `Function '${name}' not found`,
       }
     }
 
@@ -346,7 +358,7 @@ export class ScriptExecutor {
       variables: new Map(context.variables),
       functions: context.functions,
       exitOnError: context.exitOnError,
-      shell: context.shell
+      shell: context.shell,
     }
 
     // Set positional parameters
@@ -360,15 +372,16 @@ export class ScriptExecutor {
 
     try {
       const result = await this.executeStatements(func.body, funcContext)
-      
+
       if (funcContext.returnValue !== undefined) {
         return { ...result, exitCode: funcContext.returnValue }
       }
-      
+
       return result
-    } finally {
+    }
+    finally {
       this.contexts.pop()
-      
+
       // Clean up positional parameters
       delete funcContext.shell.environment['0']
       for (let i = 1; i <= args.length; i++) {
@@ -390,9 +403,9 @@ export class ScriptExecutor {
       lastResult = { ...result, stdout: accStdout, stderr: accStderr }
 
       // Handle control flow
-      if (context.returnValue !== undefined || 
-          context.breakLevel !== undefined || 
-          context.continueLevel !== undefined) {
+      if (context.returnValue !== undefined
+        || context.breakLevel !== undefined
+        || context.continueLevel !== undefined) {
         break
       }
 
@@ -426,14 +439,15 @@ export class ScriptExecutor {
       }
       const result = await (context.shell as any).executeCommandChain(parsed)
       return (result.success ?? result.exitCode === 0) && result.exitCode === 0
-    } catch {
+    }
+    catch {
       return false
     }
   }
 
   private async evaluateTestExpression(expr: string, context: ScriptContext): Promise<boolean> {
     const tokens = expr.split(/\s+/)
-    
+
     if (tokens.length === 1) {
       // Single argument - test if non-empty
       const value = await this.expandVariable(tokens[0], context)
@@ -444,7 +458,7 @@ export class ScriptExecutor {
       // Unary test operators
       const operator = tokens[0]
       const operand = await this.expandVariable(tokens[1], context)
-      
+
       switch (operator) {
         case '-z': return operand.length === 0
         case '-n': return operand.length > 0
@@ -463,17 +477,17 @@ export class ScriptExecutor {
       const left = await this.expandVariable(tokens[0], context)
       const operator = tokens[1]
       const right = await this.expandVariable(tokens[2], context)
-      
+
       switch (operator) {
         case '=':
         case '==': return left === right
         case '!=': return left !== right
-        case '-eq': return parseInt(left) === parseInt(right)
-        case '-ne': return parseInt(left) !== parseInt(right)
-        case '-lt': return parseInt(left) < parseInt(right)
-        case '-le': return parseInt(left) <= parseInt(right)
-        case '-gt': return parseInt(left) > parseInt(right)
-        case '-ge': return parseInt(left) >= parseInt(right)
+        case '-eq': return Number.parseInt(left) === Number.parseInt(right)
+        case '-ne': return Number.parseInt(left) !== Number.parseInt(right)
+        case '-lt': return Number.parseInt(left) < Number.parseInt(right)
+        case '-le': return Number.parseInt(left) <= Number.parseInt(right)
+        case '-gt': return Number.parseInt(left) > Number.parseInt(right)
+        case '-ge': return Number.parseInt(left) >= Number.parseInt(right)
         default: return false
       }
     }
@@ -491,11 +505,13 @@ export class ScriptExecutor {
 
   // Expand variables within a string, supporting $VAR, ${VAR}, and positional $1..$9
   private async expandString(input: string, context: ScriptContext): Promise<string> {
-    if (!input || (!input.includes('$'))) return input
+    if (!input || (!input.includes('$')))
+      return input
 
-    return input.replace(/\$(\{[^}]+\}|[A-Za-z_]\w*|\d)/gi, (match, p1) => {
+    return input.replace(/\$(\{[^}]+\}|[A-Z_]\w*|\d)/gi, (match, p1) => {
       let key = p1 as string
-      if (!key) return ''
+      if (!key)
+        return ''
       if (key.startsWith('{') && key.endsWith('}')) {
         key = key.slice(1, -1)
       }
@@ -510,7 +526,7 @@ export class ScriptExecutor {
       .replace(/\*/g, '.*')
       .replace(/\?/g, '.')
       .replace(/\[([^\]]+)\]/g, '[$1]')
-    
+
     const regex = new RegExp(`^${regexPattern}$`)
     return regex.test(value)
   }
@@ -520,7 +536,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       await fs.access(path)
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -530,7 +547,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       const stats = await fs.stat(path)
       return stats.isFile()
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -540,7 +558,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       const stats = await fs.stat(path)
       return stats.isDirectory()
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -550,7 +569,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       await fs.access(path, (await import('node:fs')).constants.R_OK)
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -560,7 +580,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       await fs.access(path, (await import('node:fs')).constants.W_OK)
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -570,7 +591,8 @@ export class ScriptExecutor {
       const fs = await import('node:fs/promises')
       await fs.access(path, (await import('node:fs')).constants.X_OK)
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }

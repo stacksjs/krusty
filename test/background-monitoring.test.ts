@@ -33,7 +33,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
 
   describe('Background Job Status Monitoring', () => {
     it('should start monitoring when first job is added', () => {
-      const setIntervalSpy = vi.spyOn(global, 'setInterval')
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
 
       jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
 
@@ -277,7 +277,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
 
   describe('Monitoring Performance and Resource Management', () => {
     it('should use single monitoring interval for all jobs', () => {
-      const setIntervalSpy = vi.spyOn(global, 'setInterval')
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
 
       jobManager.addJob('sleep 1', mockChildProcess as ChildProcess, true)
       jobManager.addJob('sleep 2', createMockChildProcess(12346) as ChildProcess, true)
@@ -288,7 +288,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
     })
 
     it('should stop monitoring when no jobs remain', () => {
-      const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
 
       const jobId = jobManager.addJob('echo hello', mockChildProcess as ChildProcess, true)
 
@@ -369,7 +369,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
 
   describe('Monitoring Lifecycle Management', () => {
     it('should clean up monitoring on shutdown', () => {
-      const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
 
       jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
       jobManager.shutdown()
@@ -378,7 +378,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
     })
 
     it('should not start new monitoring after shutdown', () => {
-      const setIntervalSpy = vi.spyOn(global, 'setInterval')
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
 
       jobManager.shutdown()
       jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
@@ -388,7 +388,7 @@ describe.skip('Real-time Background Job Monitoring', () => {
     })
 
     it('should handle multiple shutdown calls gracefully', () => {
-      const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
 
       jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
 
