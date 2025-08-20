@@ -55,8 +55,8 @@ describe('CompletionProvider', () => {
     // Cursor inside a quoted arg; we still pass full input and cursor at end
     const input = 'cat "./src/co'
     const out = shell.getCompletions(input, input.length)
-    // Should include completion for completion.ts in repo
-    expect(out.some(x => x.includes('completion.ts'))).toBe(true)
+    // With module now a directory, expect directory suggestion
+    expect(out.some(x => x.includes('completion/'))).toBe(true)
   })
 
   it('expands home directory for file completions', () => {

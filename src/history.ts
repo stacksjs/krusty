@@ -24,7 +24,16 @@ export class HistoryManager {
     // Resolve the history file path
     this.historyPath = this.resolvePath(this.config.file || '~/.krusty_history')
 
-    // Initialize asynchronously
+    // Load synchronously so history is available immediately to the shell
+    // (prevents a race where the shell queries history before async init completes)
+    try {
+      this.load()
+    }
+    catch {
+      // Non-fatal; proceed with async initialize
+    }
+
+    // Initialize asynchronously for any additional setup and to mark initialized
     this.initialize().catch(console.error)
   }
 
@@ -87,9 +96,8 @@ export class HistoryManager {
       return
 
     try {
-      // Ensure we don't have duplicate commands
-      const uniqueHistory = [...new Set(this.history)]
-      await fs.writeFile(this.historyPath, `${uniqueHistory.join('\n')}\n`, 'utf-8')
+      // Preserve full history including repeated commands
+      await fs.writeFile(this.historyPath, `${this.history.join('\n')}\n`, 'utf-8')
     }
     catch (error) {
       console.error('Failed to save history:', error)

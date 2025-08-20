@@ -39,7 +39,7 @@ describe('Typo Corrections Test', () => {
   })
 
   it('should provide typo corrections for common git typos', async () => {
-    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest')
 
     // Create a mock shell with the sophisticated auto-suggest plugin
     const mockShell = {
@@ -105,7 +105,7 @@ describe('Typo Corrections Test', () => {
   })
 
   it('should provide history-based completions', async () => {
-    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest')
 
     const mockShell = {
       getCompletions: (input: string, cursor: number) => {

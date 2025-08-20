@@ -40,7 +40,7 @@ describe('Cursor Positioning Tests', () => {
   })
 
   it('should position cursor correctly after prompt when typing', async () => {
-    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest')
 
     const mockShell = {
       getCompletions: () => ['build', 'bundle'],
@@ -111,7 +111,7 @@ describe('Cursor Positioning Tests', () => {
   })
 
   it('should test updateDisplay positioning logic directly', async () => {
-    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest')
 
     const mockShell = {
       getCompletions: () => ['build'],
@@ -173,7 +173,7 @@ describe('Cursor Positioning Tests', () => {
   })
 
   it('should handle prompt with ANSI escape sequences correctly', async () => {
-    const { AutoSuggestInput } = await import('../src/input/auto-suggest-input')
+    const { AutoSuggestInput } = await import('../src/input/auto-suggest')
 
     const mockShell = {
       getCompletions: () => ['test'],

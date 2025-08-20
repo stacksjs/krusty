@@ -1,6 +1,6 @@
 /* eslint-disable dot-notation */
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { AutoSuggestInput } from '../src/input/auto-suggest-input'
+import { AutoSuggestInput } from '../src/input/auto-suggest'
 
 // Mock shell interface
 const mockShell = {
@@ -104,6 +104,113 @@ describe('AutoSuggestInput', () => {
 
       // Should not create new lines
       expect(mockOutput).not.toContain('\n')
+    })
+
+    it('suppresses inline suggestion while history browsing is active', () => {
+      const prompt = '~/test ❯ '
+
+      // Prepare a visible inline suggestion scenario
+      autoSuggestInput['currentInput'] = 'b'
+      autoSuggestInput['cursorPosition'] = 1
+      autoSuggestInput['currentSuggestion'] = 'undle'
+      autoSuggestInput['isShowingSuggestions'] = false
+      autoSuggestInput['reverseSearchActive'] = false
+
+      // Mark history browsing active to suppress inline overlay
+      autoSuggestInput['historyBrowseActive'] = true
+
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+
+      // Should not print the inline suggestion suffix when browsing history
+      expect(mockOutput).not.toContain('undle')
+      // Still should contain prompt and base input
+      expect(mockOutput).toContain(prompt)
+      expect(mockOutput).toContain('b')
+    })
+
+    it('renders bracketed suggestions when list is open (not suppressed)', () => {
+      const prompt = '~/test ❯ '
+
+      // Open suggestions list manually
+      autoSuggestInput['currentInput'] = ''
+      autoSuggestInput['cursorPosition'] = 0
+      autoSuggestInput['suggestions'] = ['bun run', 'bun build']
+      autoSuggestInput['selectedIndex'] = 0
+      autoSuggestInput['isShowingSuggestions'] = true
+      autoSuggestInput['reverseSearchActive'] = false
+      autoSuggestInput['historyBrowseActive'] = false
+
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+
+      // Suggestions list prints with selected item in brackets
+      expect(mockOutput).toContain('[bun run]')
+    })
+  })
+
+  describe('history navigation integration', () => {
+    it('cycles through all matching history items including duplicates (most recent first)', () => {
+      const shell = {
+        ...mockShell,
+        history: ['echo a', 'git status', 'git push', 'git status', 'git commit', 'go build'],
+      } as any
+      const inp = new AutoSuggestInput(shell)
+
+      // Type prefix 'git ' and place cursor at end
+      ;(inp as any).setInputForTesting('git ', undefined)
+
+      // Up cycles: should go most recent matching first
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('git commit')
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('git status')
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('git push')
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('git status')
+    })
+
+    it('down moves towards newer entries and exits browsing at newest', () => {
+      const shell = {
+        ...mockShell,
+        history: ['a', 'b', 'c', 'cat x', 'cat y'],
+      } as any
+      const inp = new AutoSuggestInput(shell)
+      ;(inp as any).setInputForTesting('cat ', undefined)
+
+      // Enter browsing and move up twice
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('cat y')
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('cat x')
+
+      // Now move down back towards newer
+      ;(inp as any).historyDownForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('cat y')
+      // Move down again -> should exit browsing (no newer match)
+      ;(inp as any).historyDownForTesting()
+      expect((inp as any)['historyBrowseActive']).toBe(false)
+    })
+
+    it('typing resets history browsing and suggestions are suppressed during browsing', () => {
+      const shell = {
+        ...mockShell,
+        getCompletions: mock(() => ['cat', 'cargo', 'cp']),
+        history: ['cat notes', 'cat file'],
+      } as any
+      const inp = new AutoSuggestInput(shell)
+
+      // Start with prefix 'c' to get completions and matching history
+      ;(inp as any).setInputForTesting('c', undefined)
+      ;(inp as any).historyUpForTesting()
+      // While browsing, inline suggestion should be cleared and list closed
+      expect((inp as any)['currentSuggestion']).toBe('')
+      expect((inp as any)['isShowingSuggestions']).toBe(false)
+
+      // Now simulate typing which should reset browsing state
+      ;(inp as any).setInputForTesting('ca', undefined)
+      expect((inp as any)['historyBrowseActive']).toBe(false)
     })
   })
 

@@ -46,14 +46,10 @@ export class PromptRenderer {
   }
 
   private renderUser(systemInfo: SystemInfo): string {
-    if (!this.config.prompt?.showUser)
-      return ''
     return this.colorize(systemInfo.user, this.config.theme?.colors?.info || '#74B9FF')
   }
 
   private renderHost(systemInfo: SystemInfo): string {
-    if (!this.config.prompt?.showHost)
-      return ''
     return this.colorize(systemInfo.hostname, this.config.theme?.colors?.secondary || '#FF6B9D')
   }
 

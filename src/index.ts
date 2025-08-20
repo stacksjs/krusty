@@ -1,5 +1,5 @@
 export * from './builtins'
-export * from './completion'
+export * from './completion/index'
 export * from './config'
 export * from './history'
 export * from './hooks'

@@ -1,4 +1,4 @@
-import type { CompletionItem, Shell } from './types'
+import type { CompletionItem, Shell } from '../types'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -47,7 +47,8 @@ export class CompletionProvider {
   private getProjectRoot(): string {
     try {
       const here = fileURLToPath(new URL('.', import.meta.url))
-      return resolve(here, '..')
+      // Module lives in src/completion/, project root is two levels up
+      return resolve(here, '../..')
     }
     catch {
       return this.shell.cwd
@@ -578,8 +579,7 @@ export class CompletionProvider {
       case 'link':
       case 'unlink':
       case 'update':
-      case 'outdated':
-      {
+      case 'outdated': {
         const flags = [
           '--config',
           '-c',
@@ -762,10 +762,10 @@ export class CompletionProvider {
         ? rawPrefix.replace('~', homedir())
         : rawPrefix
 
-      // Build candidate base directories: shell.cwd, then repo root (parent of src)
-      // Using import.meta.url directly avoids stepping up twice inadvertently.
+      // Build candidate base directories: shell.cwd, then repo root
+      // Using import.meta.url directly and stepping up to project root
       const moduleDir = dirname(fileURLToPath(import.meta.url))
-      const repoRoot = resolve(moduleDir, '..')
+      const repoRoot = resolve(moduleDir, '../..')
       const candidates = [resolve(this.shell.cwd, basePath), resolve(repoRoot, basePath)]
 
       const completions: string[] = []
@@ -781,8 +781,9 @@ export class CompletionProvider {
           continue
         }
         for (const file of files) {
-          // Hide dotfiles unless the user started with '.' explicitly
-          if (!attempt.base.startsWith('.') && file.name.startsWith('.'))
+          // Hide dotfiles unless the user explicitly started with a '.' prefix (not just './')
+          const dotPrefixed = attempt.base.startsWith('.') && attempt.base !== '.'
+          if (!dotPrefixed && file.name.startsWith('.'))
             continue
           if (file.name.startsWith(attempt.base)) {
             const displayBase = rawPrefix.endsWith('/')

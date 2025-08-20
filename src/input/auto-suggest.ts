@@ -1,7 +1,12 @@
+import type { Buffer } from 'node:buffer'
 import type { Shell } from '../types'
 import process from 'node:process'
 import { emitKeypressEvents } from 'node:readline'
 import { sharedHistory } from '../history'
+import { HistoryNavigator } from '../history/history-navigator'
+import { displayWidth, truncateToWidth, visibleLength } from './ansi'
+import { getLines as utilGetLines, indexToLineCol as utilIndexToLineCol, lineColToIndex as utilLineColToIndex } from './cursor-utils'
+import { renderMultiLineIsolated, renderSingleLineIsolated, renderSingleLineShell, renderSuggestionList } from './render'
 
 export interface AutoSuggestOptions {
   maxSuggestions?: number
@@ -43,6 +48,12 @@ export class AutoSuggestInput {
   private reverseSearchQuery = ''
   private reverseSearchMatches: string[] = []
   private reverseSearchIndex = 0
+  // History browse state for Up/Down when input is empty
+  private historyBrowseActive = false
+  private historyBrowseIndex = -1
+  private historyBrowseSaved = ''
+  // New: pure history navigator for prefix-filtered browsing
+  private historyNav?: HistoryNavigator
 
   constructor(shell: Shell, options: AutoSuggestOptions = {}) {
     this.shell = shell
@@ -50,7 +61,7 @@ export class AutoSuggestInput {
       maxSuggestions: 10,
       showInline: true,
       highlightColor: '\x1B[90m', // Gray
-      suggestionColor: '\x1B[36m', // Cyan
+      suggestionColor: '\x1B[90m', // Gray
       keymap: 'emacs',
       syntaxHighlight: true,
       syntaxColors: {
@@ -101,9 +112,23 @@ export class AutoSuggestInput {
   }
 
   private getHistoryArray(): string[] | undefined {
+    // Prefer a fresh snapshot from the shell's HistoryManager
+    try {
+      const hm = (this.shell as any)?.historyManager
+      if (hm && typeof hm.getHistory === 'function') {
+        const fresh = hm.getHistory()
+        if (Array.isArray(fresh))
+          return fresh
+      }
+    }
+    catch {}
+
+    // Fallback to shell.history if present
     const arr = (this.shell as any)?.history as string[] | undefined
     if (arr && Array.isArray(arr))
       return arr
+
+    // Final fallback to shared singleton
     try {
       const shared = sharedHistory as any
       if (shared && typeof shared.getHistory === 'function')
@@ -184,19 +209,19 @@ export class AutoSuggestInput {
       const nl = this.currentInput.lastIndexOf('\n')
       return nl >= 0 ? this.currentInput.slice(nl + 1) : this.currentInput
     })()
-    const used = this.getVisibleLength(promptLastLine) + this.getVisibleLength(inputLastLine)
+    const used = displayWidth(promptLastLine) + displayWidth(inputLastLine)
     const available = Math.max(0, totalCols - used - 1) // space before status
     if (available <= 0)
       return ''
-    if (this.getVisibleLength(raw) <= available)
+    if (displayWidth(raw) <= available)
       return raw
     // Truncate with ellipsis, prefer trimming current match first
     const base = `(reverse-i-search) '${this.reverseSearchQuery}': `
-    const remain = Math.max(0, available - this.getVisibleLength(base) - 1)
+    const remain = Math.max(0, available - displayWidth(base) - 1)
     if (remain <= 0)
       return base.trimEnd()
     const cur = (this.reverseSearchMatches[this.reverseSearchIndex] || '')
-    const trimmed = `${cur.slice(0, remain)}…`
+    const trimmed = `${truncateToWidth(cur, Math.max(0, remain))}…`
     return `${base}${trimmed}`
   }
 
@@ -249,6 +274,11 @@ export class AutoSuggestInput {
       this.selectedIndex = 0
       this.isShowingSuggestions = false
       this.isNavigatingSuggestions = false
+      // Reset history browsing state for a fresh prompt
+      this.historyBrowseActive = false
+      this.historyBrowseIndex = -1
+      this.historyBrowseSaved = ''
+      this.historyNav = undefined
 
       // Don't write prompt - shell already wrote it via renderPrompt()
       // If shell mode is enabled, mark prompt as already written
@@ -256,9 +286,77 @@ export class AutoSuggestInput {
         this.promptAlreadyWritten = true
       }
 
+      // ... (rest of the code remains the same)
+      // Mouse tracking support for suggestion clicks (xterm SGR mode)
+      let mouseTrackingEnabled = false
+      const handleMouse = (chunk: Buffer) => {
+        if (!this.isShowingSuggestions || this.suggestions.length === 0)
+          return
+        // Parse SGR mouse sequence: \x1b[<btn;x;y(M|m)
+        const data = chunk.toString('utf8')
+        // Use regex literal with \u001B (ESC). Ignore the row (\d+) and case-insensitive for press/release.
+        // eslint-disable-next-line no-control-regex
+        const re = /\u001B\[<(\d+);(\d+);\d+(m)/gi
+        for (const match of data.matchAll(re)) {
+          const btn = Number(match[1])
+          const col = Number(match[2])
+          const type = match[3]
+          // Left button press
+          if (type.toUpperCase() === 'M' && btn === 0) {
+            // Map column to suggestion index based on rendered list layout
+            const cols = process.stdout.columns ?? 80
+            const items = this.suggestions.slice(0, this.options.maxSuggestions ?? 10)
+            // Visible labels: selected gets [label], others plain
+            const labels = items.map((s, i) => (i === this.selectedIndex ? `[${s}]` : s))
+            let cursor = 1 // columns are 1-based
+            let picked = -1
+            for (let i = 0; i < labels.length; i++) {
+              const label = labels[i]
+              const start = cursor
+              const end = Math.min(cols, start + label.length - 1)
+              if (col >= start && col <= end) {
+                picked = i
+                break
+              }
+              // advance: label + two spaces gap
+              cursor = end + 1 + 2
+              if (cursor > cols)
+                break
+            }
+            if (picked >= 0) {
+              this.selectedIndex = picked
+              this.applySelectedCompletion()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+            }
+          }
+        }
+      }
+      const enableMouseTracking = () => {
+        if (mouseTrackingEnabled)
+          return
+        mouseTrackingEnabled = true
+        // Enable xterm mouse reporting and SGR mode
+        stdout.write('\x1B[?1000h')
+        stdout.write('\x1B[?1006h')
+        stdin.on('data', handleMouse)
+      }
+      const disableMouseTracking = () => {
+        if (!mouseTrackingEnabled)
+          return
+        mouseTrackingEnabled = false
+        // Disable xterm mouse reporting and SGR mode
+        stdout.write('\x1B[?1000l')
+        stdout.write('\x1B[?1006l')
+        stdin.off('data', handleMouse)
+      }
+
       const cleanup = () => {
         stdin.setRawMode(false)
         stdin.removeAllListeners('keypress')
+        disableMouseTracking()
       }
 
       const handleKeypress = (str: string, key: any) => {
@@ -283,6 +381,16 @@ export class AutoSuggestInput {
 
           // Handle Enter
           if (key.name === 'return') {
+            // If suggestions list is open, accept the selected item instead of executing
+            if (this.isShowingSuggestions && this.suggestions.length > 0) {
+              this.applySelectedCompletion()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              this.updateSuggestions()
+              disableMouseTracking()
+              this.updateDisplay(prompt)
+              return
+            }
             // If reverse search active, accept current match
             if (this.reverseSearchActive) {
               const match = this.reverseSearchMatches[this.reverseSearchIndex]
@@ -308,6 +416,7 @@ export class AutoSuggestInput {
               this.cursorPosition++
               this.isShowingSuggestions = false
               this.isNavigatingSuggestions = false
+              disableMouseTracking()
               this.updateSuggestions()
               this.updateDisplay(prompt)
             }
@@ -398,6 +507,7 @@ export class AutoSuggestInput {
                 this.deleteCharUnderCursor()
                 this.isShowingSuggestions = false
                 this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -432,6 +542,7 @@ export class AutoSuggestInput {
                 this.killToEnd()
                 this.isShowingSuggestions = false
                 this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -455,6 +566,7 @@ export class AutoSuggestInput {
                 this.cursorPosition = 0
                 this.isShowingSuggestions = false
                 this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateSuggestions()
                 this.updateDisplay(prompt)
                 return
@@ -467,7 +579,6 @@ export class AutoSuggestInput {
             // Shift+Tab -> previous selection when list is open
             if (key.shift && this.isShowingSuggestions && this.suggestions.length > 0) {
               this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length
-              this.updateSuggestion()
               this.updateDisplay(prompt)
               return
             }
@@ -475,18 +586,19 @@ export class AutoSuggestInput {
             // If suggestions list is already shown, cycle to next selection
             if (this.isShowingSuggestions && this.suggestions.length > 0) {
               this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length
-              this.updateSuggestion()
               this.updateDisplay(prompt)
               return
             }
 
-            // Otherwise, open the suggestions list or apply inline suggestion
+            // Otherwise, open the suggestions list (do not insert text yet)
             this.updateSuggestions()
             if (this.suggestions.length > 0) {
               this.isShowingSuggestions = true
               this.isNavigatingSuggestions = true
               this.selectedIndex = 0
-              this.updateSuggestion()
+              // Suppress inline overlay while list is open
+              this.currentSuggestion = ''
+              enableMouseTracking()
               this.updateDisplay(prompt)
             }
             return
@@ -496,13 +608,11 @@ export class AutoSuggestInput {
           if (this.isShowingSuggestions && this.suggestions.length > 0) {
             if (key.name === 'down') {
               this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length
-              this.updateSuggestion()
               this.updateDisplay(prompt)
               return
             }
             if (key.name === 'up') {
               this.selectedIndex = (this.selectedIndex - 1 + this.suggestions.length) % this.suggestions.length
-              this.updateSuggestion()
               this.updateDisplay(prompt)
               return
             }
@@ -510,15 +620,7 @@ export class AutoSuggestInput {
               this.isShowingSuggestions = false
               this.isNavigatingSuggestions = false
               this.updateSuggestion()
-              this.updateDisplay(prompt)
-              return
-            }
-            if (key.name === 'return') {
-              // Accept the selected suggestion
-              this.applySelectedCompletion()
-              this.isShowingSuggestions = false
-              this.isNavigatingSuggestions = false
-              this.updateSuggestions()
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
@@ -530,10 +632,46 @@ export class AutoSuggestInput {
               this.moveCursorDown()
               this.updateDisplay(prompt)
             }
-            else if (this.suggestions.length > 0) {
-              this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
-              this.updateSuggestion()
-              this.updateDisplay(prompt)
+            else {
+              // If currently browsing via navigator, move newer (down)
+              const hist = this.getHistoryArray() || []
+              const prefix = this.getCurrentLinePrefix()
+              if (!this.historyNav) {
+                this.historyNav = new HistoryNavigator(hist, prefix)
+              }
+              else {
+                this.historyNav.setHistory(hist)
+                this.historyNav.setPrefix(prefix)
+              }
+
+              if (this.historyNav.isBrowsing()) {
+                const val = this.historyNav.down()
+                this.currentInput = val
+                this.cursorPosition = this.currentInput.length
+                // close suggestions while browsing
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                disableMouseTracking()
+                this.updateSuggestions()
+                this.updateDisplay(prompt)
+              }
+              else {
+                // Ensure suggestions are fresh when deciding to open the list
+                this.updateSuggestions()
+                if (this.suggestions.length > 0) {
+                  // Open the list if not open and select the first item for Down
+                  if (!this.isShowingSuggestions) {
+                    this.isShowingSuggestions = true
+                    this.isNavigatingSuggestions = true
+                    this.selectedIndex = 0
+                    enableMouseTracking()
+                  }
+                  else {
+                    this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
+                  }
+                  this.updateDisplay(prompt)
+                }
+              }
             }
             return
           }
@@ -543,10 +681,48 @@ export class AutoSuggestInput {
               this.moveCursorUp()
               this.updateDisplay(prompt)
             }
-            else if (this.suggestions.length > 0) {
-              this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
-              this.updateSuggestion()
-              this.updateDisplay(prompt)
+            else {
+              // Ensure suggestions are up-to-date; if available, prioritize cycling list
+              this.updateSuggestions()
+              if (this.suggestions.length > 0) {
+                // Leave navigator browsing when opening suggestions
+                this.historyNav = undefined
+                if (!this.isShowingSuggestions) {
+                  this.isShowingSuggestions = true
+                  this.isNavigatingSuggestions = true
+                  this.selectedIndex = this.suggestions.length - 1
+                  enableMouseTracking()
+                }
+                else {
+                  this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
+                }
+                this.updateDisplay(prompt)
+              }
+              else {
+                // Delegate to pure HistoryNavigator (prefix-filtered)
+                const hist = this.getHistoryArray() || []
+                const prefix = this.getCurrentLinePrefix()
+                if (!this.historyNav) {
+                  this.historyNav = new HistoryNavigator(hist, prefix)
+                }
+                else {
+                  this.historyNav.setHistory(hist)
+                  this.historyNav.setPrefix(prefix)
+                }
+                const val = this.historyNav.up()
+                if (this.historyNav.isBrowsing()) {
+                  this.currentInput = val
+                  this.cursorPosition = this.currentInput.length
+                  // Close suggestions while browsing
+                  this.isShowingSuggestions = false
+                  this.isNavigatingSuggestions = false
+                  this.suggestions = []
+                  this.currentSuggestion = ''
+                  disableMouseTracking()
+                  this.updateSuggestions()
+                  this.updateDisplay(prompt)
+                }
+              }
             }
             return
           }
@@ -554,13 +730,17 @@ export class AutoSuggestInput {
           // Handle Backspace (multi-line aware)
           if (key.name === 'backspace') {
             if (this.cursorPosition > 0) {
+              const wasOpen = this.isShowingSuggestions
               // Remove previous char; if it was a newline, we are joining lines
               this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
                 + this.currentInput.slice(this.cursorPosition)
               this.cursorPosition--
-              this.isShowingSuggestions = false
-              this.isNavigatingSuggestions = false
               this.updateSuggestions()
+              // Keep list open if it was open and there are still suggestions
+              this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
+              this.isNavigatingSuggestions = this.isShowingSuggestions
+              if (!this.isShowingSuggestions)
+                disableMouseTracking()
               this.updateDisplay(prompt)
             }
             return
@@ -569,11 +749,14 @@ export class AutoSuggestInput {
           // Handle Delete (multi-line aware: deleting a newline joins lines)
           if (key.name === 'delete') {
             if (this.cursorPosition < this.currentInput.length) {
+              const wasOpen = this.isShowingSuggestions
               this.currentInput = this.currentInput.slice(0, this.cursorPosition)
                 + this.currentInput.slice(this.cursorPosition + 1)
-              this.isShowingSuggestions = false
-              this.isNavigatingSuggestions = false
               this.updateSuggestions()
+              this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
+              this.isNavigatingSuggestions = this.isShowingSuggestions
+              if (!this.isShowingSuggestions)
+                disableMouseTracking()
               this.updateDisplay(prompt)
             }
             return
@@ -676,13 +859,21 @@ export class AutoSuggestInput {
             if (this.options.keymap === 'vi' && this.viMode === 'normal') {
               return
             }
+            // Cancel history browsing when typing
+            this.historyBrowseActive = false
+            this.historyBrowseIndex = -1
+            this.historyNav = undefined
+            const wasOpen = this.isShowingSuggestions
             this.currentInput = this.currentInput.slice(0, this.cursorPosition)
               + str
               + this.currentInput.slice(this.cursorPosition)
             this.cursorPosition++
-            this.isShowingSuggestions = false
-            this.isNavigatingSuggestions = false
             this.updateSuggestions()
+            // Keep list open while typing if it was open and still has matches
+            this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
+            this.isNavigatingSuggestions = this.isShowingSuggestions
+            if (!this.isShowingSuggestions)
+              disableMouseTracking()
             this.updateDisplay(prompt)
           }
         }
@@ -698,15 +889,78 @@ export class AutoSuggestInput {
 
   private updateSuggestions() {
     try {
+      // Suppress all suggestions while browsing history
+      if (this.historyBrowseActive) {
+        this.suggestions = []
+        this.currentSuggestion = ''
+        this.isShowingSuggestions = false
+        this.isNavigatingSuggestions = false
+        return
+      }
+
+      // Preserve previous selection context
+      const prevSuggestions = this.suggestions || []
+      const prevSelectedIndex = this.selectedIndex ?? 0
+      const prevSelected = prevSuggestions[prevSelectedIndex]
+
       // Get suggestions from shell (includes plugin completions)
-      this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
-      this.selectedIndex = 0
-      // If no plugin completions, fall back to history-based matches
-      if (this.suggestions.length === 0) {
+      const rawNext = this.shell.getCompletions(this.currentInput, this.cursorPosition) || []
+      let next = rawNext
+
+      // Filter by current token prefix to support live filtering as the user types
+      const before = this.currentInput.slice(0, this.cursorPosition)
+      const token = (before.match(/(^|\s)(\S*)$/)?.[2] ?? '').trim()
+      if (token.length > 0) {
+        const lower = token.toLowerCase()
+        const filtered = next.filter(s => s.toLowerCase().startsWith(lower))
+        // If strict prefix filtering removes all items, keep the raw list to allow
+        // typo-correction suggestions (e.g., suggest 'git' when typing 'gut').
+        next = filtered.length > 0 ? filtered : rawNext
+      }
+
+      // Merge with history suggestions, deduped, preserving order and limit
+      const max = this.options.maxSuggestions ?? 10
+      const merged: string[] = []
+      const seen = new Set<string>()
+      for (const s of next) {
+        if (!seen.has(s)) {
+          merged.push(s)
+          seen.add(s)
+          if (merged.length >= max)
+            break
+        }
+      }
+      if (merged.length < max) {
         const prefix = this.getCurrentLinePrefix()
         const hist = this.getHistorySuggestions(prefix)
-        if (hist.length > 0)
-          this.suggestions = hist
+        for (const h of hist) {
+          if (!seen.has(h)) {
+            merged.push(h)
+            seen.add(h)
+            if (merged.length >= max)
+              break
+          }
+        }
+      }
+      this.suggestions = merged
+
+      // Try to preserve previously selected item/index if still present
+      if (this.suggestions.length > 0) {
+        if (prevSelected) {
+          const idx = this.suggestions.findIndex(s => s === prevSelected)
+          if (idx >= 0) {
+            this.selectedIndex = idx
+          }
+          else {
+            this.selectedIndex = Math.min(prevSelectedIndex, this.suggestions.length - 1)
+          }
+        }
+        else {
+          this.selectedIndex = Math.min(prevSelectedIndex, this.suggestions.length - 1)
+        }
+      }
+      else {
+        this.selectedIndex = 0
       }
       this.updateSuggestion()
     }
@@ -742,7 +996,10 @@ export class AutoSuggestInput {
           this.currentSuggestion = selected.slice(lastToken.length)
         }
         else {
-          this.currentSuggestion = ''
+          // For typo-corrections (e.g., 'gti' -> 'git'), still show a suggestion
+          // to indicate the correction. We render the full selection so the user
+          // can accept it via Tab/Enter when list is open.
+          this.currentSuggestion = selected
         }
       }
     }
@@ -803,214 +1060,89 @@ export class AutoSuggestInput {
   private lastDisplayedSuggestion = ''
   private promptAlreadyWritten = false
   private shellMode = false
+  private hadSuggestionsLastRender = false
+  private lastSelectedIndex = -1
+  private lastShowSuggestions = false
 
   private updateDisplay(prompt: string) {
     const stdout = process.stdout
 
-    // Only update if input or suggestion actually changed
+    // Only update if relevant state changed
     if (this.currentInput === this.lastDisplayedInput
-      && this.currentSuggestion === this.lastDisplayedSuggestion) {
+      && this.currentSuggestion === this.lastDisplayedSuggestion
+      && this.selectedIndex === this.lastSelectedIndex
+      && this.isShowingSuggestions === this.lastShowSuggestions) {
       return
     }
 
     // Calculate visible prompt length for the LAST line (handles multi-line prompts)
     const promptLastLine = prompt.slice(prompt.lastIndexOf('\n') + 1)
-    const visiblePromptLastLen = this.getVisibleLength(promptLastLine)
+    const visiblePromptLastLen = visibleLength(promptLastLine)
     const cursorColumn = visiblePromptLastLen + this.cursorPosition + 1 // +1 for 1-based column
 
     const hasNewlines = this.currentInput.includes('\n')
+    const reverseStatus = this.reverseSearchActive ? this.formatReverseStatusForWidth(prompt) : ''
     if (this.shellMode && this.promptAlreadyWritten && !hasNewlines) {
       // Shell mode: only update input area, don't rewrite prompt
-      const inputStartColumn = visiblePromptLastLen + 1
-
-      // Move to start of input, clear to end of line, and write input (with optional highlighting)
-      const renderedSingle = this.options.syntaxHighlight
-        ? this.renderHighlighted(this.currentInput)
-        : this.currentInput
-      stdout.write(`\x1B[${inputStartColumn}G\x1B[K${renderedSingle}\x1B[0m`)
-
-      // Show reverse search status inline (dim)
-      if (this.reverseSearchActive) {
-        const status = this.formatReverseStatusForWidth(prompt)
-        if (status)
-          stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
-      }
-
-      // Show inline suggestion if available
-      if (!this.reverseSearchActive && this.options.showInline && this.currentSuggestion) {
-        stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
-      }
-
-      // Clear any remaining characters from previous input
-      if (this.lastDisplayedInput.length > this.currentInput.length) {
-        const remainingChars = this.lastDisplayedInput.length - this.currentInput.length
-        stdout.write(' '.repeat(remainingChars))
-        stdout.write(`\x1B[${cursorColumn}G`) // Move cursor back to position
-      }
-
-      // Explicitly set cursor position after updates
-      stdout.write(`\x1B[${cursorColumn}G`)
-
-      // Restore cursor position if we're not at the end
-      if (this.cursorPosition < this.currentInput.length) {
-        // Calculate the actual cursor position in the line
-        const actualCursorColumn = visiblePromptLastLen + this.cursorPosition + 1
-        stdout.write(`\x1B[${actualCursorColumn}G`)
-      }
+      renderSingleLineShell(
+        stdout,
+        this.currentInput,
+        this.options,
+        visiblePromptLastLen,
+        cursorColumn,
+        !this.isShowingSuggestions && !this.reverseSearchActive && !this.historyBrowseActive && !!this.options.showInline,
+        this.currentSuggestion,
+        reverseStatus,
+        this.lastDisplayedInput.length,
+      )
     }
     else {
-      // Isolated mode: always clear line and write prompt + input
-      stdout.write('\r\x1B[2K')
+      // Isolated mode: helper will clear and render prompt + input
       if (!hasNewlines) {
         // Single-line behavior
-        const renderedSingle = this.options.syntaxHighlight
-          ? this.renderHighlighted(this.currentInput)
-          : this.currentInput
-        stdout.write(`${prompt}${renderedSingle}\x1B[0m`)
-
-        if (!this.reverseSearchActive && this.options.showInline && this.currentSuggestion) {
-          stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
-        }
-        stdout.write(`\x1B[${cursorColumn}G`)
+        renderSingleLineIsolated(
+          stdout,
+          prompt,
+          this.currentInput,
+          this.options,
+          visiblePromptLastLen,
+          cursorColumn,
+          !this.isShowingSuggestions && !this.reverseSearchActive && !this.historyBrowseActive && !!this.options.showInline,
+          this.currentSuggestion,
+          reverseStatus,
+        )
       }
       else {
         // Multi-line rendering with continuation prompt
-        const lines = this.currentInput.split('\n')
         const contPrompt = (this.shell?.config?.theme?.prompt?.continuation ?? '... ')
-        const visibleContLen = this.getVisibleLength(contPrompt)
-
-        // Write first line with main prompt
-        const firstLineRendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[0]) : lines[0]
-        stdout.write(`${prompt}${firstLineRendered}\x1B[0m`)
-        if (this.reverseSearchActive) {
-          const status = this.formatReverseStatusForWidth(prompt)
-          if (status)
-            stdout.write(` ${this.options.highlightColor}${status}\x1B[0m`)
-        }
-        // Write subsequent lines with continuation prompt
-        for (let i = 1; i < lines.length; i++) {
-          const rendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[i]) : lines[i]
-          stdout.write(`\n\x1B[2K${contPrompt}${rendered}\x1B[0m`)
-        }
-
-        // Compute cursor target row/col
-        const curIndex = this.cursorPosition
-        // Determine current line index and column in that line
-        let remaining = curIndex
-        let lineIndex = 0
-        for (let i = 0; i < lines.length; i++) {
-          const len = lines[i].length
-          if (remaining <= len) {
-            lineIndex = i
-            break
-          }
-          remaining -= (len + 1) // +1 for the newline
-          lineIndex = i + 1
-        }
-        const colInLine = remaining
-        const totalLines = lines.length
-
-        // After writes, cursor is at end of last line. Move up to target line.
-        const linesUp = (totalLines - 1) - lineIndex
-        if (linesUp > 0)
-          stdout.write(`\x1B[${linesUp}A`)
-        // Set column based on prompt length for the target row
-        // When the first prompt is multi-line, only the last line width applies to the first input line
-        const baseLen = lineIndex === 0 ? visiblePromptLastLen : visibleContLen
-        const targetCol = baseLen + colInLine + 1
-        stdout.write(`\x1B[${targetCol}G`)
+        renderMultiLineIsolated(
+          stdout,
+          prompt,
+          this.currentInput,
+          contPrompt,
+          this.options,
+          this.cursorPosition,
+          visiblePromptLastLen,
+          reverseStatus,
+        )
       }
       this.promptAlreadyWritten = true
     }
 
     // If suggestions list is open, render a compact one-line list and restore cursor
-    if (this.isShowingSuggestions && this.suggestions.length > 0) {
-      const reset = '\x1B[0m'
-      const selColor = this.options.suggestionColor ?? '\x1B[36m'
-      const dim = this.options.highlightColor ?? '\x1B[90m'
-      const items = this.suggestions.slice(0, this.options.maxSuggestions ?? 10)
-        .map((s, i) => i === this.selectedIndex ? `${selColor}[${s}]${reset}` : `${dim}${s}${reset}`)
-        .join('  ')
-      stdout.write(`\n${items}`)
-      // Move back to input line at correct column
-      stdout.write(`\x1B[1A`)
-      stdout.write(`\x1B[${cursorColumn}G`)
+    if (this.isShowingSuggestions) {
+      const shown = renderSuggestionList(stdout, this.suggestions, this.selectedIndex, this.options, this.hadSuggestionsLastRender)
+      this.hadSuggestionsLastRender = shown
     }
 
     // Remember what we displayed
     this.lastDisplayedInput = this.currentInput
     this.lastDisplayedSuggestion = this.currentSuggestion
+    this.lastSelectedIndex = this.selectedIndex
+    this.lastShowSuggestions = this.isShowingSuggestions
   }
 
-  // Helper method to calculate visible length of text (excluding ANSI escape sequences)
-  private getVisibleLength(text: string): number {
-    // Remove ANSI escape sequences to get actual visible length
-    // eslint-disable-next-line no-control-regex
-    return text.replace(/\x1B\[[0-9;]*[mGKH]/g, '').length
-  }
-
-  // Lightweight syntax highlighting for rendering only (does not affect state)
-  private renderHighlighted(text: string): string {
-    const reset = '\x1B[0m'
-    const colors = {
-      command: this.options.syntaxColors?.command ?? '\x1B[36m',
-      subcommand: this.options.syntaxColors?.subcommand ?? '\x1B[94m',
-      string: this.options.syntaxColors?.string ?? (this.options.highlightColor ?? '\x1B[90m'),
-      operator: this.options.syntaxColors?.operator ?? (this.options.highlightColor ?? '\x1B[90m'),
-      variable: this.options.syntaxColors?.variable ?? (this.options.highlightColor ?? '\x1B[90m'),
-      flag: this.options.syntaxColors?.flag ?? '\x1B[33m',
-      number: this.options.syntaxColors?.number ?? '\x1B[35m',
-      path: this.options.syntaxColors?.path ?? '\x1B[32m',
-      comment: this.options.syntaxColors?.comment ?? (this.options.highlightColor ?? '\x1B[90m'),
-    }
-
-    // Handle comments first: color from first unquoted # to end
-    // Simple heuristic: split on first # not preceded by \
-    let commentIndex = -1
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === '#') {
-        if (i === 0 || text[i - 1] !== '\\') {
-          commentIndex = i
-          break
-        }
-      }
-    }
-    if (commentIndex >= 0) {
-      const left = text.slice(0, commentIndex)
-      const comment = text.slice(commentIndex)
-      return `${this.renderHighlighted(left)}${colors.comment}${comment}${reset}`
-    }
-
-    let out = text
-
-    // Strings
-    out = out.replace(/("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')/g, `${colors.string}$1${reset}`)
-
-    // Common subcommands for tools like git/npm/yarn/bun: color the subcommand token
-    out = out.replace(/\b(git|npm|yarn|pnpm|bun)\s+([a-z][\w:-]*)/i, (_m, tool: string, sub: string) => {
-      return `${tool} ${colors.subcommand}${sub}${reset}`
-    })
-
-    // Command at line start
-    out = out.replace(/^([\w./-]+)/, `${colors.command}$1${reset}`)
-
-    // Flags: -a, -xyz, --long-flag
-    out = out.replace(/\s(--?[a-z][\w-]*)/gi, ` ${colors.flag}$1${reset}`)
-
-    // Variables $VAR, ${VAR}, $1
-    out = out.replace(/\$(?:\d+|\{?\w+\}?)/g, `${colors.variable}$&${reset}`)
-
-    // Operators and pipes/redirections
-    out = out.replace(/(\|\||&&|;|<<?|>>?)/g, `${colors.operator}$1${reset}`)
-
-    // Numbers
-    out = out.replace(/\b(\d+)\b/g, `${colors.number}$1${reset}`)
-
-    // Paths: ./foo, ../bar, /usr/bin, ~/x
-    out = out.replace(/((?:\.{1,2}|~)?\/[\w@%\-./]+)/g, `${colors.path}$1${reset}`)
-
-    return out
-  }
+  // renderHighlighted moved to src/input/highlighting.ts
 
   // Method to enable shell mode where prompt is managed externally
   setShellMode(enabled: boolean): void {
@@ -1029,14 +1161,25 @@ export class AutoSuggestInput {
     this.promptAlreadyWritten = false
   }
 
-  // Method for testing - allows setting input state directly
+  /** @internal */
   setInputForTesting(input: string, cursorPos?: number): void {
     this.currentInput = input
     this.cursorPosition = cursorPos ?? input.length
+    // Typing should reset history browsing state
+    this.historyBrowseActive = false
+    if (this.historyNav) {
+      // Update navigator prefix to current line and reset index
+      const newPrefix = this.getCurrentLinePrefix()
+      try {
+        this.historyNav.setPrefix(newPrefix)
+        this.historyNav.reset()
+      }
+      catch {}
+    }
     this.updateSuggestions()
   }
 
-  // Method for testing - triggers display update with given prompt
+  /** @internal */
   updateDisplayForTesting(prompt: string): void {
     // Force isolated rendering for tests so the prompt is included in output
     const savedShellMode = this.shellMode
@@ -1052,17 +1195,17 @@ export class AutoSuggestInput {
     }
   }
 
-  // Method for testing - get current input
+  /** @internal */
   getCurrentInputForTesting(): string {
     return this.currentInput
   }
 
-  // Method for testing - get cursor position
+  /** @internal */
   getCursorPositionForTesting(): number {
     return this.cursorPosition
   }
 
-  // Method for testing - set cursor position
+  /** @internal */
   setCursorPositionForTesting(pos: number): void {
     this.cursorPosition = pos
   }
@@ -1135,8 +1278,8 @@ export class AutoSuggestInput {
     }
   }
 
+  // ===== Test-only helpers =====
   // Testing helpers to simulate key behavior without raw stdin
-  // Use only in tests
   backspaceOneForTesting(): void {
     if (this.cursorPosition > 0) {
       this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
@@ -1146,9 +1289,72 @@ export class AutoSuggestInput {
     }
   }
 
+  /** @internal */
   deleteOneForTesting(): void {
     this.deleteCharUnderCursor()
     this.updateSuggestions()
+  }
+
+  // History navigation helpers for tests
+  /** @internal */
+  historyUpForTesting(): void {
+    this.navigateHistoryForTesting('up')
+  }
+
+  /** @internal */
+  historyDownForTesting(): void {
+    this.navigateHistoryForTesting('down')
+  }
+
+  // Shared helpers to keep history navigation logic DRY and maintainable
+  private refreshNavigatorIfIdle(): void {
+    const hist = this.getHistoryArray() || []
+    const prefix = this.getCurrentLinePrefix()
+    if (!this.historyNav) {
+      this.historyNav = new HistoryNavigator(hist, prefix)
+      return
+    }
+    if (!this.historyNav.isBrowsing()) {
+      this.historyNav.setHistory(hist)
+      this.historyNav.setPrefix(prefix)
+    }
+  }
+
+  private applyHistoryBrowseState(active: boolean, value?: string): void {
+    if (active && typeof value === 'string') {
+      this.setCurrentInput(value)
+      this.suppressSuggestions()
+      this.historyBrowseActive = true
+    }
+    else {
+      this.historyBrowseActive = false
+    }
+  }
+
+  private navigateHistoryForTesting(direction: 'up' | 'down'): void {
+    this.refreshNavigatorIfIdle()
+    const val = direction === 'up' ? this.historyNav!.up() : this.historyNav!.down()
+    this.applyHistoryBrowseState(this.historyNav!.isBrowsing(), val)
+    this.updateSuggestions()
+  }
+
+  // Suggestion helpers
+  private suppressSuggestions(): void {
+    this.isShowingSuggestions = false
+    this.isNavigatingSuggestions = false
+    this.suggestions = []
+    this.currentSuggestion = ''
+  }
+
+  private clearSuggestions(): void {
+    this.suggestions = []
+    this.currentSuggestion = ''
+  }
+
+  private setCurrentInput(value: string, moveCursorToEnd = true): void {
+    this.currentInput = value
+    if (moveCursorToEnd)
+      this.cursorPosition = this.currentInput.length
   }
 
   private killToEnd() {
@@ -1190,29 +1396,15 @@ export class AutoSuggestInput {
 
   // Multi-line utilities and vertical movement
   private getLines(): string[] {
-    return this.currentInput.split('\n')
+    return utilGetLines(this.currentInput)
   }
 
   private indexToLineCol(index: number): { line: number, col: number } {
-    const lines = this.getLines()
-    let remaining = Math.max(0, Math.min(index, this.currentInput.length))
-    for (let i = 0; i < lines.length; i++) {
-      const len = lines[i].length
-      if (remaining <= len)
-        return { line: i, col: remaining }
-      remaining -= (len + 1)
-    }
-    return { line: lines.length - 1, col: (lines[lines.length - 1] || '').length }
+    return utilIndexToLineCol(this.currentInput, index)
   }
 
   private lineColToIndex(line: number, col: number): number {
-    const lines = this.getLines()
-    const safeLine = Math.max(0, Math.min(line, lines.length - 1))
-    let idx = 0
-    for (let i = 0; i < safeLine; i++) idx += lines[i].length + 1
-    const maxCol = (lines[safeLine] ?? '').length
-    const safeCol = Math.max(0, Math.min(col, maxCol))
-    return idx + safeCol
+    return utilLineColToIndex(this.currentInput, line, col)
   }
 
   private moveCursorUp() {

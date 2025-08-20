@@ -1,7 +1,7 @@
 /* eslint-disable dot-notation */
 import { describe, expect, it, mock } from 'bun:test'
 import { sharedHistory } from '../src/history'
-import { AutoSuggestInput } from '../src/input/auto-suggest-input'
+import { AutoSuggestInput } from '../src/input/auto-suggest'
 
 // Ensure sharedHistory is used when shell.history is absent
 

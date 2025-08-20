@@ -10,9 +10,9 @@ import process from 'node:process'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
 import { defaultConfig, loadKrustyConfig } from './config'
-import { HistoryManager } from './history'
+import { HistoryManager, sharedHistory } from './history'
 import { HookManager } from './hooks'
-import { AutoSuggestInput } from './input/auto-suggest-input'
+import { AutoSuggestInput } from './input/auto-suggest'
 import { JobManager } from './jobs/job-manager'
 import { Logger } from './logger'
 import { CommandParser } from './parser'
@@ -499,6 +499,12 @@ export class KrustyShell implements Shell {
   addToHistory(command: string): void {
     this.historyManager.add(command)
     this.history = this.historyManager.getHistory()
+
+    // Keep shared history in sync so components using the singleton see latest entries
+    try {
+      sharedHistory.add(command)
+    }
+    catch {}
 
     // Execute history:add hooks
     this.hookManager.executeHooks('history:add', { command }).catch(err => this.log.error('history:add hook error:', err))
