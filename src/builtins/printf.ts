@@ -1,4 +1,4 @@
-import type { BuiltinCommand, CommandResult, Shell } from './types'
+import type { BuiltinCommand, CommandResult, Shell } from '../types'
 
 function format(spec: string, args: string[]): string {
   let i = 0

@@ -9,6 +9,11 @@ export class CommandParser {
       return { commands: [] }
     }
 
+    // Basic syntax validation: detect unterminated quotes early
+    if (this.hasUnterminatedQuotes(trimmed)) {
+      throw new Error('unterminated quote')
+    }
+
     // Handle command chaining (;, &&, ||) first, before expansion
     const segments = this.splitByOperators(trimmed)
     const commands: Command[] = []
@@ -178,6 +183,43 @@ export class CommandParser {
     }
 
     return tokens
+  }
+
+  /**
+   * Detects if the input contains unterminated quotes
+   */
+  private hasUnterminatedQuotes(input: string): boolean {
+    let inQuotes = false
+    let quoteChar = ''
+    let escaped = false
+
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i]
+
+      if (escaped) {
+        escaped = false
+        continue
+      }
+
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+
+      if (!inQuotes && (char === '"' || char === '\'')) {
+        inQuotes = true
+        quoteChar = char
+        continue
+      }
+
+      if (inQuotes && char === quoteChar) {
+        inQuotes = false
+        quoteChar = ''
+        continue
+      }
+    }
+
+    return inQuotes
   }
 
   private async parseSegment(segment: string, shell?: any): Promise<{

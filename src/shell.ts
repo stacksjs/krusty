@@ -294,15 +294,20 @@ export class KrustyShell implements Shell {
       }
 
       // Parse the command
-      const parsed = await this.parseCommand(command)
-
+      let parsed
+      try {
+        parsed = await this.parseCommand(command)
+      }
+      catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const stderr = `krusty: syntax error: ${msg}\n`
+        const result = { exitCode: 2, stdout: '', stderr, duration: performance.now() - start }
+        // Execute command:error hooks with parse context
+        await this.hookManager.executeHooks('command:error', { command, error: msg, result })
+        return result
+      }
       if (parsed.commands.length === 0) {
-        return {
-          exitCode: 0,
-          stdout: '',
-          stderr: '',
-          duration: performance.now() - start,
-        }
+        return { exitCode: 0, stdout: '', stderr: '', duration: performance.now() - start }
       }
 
       // Execute command chain
@@ -1326,6 +1331,25 @@ export class KrustyShell implements Shell {
       // Stream output in real-time by default, unless explicitly disabled or running in background
       const shouldStream = !command.background && this.config.streamOutput !== false
 
+      // Apply optional execution timeout
+      const timeoutMs = this.config.execution?.defaultTimeoutMs ?? 0
+      const killSignal = (this.config.execution?.killSignal as NodeJS.Signals) || 'SIGTERM'
+      let timeoutHandle: NodeJS.Timeout | null = null
+      let killedForTimeout = false
+      if (!command.background && timeoutMs > 0) {
+        timeoutHandle = setTimeout(() => {
+          try {
+            killedForTimeout = true
+            child.kill(killSignal)
+            // Force kill after grace period if still alive
+            setTimeout(() => {
+              try { child.kill('SIGKILL') } catch {}
+            }, 5000)
+          }
+          catch {}
+        }, timeoutMs)
+      }
+
       // Handle stdout (skip if redirected to file)
       if (!skipStdoutCapture) {
         child.stdout?.on('data', (data) => {
@@ -1376,8 +1400,8 @@ export class KrustyShell implements Shell {
 
         resolve({
           exitCode: this.lastExitCode,
-          stdout,
-          stderr,
+          stdout: skipStdoutCapture ? '' : stdout,
+          stderr: killedForTimeout ? `${stderr}krusty: process timed out after ${timeoutMs}ms\n` : stderr,
           duration: performance.now() - start,
           // If we streamed during execution, signal that callers shouldn't re-print
           streamed: shouldStream,

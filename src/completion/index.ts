@@ -45,6 +45,54 @@ export class CompletionProvider {
   }
 
   /**
+   * Collect commands available on PATH. Optimized to avoid per-file stat calls.
+   * Uses a simple time-based cache keyed by the PATH string.
+   */
+  private getPathCommands(): string[] {
+    try {
+      const now = Date.now()
+      const pathStr = process.env.PATH || ''
+      // Use a stable cache key so changes to PATH don't invalidate cache within the window
+      const cacheKey = 'PATH_COMMANDS_CACHE'
+
+      if ((now - this.lastCacheUpdate) < this.cacheTimeout) {
+        const cached = this.commandCache.get(cacheKey)
+        if (cached)
+          return cached
+      }
+
+      const names = new Set<string>()
+      for (const dir of pathStr.split(':')) {
+        if (!dir)
+          continue
+        try {
+          const entries = readdirSync(dir, { withFileTypes: true })
+          for (const e of entries) {
+            const n = e.name
+            if (!n || n.startsWith('.'))
+              continue
+            // Keep regular files and symlinks; skip directories and others.
+            if (e.isDirectory())
+              continue
+            names.add(n)
+          }
+        }
+        catch {
+          // ignore unreadable PATH entries
+        }
+      }
+
+      const list = Array.from(names)
+      this.commandCache.set(cacheKey, list)
+      this.lastCacheUpdate = now
+      return list
+    }
+    catch {
+      return []
+    }
+  }
+
+  /**
    * Get full-path executable suggestions from PATH directories for a given prefix
    */
   private getBinPathCompletions(prefix: string): string[] {
@@ -808,47 +856,6 @@ export class CompletionProvider {
     }
   }
 
-  /**
-   * Get all executable commands from PATH
-   */
-  private getPathCommands(): string[] {
-    const now = Date.now()
-    if (now - this.lastCacheUpdate < this.cacheTimeout && this.commandCache.has('path')) {
-      return this.commandCache.get('path') || []
-    }
-
-    const path = process.env.PATH || ''
-    const commands = new Set<string>()
-
-    for (const dir of path.split(':')) {
-      try {
-        const files = readdirSync(dir, { withFileTypes: true })
-        for (const file of files) {
-          if (file.isFile() && !file.name.startsWith('.')) {
-            try {
-              const fullPath = join(dir, file.name)
-              const stat = statSync(fullPath)
-              const isExecutable = Boolean(stat.mode & 0o111)
-              if (isExecutable) {
-                commands.add(file.name)
-              }
-            }
-            catch {
-              // Skip files we can't stat
-            }
-          }
-        }
-      }
-      catch {
-        // Skip directories we can't read
-      }
-    }
-
-    const commandList = Array.from(commands)
-    this.commandCache.set('path', commandList)
-    this.lastCacheUpdate = now
-    return commandList
-  }
 
   /**
    * Get file and directory completions for a given path prefix

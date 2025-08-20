@@ -10,6 +10,8 @@ export class PluginManager {
   private updateInterval: NodeJS.Timeout | null = null
   private shell: Shell
   private config: KrustyConfig
+  // Keep lazily-configured plugins to load on demand
+  private lazyPlugins: Map<string, { item: NonNullable<PluginConfig['list']>[number], parent: PluginConfig }> = new Map()
 
   constructor(shell: Shell, shellConfig: KrustyConfig) {
     this.shell = shell
@@ -75,6 +77,63 @@ export class PluginManager {
     }
   }
 
+  // Begin: Lazy loading helpers
+  private async loadLazyByName(name: string): Promise<void> {
+    const lazy = this.lazyPlugins.get(name)
+    if (!lazy)
+      return
+
+    const { item, parent } = lazy
+    try {
+      // Handle built-in default plugins
+      if (item.name === 'auto-suggest' || item.name === 'highlight') {
+        await this.loadBuiltinPlugin(item.name, item.config)
+      }
+      else {
+        const pluginPath = item.path
+          ? this.resolvePath(item.path)
+          : join(this.pluginDir, item.name)
+
+        if (!existsSync(pluginPath)) {
+          if (item.url) {
+            await this.installPluginItem(item)
+          }
+          else {
+            this.shell.log?.warn(`Plugin not found: ${item.name}`)
+            return
+          }
+        }
+
+        const pluginModule = await import(pluginPath)
+        const plugin: Plugin = pluginModule.default || pluginModule
+        if (this.validatePlugin(plugin)) {
+          this.plugins.set(plugin.name, plugin)
+          await this.initializePlugin(plugin, item.config || {})
+        }
+      }
+    }
+    catch (error) {
+      if (this.shell.log)
+        this.shell.log.error(`Failed to load lazy plugin ${name}:`, error)
+      else
+        console.error(`Failed to load lazy plugin ${name}:`, error)
+    }
+    finally {
+      // Remove from lazy registry regardless of success to avoid repeated attempts
+      this.lazyPlugins.delete(name)
+    }
+  }
+
+  // Fire-and-forget background load for specific plugins
+  ensureLazyLoaded(names?: string[]): void {
+    const targets = names && names.length > 0 ? names : Array.from(this.lazyPlugins.keys())
+    for (const n of targets) {
+      // Trigger async load without awaiting to avoid blocking callers
+      this.loadLazyByName(n).catch(err => this.shell.log?.error?.(`Lazy load error for ${n}:`, err))
+    }
+  }
+  // End: Lazy loading helpers
+
   private ensurePluginDir(): void {
     if (!existsSync(this.pluginDir)) {
       mkdirSync(this.pluginDir, { recursive: true })
@@ -135,6 +194,12 @@ export class PluginManager {
       for (const pluginItem of pluginList) {
         if (pluginItem.enabled === false)
           continue
+
+        // If marked as lazy, defer actual loading
+        if (pluginItem.lazy) {
+          this.lazyPlugins.set(pluginItem.name, { item: pluginItem, parent: pluginConfig })
+          continue
+        }
 
         // Handle built-in default plugins
         if (pluginItem.name === 'auto-suggest' || pluginItem.name === 'highlight') {
@@ -295,6 +360,9 @@ export class PluginManager {
   }
 
   public getPlugin(name: string): Plugin | undefined {
+    // Trigger background lazy load if needed, then return what's available now
+    if (this.lazyPlugins.has(name))
+      this.ensureLazyLoaded([name])
     return this.plugins.get(name)
   }
 
@@ -344,6 +412,10 @@ export class PluginManager {
 
   public getPluginCompletions(input: string, cursor: number): string[] {
     const completions: string[] = []
+
+    // Ensure any lazy plugins are being loaded before gathering completions
+    if (this.lazyPlugins.size > 0)
+      this.ensureLazyLoaded()
 
     for (const [name, plugin] of this.plugins) {
       if (plugin.completions) {

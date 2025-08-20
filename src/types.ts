@@ -3,6 +3,7 @@ import type { Logger } from './logger'
 export interface KrustyConfig {
   verbose: boolean
   streamOutput?: boolean
+  execution?: ExecutionConfig
   prompt?: PromptConfig
   history?: HistoryConfig
   completion?: CompletionConfig
@@ -708,6 +709,11 @@ export interface PluginConfig {
   list?: Array<{
     name: string
     enabled?: boolean
+    /**
+     * Lazily load this plugin on first access (e.g., when completions or getPlugin are requested).
+     * Defaults to false to preserve current behavior.
+     */
+    lazy?: boolean
     path?: string
     url?: string
     version?: string
@@ -715,6 +721,20 @@ export interface PluginConfig {
   }>
   // Plugin update settings
   update?: PluginUpdateConfig
+}
+
+// Execution behavior configuration
+export interface ExecutionConfig {
+  /**
+   * Default timeout in milliseconds for external commands (0 to disable).
+   * When exceeded, the process receives killSignal (default SIGTERM),
+   * followed by SIGKILL after a short grace period.
+   */
+  defaultTimeoutMs?: number
+  /**
+   * Signal used to terminate timed-out processes. Defaults to 'SIGTERM'.
+   */
+  killSignal?: string
 }
 
 export interface Plugin {

@@ -14,6 +14,7 @@ import { dotfilesCommand } from './dotfiles'
 import { echoCommand } from './echo'
 import { emptytrashCommand } from './emptytrash'
 import { evalCommand } from './eval'
+import { envCommand } from './env'
 import { execCommand } from './exec'
 import { exitCommand } from './exit'
 import { exportCommand } from './export'
@@ -80,6 +81,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('echo', echoCommand)
   builtins.set('emptytrash', emptytrashCommand)
   builtins.set('eval', evalCommand)
+  builtins.set('env', envCommand)
   builtins.set('exec', execCommand)
   builtins.set('exit', exitCommand)
   builtins.set('export', exportCommand)
