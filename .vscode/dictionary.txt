@@ -18,6 +18,7 @@ degit
 deps
 destructurable
 dtsx
+emptytrash
 entrypoints
 getopts
 heroicons

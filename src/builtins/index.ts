@@ -1,6 +1,7 @@
 import type { BuiltinCommand } from '../types'
 import { aliasCommand } from './alias'
 import { bgCommand } from './bg'
+import { bookmarkCommand } from './bookmark'
 import { builtinCommand } from './builtin'
 import { cdCommand } from './cd'
 import { clearCommand } from './clear'
@@ -63,6 +64,10 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   // Add all builtin commands in alphabetical order
   builtins.set('alias', aliasCommand)
   builtins.set('bg', bgCommand)
+  builtins.set('bookmark', bookmarkCommand)
+  builtins.set('bm', { ...bookmarkCommand, name: 'bm' })
+  builtins.set('mark', { ...bookmarkCommand, name: 'mark' })
+  builtins.set('jump', { ...bookmarkCommand, name: 'jump' })
   builtins.set('builtin', builtinCommand)
   builtins.set('c', clearCommand)
   builtins.set('cd', cdCommand)

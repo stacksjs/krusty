@@ -358,9 +358,20 @@ export class KrustyShell implements Shell {
         return false
       }
 
-      // Change directory
+      // Change directory and maintain PWD/OLDPWD
+      const prev = this.cwd
       process.chdir(targetPath)
       this.cwd = targetPath
+      try {
+        // Track previous directory for `cd -`
+        ;(this as any)._prevDir = prev
+        // Update env vars similar to POSIX shells
+        this.environment.OLDPWD = prev
+        this.environment.PWD = this.cwd
+        process.env.OLDPWD = prev
+        process.env.PWD = this.cwd
+      }
+      catch {}
       return true
     }
     catch {

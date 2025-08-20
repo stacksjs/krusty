@@ -1,5 +1,5 @@
 import type { CompletionItem, Shell } from '../types'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
@@ -74,6 +74,24 @@ export class CompletionProvider {
    * Provide simple argument completions for selected builtins
    */
   private getBuiltinArgCompletions(command: string, tokens: string[], last: string): string[] {
+    const getStack = (): string[] => ((this.shell as any)._dirStack ?? ((this.shell as any)._dirStack = [])) as string[]
+    const loadBookmarks = (): Record<string, string> => {
+      try {
+        const host = this.shell as any
+        if (host._bookmarks)
+          return host._bookmarks as Record<string, string>
+        const file = `${homedir()}/.krusty/bookmarks.json`
+        if (!existsSync(file))
+          return {}
+        const raw = readFileSync(file, 'utf8')
+        const data = JSON.parse(raw)
+        host._bookmarks = (data && typeof data === 'object') ? (data as Record<string, string>) : {}
+        return host._bookmarks
+      }
+      catch {
+        return {}
+      }
+    }
     switch (command) {
       case 'command': {
         // Complete the command name (arg1) using the global command list
@@ -83,9 +101,22 @@ export class CompletionProvider {
         return []
       }
       case 'cd': {
-        // Directory-only completions
-        const files = this.getFileCompletions(last)
-        return files.filter(f => f.endsWith('/'))
+        // Directories
+        const files = this.getFileCompletions(last).filter(f => f.endsWith('/'))
+        // Stack indices: -N (1-based)
+        const stack = getStack()
+        const stackIdx: string[] = []
+        for (let i = 1; i <= Math.min(9, stack.length); i++) stackIdx.push(`-${i}`)
+        const idxMatches = stackIdx.filter(s => s.startsWith(last) || last === '')
+        // Bookmarks when prefix looks like ':name'
+        const out: string[] = [...idxMatches, ...files]
+        if (last.startsWith(':') || last === ':') {
+          const bm = loadBookmarks()
+          const names = Object.keys(bm).map(k => `:${k}`)
+          const matches = names.filter(n => n.startsWith(last))
+          out.unshift(...matches)
+        }
+        return this.sortAndLimit(Array.from(new Set(out)), last)
       }
       case 'echo': {
         // Common echo flags
@@ -179,6 +210,18 @@ export class CompletionProvider {
         const names = Object.keys(this.shell.aliases || {})
         return names.filter(n => n.startsWith(last) || last === '')
       }
+      case 'bookmark': {
+        const sub = tokens[1]
+        const bm = loadBookmarks()
+        const names = Object.keys(bm)
+        // bookmark del <name>
+        if ((sub === 'del' || sub === 'rm' || sub === 'remove') && tokens.length >= 3)
+          return names.filter(n => n.startsWith(last) || last === '')
+        // bookmark <name>
+        if (!sub || (tokens.length === 2 && !sub.startsWith('-')))
+          return names.filter(n => n.startsWith(last) || last === '')
+        return []
+      }
       case 'unalias': {
         const names = Object.keys(this.shell.aliases || {})
         const flags = ['-a']
@@ -204,9 +247,15 @@ export class CompletionProvider {
         return names.filter(n => n.startsWith(last) || last === '')
       }
       case 'type':
-      case 'which':
       case 'hash': {
         // Complete command names for these utilities
+        return this.getCommandCompletions(last)
+      }
+      case 'which': {
+        // Suggest flags for which, else command names
+        const flags = ['-a', '-s', '--all', '--help', '--version', '--read-alias', '--read-functions', '--skip-alias', '--skip-functions']
+        if (last.startsWith('-'))
+          return flags.filter(f => f.startsWith(last))
         return this.getCommandCompletions(last)
       }
       case 'exec': {
