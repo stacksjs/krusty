@@ -37,6 +37,7 @@ import { pwdCommand } from './pwd'
 import { readCommand } from './read'
 import { reloadCommand } from './reload'
 import { reloaddnsCommand } from './reloaddns'
+import { createScriptBuiltins } from './script-builtins'
 import { setCommand } from './set'
 import { showCommand } from './show'
 import { shrugCommand } from './shrug'
@@ -46,6 +47,7 @@ import { timeCommand } from './time'
 import { timeoutCommand } from './timeout'
 import { timesCommand } from './times'
 import { trapCommand } from './trap'
+import { trueCommand } from './true'
 import { typeCommand } from './type'
 import { umaskCommand } from './umask'
 import { unaliasCommand } from './unalias'
@@ -53,7 +55,6 @@ import { unsetCommand } from './unset'
 import { waitCommand } from './wait'
 import { webCommand } from './web'
 import { whichCommand } from './which'
-import { createScriptBuiltins } from './script-builtins'
 import { wipCommand } from './wip'
 
 export function createBuiltins(): Map<string, BuiltinCommand> {
@@ -110,6 +111,7 @@ export function createBuiltins(): Map<string, BuiltinCommand> {
   builtins.set('timeout', timeoutCommand)
   builtins.set('times', timesCommand)
   builtins.set('trap', trapCommand)
+  builtins.set('true', trueCommand)
   builtins.set('type', typeCommand)
   builtins.set('umask', umaskCommand)
   builtins.set('unalias', unaliasCommand)
