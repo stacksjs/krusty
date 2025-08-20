@@ -70,6 +70,12 @@ export interface CompletionConfig {
   caseSensitive?: boolean
   showDescriptions?: boolean
   maxSuggestions?: number
+  /**
+   * Maximum number of PATH full-path executable suggestions (e.g. "/usr/bin/ls")
+   * returned by completions like the `which` builtin.
+   * Defaults to 20 when not specified.
+   */
+  binPathMaxSuggestions?: number
   cache?: CompletionCacheConfig
   context?: CompletionContextConfig
   commands?: CompletionCommandsConfig

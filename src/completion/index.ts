@@ -44,6 +44,50 @@ export class CompletionProvider {
     return result.slice(0, maxSuggestions)
   }
 
+  /**
+   * Get full-path executable suggestions from PATH directories for a given prefix
+   */
+  private getBinPathCompletions(prefix: string): string[] {
+    try {
+      const path = process.env.PATH || ''
+      const max = this.shell.config.completion?.binPathMaxSuggestions ?? 20
+      const results: string[] = []
+      const seen = new Set<string>()
+      for (const dir of path.split(':')) {
+        try {
+          const files = readdirSync(dir, { withFileTypes: true })
+          for (const file of files) {
+            if (results.length >= max)
+              return results
+            if (!file.isFile()) continue
+            if (!file.name.startsWith(prefix)) continue
+            try {
+              const fullPath = join(dir, file.name)
+              const stat = statSync(fullPath)
+              const isExecutable = Boolean(stat.mode & 0o111)
+              if (isExecutable && !seen.has(fullPath)) {
+                seen.add(fullPath)
+                results.push(fullPath)
+                if (results.length >= max)
+                  return results
+              }
+            }
+            catch {
+              // ignore stat errors
+            }
+          }
+        }
+        catch {
+          // ignore unreadable dirs
+        }
+      }
+      return results
+    }
+    catch {
+      return []
+    }
+  }
+
   private getProjectRoot(): string {
     try {
       const here = fileURLToPath(new URL('.', import.meta.url))
@@ -252,11 +296,20 @@ export class CompletionProvider {
         return this.getCommandCompletions(last)
       }
       case 'which': {
-        // Suggest flags for which, else command names
+        // Suggest flags for which, else command names and full PATH entries
         const flags = ['-a', '-s', '--all', '--help', '--version', '--read-alias', '--read-functions', '--skip-alias', '--skip-functions']
         if (last.startsWith('-'))
           return flags.filter(f => f.startsWith(last))
-        return this.getCommandCompletions(last)
+
+        // If user is typing a path, use filesystem completions
+        if (last.includes('/'))
+          return this.getFileCompletions(last)
+
+        // Otherwise combine command names and full PATH executable paths
+        const names = this.getCommandCompletions(last)
+        const bins = this.getBinPathCompletions(last)
+        const combined = Array.from(new Set([...names, ...bins]))
+        return this.sortAndLimit(combined, last)
       }
       case 'exec': {
         // First arg is a command to exec
