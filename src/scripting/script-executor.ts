@@ -25,20 +25,24 @@ export class ScriptExecutor {
     this.contexts.push(context)
 
     try {
+      let accStdout = ''
+      let accStderr = ''
       let lastResult: CommandResult = { success: true, exitCode: 0, stdout: '', stderr: '' }
 
       for (const statement of script.statements) {
         const result = await this.executeStatement(statement, context)
-        lastResult = result
+        accStdout += result.stdout || ''
+        accStderr += result.stderr || ''
+        lastResult = { ...result, stdout: accStdout, stderr: accStderr }
 
         // Handle error propagation
         if (!result.success && context.exitOnError) {
-          return result
+          return lastResult
         }
 
         // Handle return/break/continue
         if (context.returnValue !== undefined) {
-          return { ...result, exitCode: context.returnValue }
+          return { ...lastResult, exitCode: context.returnValue }
         }
 
         if (context.breakLevel !== undefined || context.continueLevel !== undefined) {
@@ -111,7 +115,12 @@ export class ScriptExecutor {
 
     // Execute regular command through shell
     try {
-      const result = await context.shell.executeCommand(command.name, command.args)
+      // Expand variables in arguments (e.g., echo "num: $i") prior to delegating to shell
+      const expandedArgs: string[] = []
+      for (const arg of command.args) {
+        expandedArgs.push(await this.expandString(arg, context))
+      }
+      const result = await context.shell.executeCommand(command.name, expandedArgs)
       return result
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -165,6 +174,8 @@ export class ScriptExecutor {
       return { success: true, exitCode: 0, stdout: '', stderr: '' }
     }
 
+    let accStdout = ''
+    let accStderr = ''
     let lastResult: CommandResult = { success: true, exitCode: 0, stdout: '', stderr: '' }
 
     for (const value of block.values) {
@@ -173,7 +184,10 @@ export class ScriptExecutor {
       context.shell.environment[block.variable] = value
 
       try {
-        lastResult = await this.executeStatements(block.body, context)
+        const iterResult = await this.executeStatements(block.body, context)
+        accStdout += iterResult.stdout || ''
+        accStderr += iterResult.stderr || ''
+        lastResult = { ...iterResult, stdout: accStdout, stderr: accStderr }
 
         // Handle break/continue
         if (context.breakLevel !== undefined) {
@@ -196,7 +210,7 @@ export class ScriptExecutor {
         }
 
         // Handle error propagation
-        if (!lastResult.success && context.exitOnError) {
+        if (!iterResult.success && context.exitOnError) {
           break
         }
       } finally {
@@ -217,10 +231,15 @@ export class ScriptExecutor {
       return { success: true, exitCode: 0, stdout: '', stderr: '' }
     }
 
+    let accStdout = ''
+    let accStderr = ''
     let lastResult: CommandResult = { success: true, exitCode: 0, stdout: '', stderr: '' }
 
     while (await this.evaluateCondition(block.condition, context)) {
-      lastResult = await this.executeStatements(block.body, context)
+      const iterResult = await this.executeStatements(block.body, context)
+      accStdout += iterResult.stdout || ''
+      accStderr += iterResult.stderr || ''
+      lastResult = { ...iterResult, stdout: accStdout, stderr: accStderr }
 
       // Handle break/continue
       if (context.breakLevel !== undefined) {
@@ -243,7 +262,7 @@ export class ScriptExecutor {
       }
 
       // Handle error propagation
-      if (!lastResult.success && context.exitOnError) {
+      if (!iterResult.success && context.exitOnError) {
         break
       }
     }
@@ -256,10 +275,15 @@ export class ScriptExecutor {
       return { success: true, exitCode: 0, stdout: '', stderr: '' }
     }
 
+    let accStdout = ''
+    let accStderr = ''
     let lastResult: CommandResult = { success: true, exitCode: 0, stdout: '', stderr: '' }
 
     while (!(await this.evaluateCondition(block.condition, context))) {
-      lastResult = await this.executeStatements(block.body, context)
+      const iterResult = await this.executeStatements(block.body, context)
+      accStdout += iterResult.stdout || ''
+      accStderr += iterResult.stderr || ''
+      lastResult = { ...iterResult, stdout: accStdout, stderr: accStderr }
 
       // Handle break/continue
       if (context.breakLevel !== undefined) {
@@ -355,10 +379,15 @@ export class ScriptExecutor {
   }
 
   private async executeStatements(statements: ScriptStatement[], context: ScriptContext): Promise<CommandResult> {
+    let accStdout = ''
+    let accStderr = ''
     let lastResult: CommandResult = { success: true, exitCode: 0, stdout: '', stderr: '' }
 
     for (const statement of statements) {
-      lastResult = await this.executeStatement(statement, context)
+      const result = await this.executeStatement(statement, context)
+      accStdout += result.stdout || ''
+      accStderr += result.stderr || ''
+      lastResult = { ...result, stdout: accStdout, stderr: accStderr }
 
       // Handle control flow
       if (context.returnValue !== undefined || 
@@ -368,7 +397,7 @@ export class ScriptExecutor {
       }
 
       // Handle error propagation
-      if (!lastResult.success && context.exitOnError) {
+      if (!result.success && context.exitOnError) {
         break
       }
     }
@@ -458,6 +487,21 @@ export class ScriptExecutor {
       return context.shell.environment[varName] || context.variables.get(varName) || ''
     }
     return variable
+  }
+
+  // Expand variables within a string, supporting $VAR, ${VAR}, and positional $1..$9
+  private async expandString(input: string, context: ScriptContext): Promise<string> {
+    if (!input || (!input.includes('$'))) return input
+
+    return input.replace(/\$(\{[^}]+\}|[A-Za-z_]\w*|\d)/gi, (match, p1) => {
+      let key = p1 as string
+      if (!key) return ''
+      if (key.startsWith('{') && key.endsWith('}')) {
+        key = key.slice(1, -1)
+      }
+      const val = context.shell.environment[key] ?? context.variables.get(key)
+      return val !== undefined ? String(val) : ''
+    })
   }
 
   private matchPattern(value: string, pattern: string): boolean {

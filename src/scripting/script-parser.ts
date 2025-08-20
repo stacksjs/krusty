@@ -174,7 +174,7 @@ export class ScriptParser {
           return await this.parseFunctionStatement(lines, startIndex, shell, true)
         }
         // Regular command
-        return await this.parseCommandStatement(line, shell)
+        return await this.parseCommandStatement(line, shell, startIndex)
     }
   }
 
@@ -494,7 +494,7 @@ export class ScriptParser {
     }
   }
 
-  private async parseCommandStatement(line: string, shell?: any): Promise<{
+  private async parseCommandStatement(line: string, shell?: any, startIndex?: number): Promise<{
     statement: ScriptStatement
     nextIndex: number
   }> {
@@ -507,7 +507,7 @@ export class ScriptParser {
         command,
         raw: line
       },
-      nextIndex: 1 // Single line command
+      nextIndex: (startIndex ?? 0) + 1
     }
   }
 

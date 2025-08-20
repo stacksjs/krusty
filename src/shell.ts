@@ -280,8 +280,14 @@ export class KrustyShell implements Shell {
       // Add to history (before execution to capture the command even if it fails)
       this.addToHistory(command)
 
-      // Script detection disabled - infinite loop still exists in script executor
-      // Need to fix script executor's command execution before re-enabling
+      // Detect and execute scripts (if/for/while/case/functions) via ScriptManager
+      if (!options?.bypassScriptDetection && this.scriptManager.isScript(command)) {
+        const scriptResult = await this.scriptManager.executeScript(command)
+        this.lastExitCode = scriptResult.exitCode
+        // Execute command:after hooks for script execution as well
+        await this.hookManager.executeHooks('command:after', { command, result: scriptResult })
+        return scriptResult
+      }
 
       // Parse the command
       const parsed = await this.parseCommand(command)
@@ -697,8 +703,9 @@ export class KrustyShell implements Shell {
     // Check if it's a builtin command
     if (!options?.bypassFunctions && this.builtins.has(expandedCommand.name)) {
       const builtin = this.builtins.get(expandedCommand.name)!
-      // Process arguments to remove quotes for builtin commands (except alias which handles quotes itself)
-      const processedArgs = expandedCommand.name === 'alias'
+      // Process arguments for builtins: normally strip quotes, except when alias-expansion explicitly
+      // preserved quotes (e.g., "$1" placeholders) in which case we pass them through as literals.
+      const processedArgs = (expandedCommand as any).preserveQuotedArgs || expandedCommand.name === 'alias'
         ? expandedCommand.args
         : expandedCommand.args.map((arg: string) => this.processAliasArgument(arg))
       const result = await builtin.execute(processedArgs, this)
@@ -850,7 +857,10 @@ export class KrustyShell implements Shell {
     // then after tokenization we turn the markers back into literal quoted arguments.
     const QUOTED_MARKER_PREFIX = '__krusty_QARG_'
     processedValue = processedValue.replace(/"\$(\d+)"/g, (_m, num) => `${QUOTED_MARKER_PREFIX}${num}__`)
+    // Track whether the alias used any quoted placeholders so builtins can preserve quotes
+    const hadQuotedPlaceholders = /"\$\d+"/.test(aliasValue)
     const argsToUse = (command as any).originalArgs || command.args
+    const dequote = (s: string) => this.processAliasArgument(s)
     const hasArgs = argsToUse.length > 0
     const endsWithSpace = aliasValue.endsWith(' ')
     const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
@@ -900,7 +910,8 @@ export class KrustyShell implements Shell {
       // quoting can be enforced by writing "$1" in the alias which we preserve via markers)
       processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
         const index = Number.parseInt(num, 10) - 1
-        return argsToUse[index] !== undefined ? argsToUse[index] : ''
+        if (argsToUse[index] === undefined) return ''
+        return dequote(argsToUse[index])
       })
 
       // If alias ends with space OR it doesn't contain placeholders, append remaining args
@@ -950,6 +961,12 @@ export class KrustyShell implements Shell {
             i++
             continue
           }
+          // Treat newlines in alias values as command separators
+          if (ch === '\n') {
+            pushSeg(';')
+            i++
+            continue
+          }
           if (ch === '&' && next === '&') {
             pushSeg('&&')
             i += 2
@@ -994,11 +1011,23 @@ export class KrustyShell implements Shell {
             // consume '<' and any whitespace
             let j = i + 1
             while (j < cmdStr.length && /\s/.test(cmdStr[j])) j++
-            // capture the filename token (stop at whitespace or operator)
+            // capture the filename token (supports quoted filename)
             let k = j
-            while (k < cmdStr.length && !/[\s|;&]/.test(cmdStr[k])) k++
-            if (k > j) {
-              stdinFile = cmdStr.slice(j, k)
+            let filename = ''
+            if (cmdStr[k] === '"' || cmdStr[k] === '\'') {
+              const quote = cmdStr[k]
+              k++
+              const start = k
+              while (k < cmdStr.length && cmdStr[k] !== quote) k++
+              filename = cmdStr.slice(start, k)
+              k++ // skip closing quote
+            }
+            else {
+              while (k < cmdStr.length && !/[\s|;&]/.test(cmdStr[k])) k++
+              filename = cmdStr.slice(j, k)
+            }
+            if (filename) {
+              stdinFile = filename
               // remove the segment from the command string
               cmdStr = `${cmdStr.slice(0, i)} ${cmdStr.slice(k)}`.trim()
             }
@@ -1006,27 +1035,53 @@ export class KrustyShell implements Shell {
           }
         }
       }
-      // Handle pipes in the command
-      if (cmdStr.includes('|')) {
-        const pipeParts = cmdStr.split('|').map(part => part.trim())
-
-        // Process each part of the pipe
-        const pipeCommands = pipeParts.map((part) => {
-          const tokens = this.parser.tokenize(part)
-          const cmd = {
-            name: tokens[0] || '',
-            args: tokens.slice(1),
+      // Handle pipes in the command (quote-aware)
+      {
+        let inQuotes = false
+        let q = ''
+        const parts: string[] = []
+        let buf = ''
+        for (let i = 0; i < cmdStr.length; i++) {
+          const ch = cmdStr[i]
+          if (!inQuotes && (ch === '"' || ch === '\'')) {
+            inQuotes = true
+            q = ch
+            buf += ch
+            continue
           }
+          if (inQuotes && ch === q) {
+            inQuotes = false
+            q = ''
+            buf += ch
+            continue
+          }
+          if (!inQuotes && ch === '|') {
+            parts.push(buf.trim())
+            buf = ''
+            continue
+          }
+          buf += ch
+        }
+        if (buf.trim()) parts.push(buf.trim())
 
-          return cmd
-        })
+        if (parts.length > 1) {
+          // Process each part of the pipe
+          const pipeCommands = parts.map((part) => {
+            const tokens = this.parser.tokenize(part)
+            const cmd = {
+              name: tokens[0] || '',
+              args: tokens.slice(1),
+            }
+            return cmd
+          })
 
-        // Return the first command with the rest as pipe commands
-        return {
-          ...pipeCommands[0],
-          stdinFile,
-          pipe: true,
-          pipeCommands: pipeCommands.slice(1),
+          // Return the first command with the rest as pipe commands
+          return {
+            ...pipeCommands[0],
+            stdinFile,
+            pipe: true,
+            pipeCommands: pipeCommands.slice(1),
+          }
         }
       }
 
@@ -1042,15 +1097,15 @@ export class KrustyShell implements Shell {
       // Use only the tokens derived from processedValue; original args were appended above if needed
       let finalArgs = tokens.slice(1)
 
-      // Post-process quoted numeric placeholders to re-insert literal quotes
-      // Example: __krusty_QARG_1__ -> "<arg1>"
+      // Post-process quoted numeric placeholders to re-insert literal quotes when needed
+      // Example: __krusty_QARG_1__ -> "<arg1>" if it contains spaces, else <arg1>
       finalArgs = finalArgs.map((arg) => {
         const m = arg.match(/^__krusty_QARG_(\d+)__$/)
         if (m) {
           const idx = Number.parseInt(m[1], 10) - 1
-          const val = argsToUse[idx] !== undefined ? argsToUse[idx] : ''
-          // Always inject literal quotes for quoted placeholders since they were explicitly quoted in the alias
-          return `"${val}"`
+          const val = argsToUse[idx] !== undefined ? dequote(argsToUse[idx]) : ''
+          // Only inject literal quotes if the value contains whitespace
+          return /\s/.test(val) ? `"${val}"` : val
         }
         return arg
       })
@@ -1060,6 +1115,9 @@ export class KrustyShell implements Shell {
         name: tokens[0],
         args: finalArgs.filter(arg => arg !== ''),
         stdinFile,
+        // Indicate that this command originated from alias expansion and may contain
+        // intentionally quoted args (e.g., from "$1" placeholders) that should be preserved for builtins.
+        preserveQuotedArgs: hadQuotedPlaceholders,
       }
     }
 
@@ -1126,10 +1184,9 @@ export class KrustyShell implements Shell {
       }
     }
 
-    // Process arguments to remove quotes for external commands
-    const processedArgs = command.args.map((arg: string) => this.processAliasArgument(arg))
-
-    const child = spawn(command.name, processedArgs, {
+    // For external commands, remove surrounding quotes and unescape so spawn receives clean args
+    const externalArgs = (command.args || []).map((arg: string) => this.processAliasArgument(arg))
+    const child = spawn(command.name, externalArgs, {
       cwd: this.cwd,
       env: cleanEnv,
       stdio,
@@ -1214,7 +1271,9 @@ export class KrustyShell implements Shell {
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
 
-    const child = spawn(command.name, command.args, {
+    // Clean up args for external command in a pipeline as well
+    const extArgs = (command.args || []).map((arg: string) => this.processAliasArgument(arg))
+    const child = spawn(command.name, extArgs, {
       cwd: this.cwd,
       env: cleanEnv,
       stdio: ['pipe', 'pipe', 'pipe'],

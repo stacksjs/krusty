@@ -58,20 +58,31 @@ export class ScriptManager {
     }
   }
 
-  private isScript(input: string): boolean {
-    const scriptKeywords = [
-      'if ', 'then', 'else', 'elif', 'fi',
-      'for ', 'while ', 'until ', 'do', 'done',
-      'case ', 'in', 'esac',
-      'function ', '() {'
-    ]
+  isScript(input: string): boolean {
+    // Quick checks for clear starters
+    const starters = [/^\s*if\b/, /^\s*for\b/, /^\s*while\b/, /^\s*until\b/, /^\s*case\b/, /^\s*function\b/, /^\s*\w+\s*\(\)\s*\{/]
+    if (starters.some(r => r.test(input))) return true
 
+    // Token-aware checks per line to avoid matching substrings like 'fi' in 'printf'
     const lines = input.split('\n')
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (scriptKeywords.some(keyword => trimmed.includes(keyword))) {
-        return true
-      }
+    for (const raw of lines) {
+      const line = raw.trim()
+      if (!line) continue
+      // Normalize separators as tokens
+      const tokens = line.split(/\s+|;/).filter(Boolean)
+      const has = (w: string) => tokens.includes(w)
+
+      // if/then/elif/else/fi constructs
+      if (has('then') || has('elif') || has('else') || has('fi')) return true
+
+      // loop/do/done (require standalone tokens)
+      if ((has('do') && (has('for') || has('while') || has('until'))) || has('done')) return true
+
+      // case/esac constructs; 'in' is only meaningful with case/for, don't match standalone 'in'
+      if (has('case') || has('esac')) return true
+
+      // function { ... } style on same line
+      if (/\bfunction\b/.test(line) || /\b\w+\s*\(\)\s*\{/.test(line)) return true
     }
 
     return false

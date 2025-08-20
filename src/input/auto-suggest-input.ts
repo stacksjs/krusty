@@ -7,6 +7,10 @@ export interface AutoSuggestOptions {
   showInline?: boolean
   highlightColor?: string
   suggestionColor?: string
+  // Keymap for line editing controls
+  keymap?: 'emacs' | 'vi'
+  // Enable lightweight syntax highlighting in input rendering
+  syntaxHighlight?: boolean
 }
 
 export class AutoSuggestInput {
@@ -19,6 +23,8 @@ export class AutoSuggestInput {
   private selectedIndex = 0
   private isShowingSuggestions = false
   private isNavigatingSuggestions = false
+  // Vi mode state (only used when keymap === 'vi')
+  private viMode: 'insert' | 'normal' = 'insert'
 
   constructor(shell: Shell, options: AutoSuggestOptions = {}) {
     this.shell = shell
@@ -27,8 +33,38 @@ export class AutoSuggestInput {
       showInline: true,
       highlightColor: '\x1B[90m', // Gray
       suggestionColor: '\x1B[36m', // Cyan
+      keymap: 'emacs',
+      syntaxHighlight: true,
       ...options,
     }
+
+  }
+
+  // Current line prefix up to cursor (after last newline)
+  private getCurrentLinePrefix(): string {
+    const upto = this.currentInput.slice(0, this.cursorPosition)
+    const nl = upto.lastIndexOf('\n')
+    return nl >= 0 ? upto.slice(nl + 1) : upto
+  }
+
+  // Suggest from history: entries starting with prefix, most recent first, deduped
+  private getHistorySuggestions(prefix: string): string[] {
+    const history = (this.shell as any)?.history as string[] | undefined
+    if (!history || !prefix)
+      return []
+    const seen = new Set<string>()
+    const out: string[] = []
+    // iterate from most recent to oldest
+    for (let i = history.length - 1; i >= 0; i--) {
+      const h = history[i]
+      if (typeof h !== 'string') continue
+      if (!h.startsWith(prefix)) continue
+      if (seen.has(h)) continue
+      seen.add(h)
+      out.push(h)
+      if (out.length >= (this.options.maxSuggestions ?? 10)) break
+    }
+    return out
   }
 
   async readLine(prompt: string): Promise<string | null> {
@@ -89,6 +125,129 @@ export class AutoSuggestInput {
             return
           }
 
+          // Handle Ctrl+J: insert newline for multi-line editing
+          if (key.ctrl && key.name === 'j') {
+            // In vi normal mode, ignore
+            if (!(this.options.keymap === 'vi' && this.viMode === 'normal')) {
+              this.currentInput = `${this.currentInput.slice(0, this.cursorPosition)}\n${this.currentInput.slice(this.cursorPosition)}`
+              this.cursorPosition++
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+            }
+            return
+          }
+
+          // Handle screen clear (Ctrl+L)
+          if (key.ctrl && key.name === 'l') {
+            // Clear the screen and re-render prompt+input
+            stdout.write('\x1B[2J\x1B[H')
+            this.promptAlreadyWritten = false
+            this.updateDisplay(prompt)
+            return
+          }
+
+          // If using vi keymap, handle mode switches and normal-mode keys
+          if (this.options.keymap === 'vi') {
+            // ESC enters normal mode
+            if (key.name === 'escape') {
+              this.viMode = 'normal'
+              return
+            }
+            if (this.viMode === 'normal') {
+              // Basic vi normal mode commands
+              if (key.name === 'h') {
+                this.moveCursorLeft()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.name === 'l') {
+                this.moveCursorRight()
+                this.updateDisplay(prompt)
+                return
+              }
+              // Vi vertical movement
+              if (key.name === 'k') {
+                this.moveCursorUp()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.name === 'j') {
+                this.moveCursorDown()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.name === 'i') {
+                this.viMode = 'insert'
+                return
+              }
+              if (key.name === 'a') {
+                this.moveCursorRight()
+                this.viMode = 'insert'
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.name === 'x') {
+                this.deleteCharUnderCursor()
+                this.updateSuggestions()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.sequence === '0') {
+                this.moveToLineStart()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.shift && key.name === '4') { // Shift+4 is usually '$'
+                this.moveToLineEnd()
+                this.updateDisplay(prompt)
+                return
+              }
+              // Word motions and deletions: w, b, dw, db
+              if (key.name === 'w') {
+                this.moveWordRight()
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.name === 'b') {
+                this.moveWordLeft()
+                this.updateDisplay(prompt)
+                return
+              }
+              // Handle simple delete word forward/back via 'd' prefix
+              if (key.name === 'd') {
+                // Peek next key synchronously is not trivial; as a simple heuristic,
+                // if a suggestion navigation is happening or no next key, delete to end
+                // For now, map 'd' to delete to end when followed by nothing
+                // and support common combos via Alt+d / Ctrl+w in emacs section
+                this.killToEnd()
+                this.updateSuggestions()
+                this.updateDisplay(prompt)
+                return
+              }
+              // 'I' -> insert at start, 'A' -> insert at end
+              if (key.shift && key.name === 'i') {
+                this.moveToLineStart()
+                this.viMode = 'insert'
+                this.updateDisplay(prompt)
+                return
+              }
+              if (key.shift && key.name === 'a') {
+                this.moveToLineEnd()
+                this.viMode = 'insert'
+                this.updateDisplay(prompt)
+                return
+              }
+              // 'dd' delete entire line: emulate by clearing content
+              if (key.sequence === 'dd') {
+                this.currentInput = ''
+                this.cursorPosition = 0
+                this.updateSuggestions()
+                this.updateDisplay(prompt)
+                return
+              }
+            }
+          }
+
           // Handle Tab - accept current suggestion
           if (key.name === 'tab') {
             if (this.currentSuggestion) {
@@ -98,24 +257,37 @@ export class AutoSuggestInput {
             return
           }
 
-          // Handle Arrow keys for suggestion navigation
-          if (key.name === 'down' && this.suggestions.length > 0) {
-            this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
-            this.updateSuggestion()
-            this.updateDisplay(prompt)
+          // Handle Arrow keys: prefer multi-line cursor movement over suggestions
+          if (key.name === 'down') {
+            if (this.currentInput.includes('\n')) {
+              this.moveCursorDown()
+              this.updateDisplay(prompt)
+            }
+            else if (this.suggestions.length > 0) {
+              this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+            }
             return
           }
 
-          if (key.name === 'up' && this.suggestions.length > 0) {
-            this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
-            this.updateSuggestion()
-            this.updateDisplay(prompt)
+          if (key.name === 'up') {
+            if (this.currentInput.includes('\n')) {
+              this.moveCursorUp()
+              this.updateDisplay(prompt)
+            }
+            else if (this.suggestions.length > 0) {
+              this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
+              this.updateSuggestion()
+              this.updateDisplay(prompt)
+            }
             return
           }
 
-          // Handle Backspace
+          // Handle Backspace (multi-line aware)
           if (key.name === 'backspace') {
             if (this.cursorPosition > 0) {
+              // Remove previous char; if it was a newline, we are joining lines
               this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
                 + this.currentInput.slice(this.cursorPosition)
               this.cursorPosition--
@@ -125,7 +297,7 @@ export class AutoSuggestInput {
             return
           }
 
-          // Handle Delete
+          // Handle Delete (multi-line aware: deleting a newline joins lines)
           if (key.name === 'delete') {
             if (this.cursorPosition < this.currentInput.length) {
               this.currentInput = this.currentInput.slice(0, this.cursorPosition)
@@ -138,16 +310,14 @@ export class AutoSuggestInput {
 
           // Handle Left/Right arrow keys
           if (key.name === 'left') {
-            if (this.cursorPosition > 0) {
-              this.cursorPosition--
-              this.updateDisplay(prompt)
-            }
+            this.moveCursorLeft()
+            this.updateDisplay(prompt)
             return
           }
 
           if (key.name === 'right') {
             if (this.cursorPosition < this.currentInput.length) {
-              this.cursorPosition++
+              this.moveCursorRight()
               this.updateDisplay(prompt)
             }
             else if (this.currentSuggestion) {
@@ -158,8 +328,75 @@ export class AutoSuggestInput {
             return
           }
 
+          // Emacs-style shortcuts (also active in vi insert mode)
+          if ((this.options.keymap === 'emacs') || (this.options.keymap === 'vi' && this.viMode === 'insert')) {
+            // Move to start/end
+            if (key.ctrl && key.name === 'a') {
+              this.moveToLineStart()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.ctrl && key.name === 'e') {
+              this.moveToLineEnd()
+              this.updateDisplay(prompt)
+              return
+            }
+            // Kill to end/start
+            if (key.ctrl && key.name === 'k') {
+              this.killToEnd()
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.ctrl && key.name === 'u') {
+              this.killToStart()
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+              return
+            }
+            // Word motions
+            if (key.meta && (key.name === 'b')) {
+              this.moveWordLeft()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.meta && (key.name === 'f')) {
+              this.moveWordRight()
+              this.updateDisplay(prompt)
+              return
+            }
+            // Delete word forward/backward
+            if (key.meta && (key.name === 'd')) {
+              this.deleteWordRight()
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+              return
+            }
+            if ((key.ctrl && key.name === 'w') || (key.meta && key.name === 'backspace')) {
+              this.deleteWordLeft()
+              this.updateSuggestions()
+              this.updateDisplay(prompt)
+              return
+            }
+            // Home/End
+            if (key.name === 'home') {
+              this.moveToLineStart()
+              this.updateDisplay(prompt)
+              return
+            }
+            if (key.name === 'end') {
+              this.moveToLineEnd()
+              this.updateDisplay(prompt)
+              return
+            }
+          }
+
           // Handle regular character input
           if (str && str.length === 1 && !key.ctrl && !key.meta) {
+            // In vi normal mode, characters are commands, not input
+            if (this.options.keymap === 'vi' && this.viMode === 'normal') {
+              return
+            }
             this.currentInput = this.currentInput.slice(0, this.cursorPosition)
               + str
               + this.currentInput.slice(this.cursorPosition)
@@ -174,51 +411,58 @@ export class AutoSuggestInput {
         }
       }
 
-      stdin.on('keypress', handleKeypress)
-    })
+stdin.on('keypress', handleKeypress)
+})
   }
 
-  private updateSuggestions() {
-    try {
-      // Get suggestions from shell (includes plugin completions)
-      this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
-      this.selectedIndex = 0
-      this.updateSuggestion()
+private updateSuggestions() {
+  try {
+    // Get suggestions from shell (includes plugin completions)
+    this.suggestions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
+    this.selectedIndex = 0
+    // If no plugin completions, fall back to history-based matches
+    if (this.suggestions.length === 0) {
+      const prefix = this.getCurrentLinePrefix()
+      const hist = this.getHistorySuggestions(prefix)
+      if (hist.length > 0)
+        this.suggestions = hist
     }
-    catch {
-      this.suggestions = []
-      this.currentSuggestion = ''
-    }
+    this.updateSuggestion()
   }
+  catch {
+    this.suggestions = []
+    this.currentSuggestion = ''
+  }
+}
 
-  private updateSuggestion() {
-    if (this.suggestions.length > 0) {
-      const selected = this.suggestions[this.selectedIndex]
-      const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
+private updateSuggestion() {
+  if (this.suggestions.length > 0) {
+    const selected = this.suggestions[this.selectedIndex]
+    const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
 
-      // Handle different completion scenarios
-      if (inputBeforeCursor.trim() === '') {
-        // Empty input - show full suggestion
-        this.currentSuggestion = selected
-      }
-      else {
-        // Find the last token to complete
-        const tokens = inputBeforeCursor.trim().split(/\s+/)
-        const lastToken = tokens[tokens.length - 1] || ''
-
-        // Only show suggestion if it starts with the current token
-        if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
-          this.currentSuggestion = selected.slice(lastToken.length)
-        }
-        else {
-          this.currentSuggestion = ''
-        }
-      }
+    // Handle different completion scenarios
+    if (inputBeforeCursor.trim() === '') {
+      // Empty input - show full suggestion
+      this.currentSuggestion = selected
     }
     else {
-      this.currentSuggestion = ''
+      // Find the last token to complete
+      const tokens = inputBeforeCursor.trim().split(/\s+/)
+      const lastToken = tokens[tokens.length - 1] || ''
+
+      // Only show suggestion if it starts with the current token
+      if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
+        this.currentSuggestion = selected.slice(lastToken.length)
+      }
+      else {
+        this.currentSuggestion = ''
+      }
     }
   }
+  else {
+    this.currentSuggestion = ''
+  }
+}
 
   private acceptSuggestion() {
     if (this.currentSuggestion) {
@@ -240,8 +484,8 @@ export class AutoSuggestInput {
     const stdout = process.stdout
 
     // Only update if input or suggestion actually changed
-    if (this.currentInput === this.lastDisplayedInput && 
-        this.currentSuggestion === this.lastDisplayedSuggestion) {
+    if (this.currentInput === this.lastDisplayedInput
+      && this.currentSuggestion === this.lastDisplayedSuggestion) {
       return
     }
 
@@ -249,49 +493,98 @@ export class AutoSuggestInput {
     const visiblePromptLength = this.getVisibleLength(prompt)
     const cursorColumn = visiblePromptLength + this.cursorPosition + 1 // +1 for 1-based column
 
-    if (this.shellMode && this.promptAlreadyWritten) {
+    const hasNewlines = this.currentInput.includes('\n')
+    if (this.shellMode && this.promptAlreadyWritten && !hasNewlines) {
       // Shell mode: only update input area, don't rewrite prompt
       const inputStartColumn = visiblePromptLength + 1
-      
+
       // Save current cursor position
       stdout.write('\x1B7')
-      
-      // Move to start of input, clear to end of line, and write input
-      stdout.write(`\x1B[${inputStartColumn}G\x1B[K${this.currentInput}`)
-      
+
+      // Move to start of input, clear to end of line, and write input (with optional highlighting)
+      const renderedSingle = this.options.syntaxHighlight
+        ? this.renderHighlighted(this.currentInput)
+        : this.currentInput
+      stdout.write(`\x1B[${inputStartColumn}G\x1B[K${renderedSingle}\x1B[0m`)
+
       // Show inline suggestion if available
       if (this.options.showInline && this.currentSuggestion) {
         stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
       }
-      
+
       // Clear any remaining characters from previous input
       if (this.lastDisplayedInput.length > this.currentInput.length) {
         const remainingChars = this.lastDisplayedInput.length - this.currentInput.length
         stdout.write(' '.repeat(remainingChars))
         stdout.write(`\x1B[${cursorColumn}G`) // Move cursor back to position
       }
-      
+
       // Explicitly set cursor position after updates
       stdout.write(`\x1B[${cursorColumn}G`)
-      
+
       // Restore cursor position if we're not at the end
       if (this.cursorPosition < this.currentInput.length) {
         // Calculate the actual cursor position in the line
         const actualCursorColumn = visiblePromptLength + this.cursorPosition + 1
         stdout.write(`\x1B[${actualCursorColumn}G`)
       }
-    } else {
+    }
+    else {
       // Isolated mode: always clear line and write prompt + input
       stdout.write('\r\x1B[2K')
-      stdout.write(prompt + this.currentInput)
-      
-      // Show inline suggestion if available
-      if (this.options.showInline && this.currentSuggestion) {
-        stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
+      if (!hasNewlines) {
+        // Single-line behavior
+        const renderedSingle = this.options.syntaxHighlight
+          ? this.renderHighlighted(this.currentInput)
+          : this.currentInput
+        stdout.write(`${prompt}${renderedSingle}\x1B[0m`)
+
+        if (this.options.showInline && this.currentSuggestion) {
+          stdout.write(`${this.options.highlightColor}${this.currentSuggestion}\x1B[0m`)
+        }
+        stdout.write(`\x1B[${cursorColumn}G`)
       }
-      
-      // Set cursor position
-      stdout.write(`\x1B[${cursorColumn}G`)
+      else {
+        // Multi-line rendering with continuation prompt
+        const lines = this.currentInput.split('\n')
+        const contPrompt = (this.shell?.config?.theme?.prompt?.continuation ?? '... ')
+        const visibleContLen = this.getVisibleLength(contPrompt)
+
+        // Write first line with main prompt
+        const firstLineRendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[0]) : lines[0]
+        stdout.write(`${prompt}${firstLineRendered}\x1B[0m`)
+        // Write subsequent lines with continuation prompt
+        for (let i = 1; i < lines.length; i++) {
+          const rendered = this.options.syntaxHighlight ? this.renderHighlighted(lines[i]) : lines[i]
+          stdout.write(`\n\x1B[2K${contPrompt}${rendered}\x1B[0m`)
+        }
+
+        // Compute cursor target row/col
+        const curIndex = this.cursorPosition
+        // Determine current line index and column in that line
+        let remaining = curIndex
+        let lineIndex = 0
+        for (let i = 0; i < lines.length; i++) {
+          const len = lines[i].length
+          if (remaining <= len) {
+            lineIndex = i
+            break
+          }
+          remaining -= (len + 1) // +1 for the newline
+          lineIndex = i + 1
+        }
+        const colInLine = remaining
+        const totalLines = lines.length
+
+        // After writes, cursor is at end of last line. Move up to target line.
+        const linesUp = (totalLines - 1) - lineIndex
+        if (linesUp > 0)
+          stdout.write(`\x1B[${linesUp}A`)
+        // Set column based on prompt length for the target row
+        const baseLen = lineIndex === 0 ? visiblePromptLength : visibleContLen
+        const targetCol = baseLen + colInLine + 1
+        stdout.write(`\x1B[${targetCol}G`)
+      }
       this.promptAlreadyWritten = true
     }
 
@@ -305,6 +598,23 @@ export class AutoSuggestInput {
     // Remove ANSI escape sequences to get actual visible length
     // eslint-disable-next-line no-control-regex
     return text.replace(/\x1B\[[0-9;]*[mGKH]/g, '').length
+  }
+
+  // Lightweight syntax highlighting for rendering only (does not affect state)
+  private renderHighlighted(text: string): string {
+    const reset = '\x1B[0m'
+    const cyan = this.options.suggestionColor ?? '\x1B[36m'
+    const gray = this.options.highlightColor ?? '\x1B[90m'
+    let out = text
+    // Highlight command at line start
+    out = out.replace(/^([\w./-]+)/, `${cyan}$1${reset}`)
+    // Highlight quoted strings
+    out = out.replace(/("[^"]*"|'[^']*')/g, `${gray}$1${reset}`)
+    // Highlight operators and pipes/redirections
+    out = out.replace(/(\|\||&&|;|<<?|>>?)/g, `${gray}$1${reset}`)
+    // Highlight variables like $VAR or $1
+    out = out.replace(/(\$[\w{}]+)/g, `${gray}$1${reset}`)
+    return out
   }
 
   // Method to enable shell mode where prompt is managed externally
@@ -352,5 +662,165 @@ export class AutoSuggestInput {
     this.cursorPosition = pos
   }
 
+  // Cursor movement helpers
+  private moveCursorLeft() {
+    if (this.cursorPosition > 0)
+      this.cursorPosition--
+  }
+
+  private moveCursorRight() {
+    if (this.cursorPosition < this.currentInput.length)
+      this.cursorPosition++
+  }
+
+  private moveToLineStart() {
+    const { line } = this.indexToLineCol(this.cursorPosition)
+    this.cursorPosition = this.lineColToIndex(line, 0)
+  }
+
+  private moveToLineEnd() {
+    const { line } = this.indexToLineCol(this.cursorPosition)
+    const lines = this.getLines()
+    const endCol = (lines[line] ?? '').length
+    this.cursorPosition = this.lineColToIndex(line, endCol)
+  }
+
+  private isWordChar(ch: string) {
+    return /\w/.test(ch)
+  }
+
+  private moveWordLeft() {
+    if (this.cursorPosition === 0)
+      return
+    let i = this.cursorPosition
+    // Skip initial spaces to previous non-space
+    while (i > 0 && this.currentInput[i - 1] === ' ') i--
+    // Move over word characters
+    while (i > 0 && this.isWordChar(this.currentInput[i - 1])) i--
+    this.cursorPosition = i
+  }
+
+  private moveWordRight() {
+    if (this.cursorPosition >= this.currentInput.length)
+      return
+    let i = this.cursorPosition
+    // Skip spaces
+    while (i < this.currentInput.length && this.currentInput[i] === ' ') {
+      i++
+    }
+    // If at delimiters (non-space, non-word), skip them (e.g., '--')
+    while (
+      i < this.currentInput.length
+      && this.currentInput[i] !== ' '
+      && !this.isWordChar(this.currentInput[i])
+    ) {
+      i++
+    }
+    // Move over word characters
+    while (i < this.currentInput.length && this.isWordChar(this.currentInput[i])) {
+      i++
+    }
+    this.cursorPosition = i
+  }
+
+  private deleteCharUnderCursor() {
+    if (this.cursorPosition < this.currentInput.length) {
+      this.currentInput = this.currentInput.slice(0, this.cursorPosition)
+        + this.currentInput.slice(this.cursorPosition + 1)
+    }
+  }
+
+  // Testing helpers to simulate key behavior without raw stdin
+  // Use only in tests
+  backspaceOneForTesting(): void {
+    if (this.cursorPosition > 0) {
+      this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
+        + this.currentInput.slice(this.cursorPosition)
+      this.cursorPosition--
+      this.updateSuggestions()
+    }
+  }
+
+  deleteOneForTesting(): void {
+    this.deleteCharUnderCursor()
+    this.updateSuggestions()
+  }
+
+  private killToEnd() {
+    if (this.cursorPosition < this.currentInput.length) {
+      this.currentInput = this.currentInput.slice(0, this.cursorPosition)
+    }
+  }
+
+  private killToStart() {
+    if (this.cursorPosition > 0) {
+      this.currentInput = this.currentInput.slice(this.cursorPosition)
+      this.cursorPosition = 0
+    }
+  }
+
+  private deleteWordLeft() {
+    if (this.cursorPosition === 0)
+      return
+    const end = this.cursorPosition
+    // Find start of previous word
+    let i = end
+    while (i > 0 && this.currentInput[i - 1] === ' ') i--
+    while (i > 0 && this.isWordChar(this.currentInput[i - 1])) i--
+    this.currentInput = this.currentInput.slice(0, i) + this.currentInput.slice(end)
+    this.cursorPosition = i
+  }
+
+  private deleteWordRight() {
+    if (this.cursorPosition >= this.currentInput.length)
+      return
+    const start = this.cursorPosition
+    let i = start
+    while (i < this.currentInput.length && this.currentInput[i] === ' ') i++
+    while (i < this.currentInput.length && this.isWordChar(this.currentInput[i])) i++
+    this.currentInput = this.currentInput.slice(0, start) + this.currentInput.slice(i)
+  }
+
   // Removed all suggestion list display methods to prevent UI clutter
+
+  // Multi-line utilities and vertical movement
+  private getLines(): string[] {
+    return this.currentInput.split('\n')
+  }
+
+  private indexToLineCol(index: number): { line: number, col: number } {
+    const lines = this.getLines()
+    let remaining = Math.max(0, Math.min(index, this.currentInput.length))
+    for (let i = 0; i < lines.length; i++) {
+      const len = lines[i].length
+      if (remaining <= len)
+        return { line: i, col: remaining }
+      remaining -= (len + 1)
+    }
+    return { line: lines.length - 1, col: (lines[lines.length - 1] || '').length }
+  }
+
+  private lineColToIndex(line: number, col: number): number {
+    const lines = this.getLines()
+    const safeLine = Math.max(0, Math.min(line, lines.length - 1))
+    let idx = 0
+    for (let i = 0; i < safeLine; i++) idx += lines[i].length + 1
+    const maxCol = (lines[safeLine] ?? '').length
+    const safeCol = Math.max(0, Math.min(col, maxCol))
+    return idx + safeCol
+  }
+
+  private moveCursorUp() {
+    const { line, col } = this.indexToLineCol(this.cursorPosition)
+    if (line === 0) return
+    this.cursorPosition = this.lineColToIndex(line - 1, col)
+  }
+
+  private moveCursorDown() {
+    const lines = this.getLines()
+    const { line, col } = this.indexToLineCol(this.cursorPosition)
+    if (line >= lines.length - 1) return
+    this.cursorPosition = this.lineColToIndex(line + 1, col)
+  }
+
 }

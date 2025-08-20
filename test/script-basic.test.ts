@@ -24,16 +24,14 @@ describe('Basic Script Features', () => {
     shell = new KrustyShell(config)
   })
 
-  it.skip('should execute simple if statement', async () => {
-    // Skipped due to infinite loop in script detection
+  it('should execute simple if statement', async () => {
     const script = 'if true; then\necho "success"\nfi'
     const result = await shell.execute(script)
     expect(result.exitCode).toBe(0)
     expect(result.stdout?.trim()).toBe('success')
   })
 
-  it.skip('should execute simple for loop', async () => {
-    // Skipped due to infinite loop in script detection
+  it('should execute simple for loop', async () => {
     const script = 'for i in 1 2; do\necho "num: $i"\ndone'
     const result = await shell.execute(script)
     expect(result.exitCode).toBe(0)
