@@ -213,7 +213,7 @@ describe('signal Handling and Job Suspension', () => {
       const _success = jobManager.resumeJobBackground(jobId)
       const job = jobManager.getJob(jobId)!
 
-      expect(success).toBe(true)
+      expect(_success).toBe(true)
       expect(job.status).toBe('running')
       expect(job.background).toBe(true)
       expect(mockKill).toHaveBeenCalledWith(-12345, 'SIGCONT')

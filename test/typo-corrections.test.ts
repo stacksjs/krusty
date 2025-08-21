@@ -11,7 +11,7 @@ describe('Typo Corrections Test', () => {
 
   beforeEach(() => {
     mockOutput = ''
-    writeCallCount = 0
+    _writeCallCount = 0
     keypressHandlers = []
 
     process.stdout.write = mock((chunk: any) => {
