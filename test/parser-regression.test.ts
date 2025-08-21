@@ -1,0 +1,29 @@
+import type { KrustyConfig } from '../src/types'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { defaultConfig } from '../src/config'
+import { KrustyShell } from '../src/shell'
+
+describe('parser regression', () => {
+  let shell: KrustyShell
+  let testConfig: KrustyConfig
+
+  beforeEach(() => {
+    testConfig = {
+      ...defaultConfig,
+      verbose: false,
+      history: { ...defaultConfig.history, file: `/tmp/test_history_parser_${Math.random().toString(36).slice(2)}` },
+    }
+    shell = new KrustyShell(testConfig)
+  })
+
+  afterEach(() => {
+    shell.stop()
+  })
+
+  it('reports unterminated quote as syntax error with exit code 2', async () => {
+    const res = await shell.execute("echo 'unterminated")
+    expect(res.exitCode).toBe(2)
+    expect(res.stderr).toBe('krusty: syntax error: unterminated quote\n')
+    expect(res.stdout).toBe('')
+  })
+})

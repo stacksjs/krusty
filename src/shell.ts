@@ -50,6 +50,91 @@ export class KrustyShell implements Shell {
     return this.hookManager
   }
 
+  // Split input into operator-aware segments preserving quotes/escapes.
+  private splitByOperators(input: string): Array<{ segment: string, op: ';' | '&&' | '||' | null }> {
+    const segments: Array<{ segment: string, op: ';' | '&&' | '||' | null }> = []
+    let current = ''
+    let inQuotes = false
+    let quoteChar = ''
+    let escaped = false
+    let currentOp: ';' | '&&' | '||' | null = null // operator to the left of the segment being built
+
+    const push = () => {
+      const seg = current.trim()
+      if (seg.length > 0)
+        segments.push({ segment: seg, op: currentOp })
+      current = ''
+    }
+
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i]
+      const next = input[i + 1]
+
+      if (escaped) {
+        current += ch
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        escaped = true
+        current += ch
+        continue
+      }
+      if (!inQuotes && (ch === '"' || ch === '\'')) {
+        inQuotes = true
+        quoteChar = ch
+        current += ch
+        continue
+      }
+      if (inQuotes && ch === quoteChar) {
+        inQuotes = false
+        quoteChar = ''
+        current += ch
+        continue
+      }
+
+      if (!inQuotes) {
+        // Detect && and ||
+        if (ch === '&' && next === '&') {
+          push()
+          currentOp = '&&'
+          i++ // skip next
+          continue
+        }
+        if (ch === '|' && next === '|') {
+          push()
+          currentOp = '||'
+          i++ // skip next
+          continue
+        }
+        if (ch === ';') {
+          push()
+          currentOp = ';'
+          continue
+        }
+      }
+
+      current += ch
+    }
+
+    // push final with its left operator
+    push()
+
+    return segments
+  }
+
+  private aggregateResults(base: CommandResult | null, next: CommandResult): CommandResult {
+    if (!base)
+      return { ...next }
+    return {
+      exitCode: next.exitCode,
+      stdout: (base.stdout || '') + (next.stdout || ''),
+      stderr: (base.stderr || '') + (next.stderr || ''),
+      duration: (base.duration || 0) + (next.duration || 0),
+      streamed: (base.streamed === true) || (next.streamed === true),
+    }
+  }
+
   private rl: readline.Interface | null = null
   private running = false
 
@@ -293,7 +378,51 @@ export class KrustyShell implements Shell {
         return scriptResult
       }
 
-      // Parse the command
+      // Detect and execute operator chains: ;, &&, ||
+      const chain = this.splitByOperators(command)
+      if (chain.length > 1) {
+        let aggregate: CommandResult | null = null
+        let lastExit = 0
+        for (let i = 0; i < chain.length; i++) {
+          const { segment, op } = chain[i]
+          // Conditional execution based on previous exit code
+          if (i > 0) {
+            if (op === '&&' && lastExit !== 0)
+              continue
+            if (op === '||' && lastExit === 0)
+              continue
+          }
+
+          // Parse + execute this segment (supports pipes/redirections inside)
+          let segParsed: ParsedCommand
+          try {
+            segParsed = await this.parseCommand(segment)
+          }
+          catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            const stderr = `krusty: syntax error: ${msg}\n`
+            const segResult = { exitCode: 2, stdout: '', stderr, duration: 0 }
+            // Include parse error in aggregation and stop processing further segments
+            aggregate = this.aggregateResults(aggregate, segResult)
+            lastExit = segResult.exitCode
+            break
+          }
+          if (segParsed.commands.length === 0)
+            continue
+
+          const segResult = await this.executeCommandChain(segParsed, options)
+          lastExit = segResult.exitCode
+          aggregate = this.aggregateResults(aggregate, segResult)
+        }
+
+        const result = aggregate || { exitCode: 0, stdout: '', stderr: '', duration: 0 }
+        this.lastExitCode = result.exitCode
+        // Execute command:after hooks
+        await this.hookManager.executeHooks('command:after', { command, result })
+        return result
+      }
+
+      // Parse the command (no operator chain)
       let parsed
       try {
         parsed = await this.parseCommand(command)
@@ -310,7 +439,7 @@ export class KrustyShell implements Shell {
         return { exitCode: 0, stdout: '', stderr: '', duration: performance.now() - start }
       }
 
-      // Execute command chain
+      // Execute command chain (pipes/redirections)
       const result = await this.executeCommandChain(parsed, options)
       this.lastExitCode = result.exitCode
 
