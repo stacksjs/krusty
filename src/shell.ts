@@ -198,7 +198,8 @@ export class KrustyShell implements Shell {
       if (limits) {
         ExpansionUtils.setCacheLimits(limits)
       }
-    } catch {}
+    }
+    catch {}
 
     // Load history
     this.loadHistory()
@@ -207,7 +208,8 @@ export class KrustyShell implements Shell {
   private loadHistory(): void {
     try {
       this.history = this.historyManager.getHistory()
-    } catch (error) {
+    }
+    catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to load history:', error)
       }
@@ -217,7 +219,8 @@ export class KrustyShell implements Shell {
   private saveHistory(): void {
     try {
       this.historyManager.save()
-    } catch (error) {
+    }
+    catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to save history:', error)
       }
@@ -323,10 +326,12 @@ export class KrustyShell implements Shell {
         if (diff.length) {
           this.log.info('Config changes on reload:')
           for (const line of diff) this.log.info(` - ${line}`)
-        } else {
+        }
+        else {
           this.log.info('No config changes detected.')
         }
-      } catch {}
+      }
+      catch {}
 
       // Apply environment: start from current process.env to keep runtime updates, then overlay new config
       this.environment = Object.fromEntries(
@@ -359,10 +364,12 @@ export class KrustyShell implements Shell {
         if (limits) {
           ExpansionUtils.setCacheLimits(limits)
         }
-      } catch {}
+      }
+      catch {}
       try {
         ExpansionUtils.clearCaches()
-      } catch {}
+      }
+      catch {}
 
       // Restart plugins to reflect new config
       await this.pluginManager.shutdown()

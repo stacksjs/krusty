@@ -1,21 +1,29 @@
 import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
 import { CommandParser } from '../src/parser'
+import { KrustyShell } from '../src/shell'
 
-function randInt(n: number) { return Math.floor(Math.random() * n) }
-function pick<T>(arr: T[]): T { return arr[randInt(arr.length)] }
+function randInt(n: number) {
+  return Math.floor(Math.random() * n)
+}
+function pick<T>(arr: T[]): T {
+  return arr[randInt(arr.length)]
+}
 
 // Generate a random token with optional quotes/escapes, avoiding unterminated quotes
 function genToken(): string {
   const atoms = ['foo', 'bar', 'baz', 'qux', '42', 'hello', 'world', 'a_b', 'A-B', 'x.y']
   const base = pick(atoms)
   const deco = randInt(5)
-  if (deco === 0) return base
-  if (deco === 1) return `"${base}"`
-  if (deco === 2) return `'${base}'`
-  if (deco === 3) return base.replace(/o/g, '\\o') // add escapes
+  if (deco === 0)
+    return base
+  if (deco === 1)
+    return `"${base}"`
+  if (deco === 2)
+    return `'${base}'`
+  if (deco === 3)
+    return base.replace(/o/g, '\\o') // add escapes
   return base
 }
 
@@ -75,7 +83,8 @@ describe('parser fuzz round-trips', () => {
       for (let j = 0; j < parts.length; j++) {
         const p = parts[j]
         rejoined += p.segment
-        if (p.op) rejoined += ` ${p.op} `
+        if (p.op)
+          rejoined += ` ${p.op} `
       }
       const parts2 = parser.splitByOperatorsDetailed(rejoined)
       expect(parts2).toEqual(parts)
