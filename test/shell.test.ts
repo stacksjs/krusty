@@ -365,6 +365,7 @@ describe('KrustyShell', () => {
       expect(_mockOutput).toContain('\x1B[2K')
 
       // Extract all cursor position commands
+      // eslint-disable-next-line no-control-regex
       const cursorPosMatches = [..._mockOutput.matchAll(/\u001B\[(\d+)G/g)]
       console.log(`Found ${cursorPosMatches.length} cursor position commands:`)
       cursorPosMatches.forEach((match, i) => {

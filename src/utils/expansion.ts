@@ -6,6 +6,14 @@ export interface ExpansionContext {
   shell: Shell
   cwd: string
   environment: Record<string, string>
+  /**
+   * Controls command substitution security.
+   * - 'sandbox' (default): only a small allowlist of commands permitted in $(...) and backticks.
+   * - 'full': execute via system shell without restrictions.
+   */
+  substitutionMode?: 'sandbox' | 'full'
+  /** Optional override allowlist for sandbox mode */
+  sandboxAllow?: string[]
 }
 
 /**
@@ -23,6 +31,10 @@ export class ExpansionEngine {
    * Performs all expansions on the input string
    */
   async expand(input: string): Promise<string> {
+    // Short-circuit if there is nothing to expand
+    if (!ExpansionUtils.hasExpansion(input))
+      return input
+
     let result = input
 
     // Order matters: do variable expansion first, then arithmetic, then brace, then command substitution
@@ -39,6 +51,9 @@ export class ExpansionEngine {
    * Expands variables: $VAR, ${VAR}, ${VAR:-default}, etc.
    */
   private async expandVariables(input: string): Promise<string> {
+    // Quick short-circuit: only proceed if we see ${...} or $NAME patterns
+    if (!/\$\{[^}]+\}|\$[A-Z_]\w*/i.test(input))
+      return input
     // Handle escaped variables by temporarily replacing them
     const escapedVars: string[] = []
     let result = input.replace(/\\\$/g, (_match) => {
@@ -142,6 +157,9 @@ export class ExpansionEngine {
    * Expands command substitution: $(command) and `command`
    */
   private async expandCommandSubstitution(input: string): Promise<string> {
+    // Quick short-circuit
+    if (!(/\$\([^)]*\)/.test(input) || /`[^`]+`/.test(input)))
+      return input
     let result = input
 
     // Handle nested $(...) by scanning for balanced parentheses
@@ -199,6 +217,9 @@ export class ExpansionEngine {
    * Expands arithmetic expressions: $((expression))
    */
   private async expandArithmetic(input: string): Promise<string> {
+    // Quick short-circuit
+    if (!/\$\(\(/.test(input))
+      return input
     const arithmeticRegex = /\$\(\(([^)]+)\)\)/g
     return input.replace(arithmeticRegex, (match, expression) => {
       try {
@@ -280,9 +301,16 @@ export class ExpansionEngine {
       throw new Error('Invalid arithmetic token')
     }).join('')
 
+    // Arithmetic cache lookup
+    const cached = ExpansionUtils.getArithmeticCached(normalized)
+    if (cached !== undefined)
+      return cached
+
     try {
       // eslint-disable-next-line no-new-func
-      return new Function(`return (${normalized})`)()
+      const value = new Function(`return (${normalized})`)()
+      ExpansionUtils.setArithmeticCached(normalized, value)
+      return value
     }
     catch {
       return 0
@@ -293,6 +321,9 @@ export class ExpansionEngine {
    * Expands brace expansion: {a,b,c}, {1..10}, {a..z}
    */
   private expandBraces(input: string): string {
+    // Quick short-circuit
+    if (!/\{[^{}]+\}/.test(input))
+      return input
     let result = input
 
     // Handle brace expansion with prefix/suffix support
@@ -358,6 +389,9 @@ export class ExpansionEngine {
    * Handles process substitution: <(command), >(command)
    */
   private async expandProcessSubstitution(input: string): Promise<string> {
+    // Quick short-circuit
+    if (!(/<\([^)]*\)/.test(input) || />\([^)]*\)/.test(input)))
+      return input
     let result = input
 
     // Handle <(command) - input process substitution
@@ -413,6 +447,72 @@ export class ExpansionEngine {
    * Executes a command and returns its output
    */
   async executeCommand(command: string): Promise<string> {
+    const mode = this.context.substitutionMode ?? 'sandbox'
+    if (mode === 'sandbox') {
+      // Basic, conservative sandbox: allow only simple commands without operators or redirects
+      const allow = new Set((this.context.sandboxAllow && this.context.sandboxAllow.length > 0)
+        ? this.context.sandboxAllow
+        : ['echo', 'printf'])
+
+      const trimmed = command.trim()
+      // Disallow obvious shell metacharacters to avoid composition
+      if (/[;&|><`$\\]/.test(trimmed))
+        throw new Error('Command substitution blocked by sandbox: contains disallowed characters')
+
+      // Extract command name (first token)
+      const firstSpace = trimmed.indexOf(' ')
+      const cmd = (firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace)).trim()
+      if (!allow.has(cmd))
+        throw new Error(`Command substitution blocked by sandbox: '${cmd}' not allowed`)
+
+      // Execute allowed commands internally without invoking a shell
+      if (cmd === 'echo') {
+        const rest = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1)
+        // A minimal echo that just returns the rest plus newline
+        return `${rest}\n`
+      }
+      if (cmd === 'printf') {
+        const rest = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1)
+        // Very minimal printf that returns the rest as-is (no format parsing here)
+        return rest
+      }
+
+      // For other allowlisted commands, spawn directly without a shell
+      const rest = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1)
+      const args = rest.length ? ExpansionUtils.splitArguments(rest) : []
+      const resolved = await ExpansionUtils.resolveExecutable(cmd, this.context.environment)
+      return await new Promise<string>((resolve, reject) => {
+        const child = spawn(resolved ?? cmd, args, {
+          cwd: this.context.cwd,
+          env: this.context.environment,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: false,
+        })
+
+        let stdout = ''
+        let stderr = ''
+        child.stdout?.on('data', (d) => {
+          stdout += d.toString()
+        })
+        child.stderr?.on('data', (d) => {
+          stderr += d.toString()
+        })
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve(stdout)
+          }
+          else {
+            reject(new Error(`Command failed with exit code ${code}: ${stderr}`))
+          }
+        })
+        child.on('error', reject)
+      })
+
+      // Should not reach here because of allowlist check
+      throw new Error('Command substitution blocked by sandbox')
+    }
+
+    // Full mode: delegate to system shell
     return new Promise((resolve, reject) => {
       const shell = process.platform === 'win32' ? 'cmd' : '/bin/sh'
       const args = process.platform === 'win32' ? ['/c', command] : ['-c', command]
@@ -454,6 +554,35 @@ export class ExpansionEngine {
  * Utility functions for expansion
  */
 export class ExpansionUtils {
+  // Small LRU cache for splitArguments results
+  private static argCache = new Map<string, string[]>()
+  private static ARG_CACHE_LIMIT = 200
+  // Memoized PATH resolution caches
+  private static pathCacheKey = ''
+  private static pathCache: string[] = []
+  private static execCache = new Map<string, string | null>()
+  private static EXEC_CACHE_LIMIT = 500
+  // Arithmetic evaluation cache (post-normalization)
+  private static arithmeticCache = new Map<string, number>()
+  private static ARITH_CACHE_LIMIT = 500
+
+  /** Configure cache limits at runtime */
+  static setCacheLimits(limits: Partial<{ arg: number, exec: number, arithmetic: number }>): void {
+    if (limits.arg && limits.arg > 0)
+      this.ARG_CACHE_LIMIT = limits.arg
+    if (limits.exec && limits.exec > 0)
+      this.EXEC_CACHE_LIMIT = limits.exec
+    if (limits.arithmetic && limits.arithmetic > 0)
+      this.ARITH_CACHE_LIMIT = limits.arithmetic
+  }
+
+  /** Clear all caches (arg, exec, arithmetic). PATH split cache retained until PATH changes. */
+  static clearCaches(): void {
+    this.argCache.clear()
+    this.execCache.clear()
+    this.arithmeticCache.clear()
+  }
+
   /**
    * Checks if a string contains expansion patterns
    */
@@ -472,6 +601,11 @@ export class ExpansionUtils {
    * Splits a string by whitespace, respecting quotes and expansions
    */
   static splitArguments(input: string): string[] {
+    // Cache hit
+    const cached = this.argCache.get(input)
+    if (cached)
+      return cached
+
     const args: string[] = []
     let current = ''
     let inQuotes = false
@@ -535,6 +669,96 @@ export class ExpansionUtils {
       args.push(current)
     }
 
+    // Insert into LRU cache
+    this.argCache.set(input, args)
+    if (this.argCache.size > this.ARG_CACHE_LIMIT) {
+      // delete oldest
+      const firstKey = this.argCache.keys().next().value as string
+      this.argCache.delete(firstKey)
+    }
     return args
+  }
+
+  /**
+   * Resolve an executable via PATH with memoization. Returns absolute path or null if not found.
+   */
+  static async resolveExecutable(cmd: string, env: Record<string, string>): Promise<string | null> {
+    // Windows will resolve .exe/.cmd; we still can memoize by name only
+    if (this.execCache.has(cmd))
+      return this.execCache.get(cmd) ?? null
+
+    const PATH = env.PATH ?? process.env.PATH ?? ''
+    if (PATH !== this.pathCacheKey) {
+      this.pathCacheKey = PATH
+      this.pathCache = PATH.split(process.platform === 'win32' ? ';' : ':').filter(Boolean)
+      this.execCache.clear()
+    }
+
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    const access = async (p: string) => {
+      try {
+        await fs.access(p)
+        return true
+      }
+      catch {
+        return false
+      }
+    }
+
+    // If cmd includes a path separator, check it directly
+    if (cmd.includes('/') || (process.platform === 'win32' && cmd.includes('\\'))) {
+      const abs = path.isAbsolute(cmd) ? cmd : path.resolve(cmd)
+      const ok = await access(abs)
+      this.execCache.set(cmd, ok ? abs : null)
+      return ok ? abs : null
+    }
+
+    for (const dir of this.pathCache) {
+      const candidate = path.join(dir, cmd)
+      if (await access(candidate)) {
+        this.execCache.set(cmd, candidate)
+        if (this.execCache.size > this.EXEC_CACHE_LIMIT) {
+          const k = this.execCache.keys().next().value as string
+          this.execCache.delete(k)
+        }
+        return candidate
+      }
+      // Windows PATHEXT support (basic)
+      if (process.platform === 'win32') {
+        const pathext = (env.PATHEXT ?? process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';')
+        for (const ext of pathext) {
+          const cand = candidate + ext
+          if (await access(cand)) {
+            this.execCache.set(cmd, cand)
+            if (this.execCache.size > this.EXEC_CACHE_LIMIT) {
+              const k = this.execCache.keys().next().value as string
+              this.execCache.delete(k)
+            }
+            return cand
+          }
+        }
+      }
+    }
+    this.execCache.set(cmd, null)
+    if (this.execCache.size > this.EXEC_CACHE_LIMIT) {
+      const k = this.execCache.keys().next().value as string
+      this.execCache.delete(k)
+    }
+    return null
+  }
+
+  /** Get arithmetic cache entry for normalized expression */
+  static getArithmeticCached(norm: string): number | undefined {
+    return this.arithmeticCache.get(norm)
+  }
+
+  /** Set arithmetic cache entry with LRU eviction */
+  static setArithmeticCached(norm: string, value: number): void {
+    this.arithmeticCache.set(norm, value)
+    if (this.arithmeticCache.size > this.ARITH_CACHE_LIMIT) {
+      const k = this.arithmeticCache.keys().next().value as string
+      this.arithmeticCache.delete(k)
+    }
   }
 }

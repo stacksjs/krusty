@@ -130,6 +130,7 @@ function formatPrintf(spec: string, args: string[]): string {
   const re = /%(%|([-0]?)(\d+)?(?:\.(\d+))?([sdqboxXfeg]))/g
   let lastIndex = 0
   let match: RegExpExecArray | null
+  // eslint-disable-next-line no-cond-assign
   while ((match = re.exec(spec))) {
     out += spec.slice(lastIndex, match.index)
     lastIndex = re.lastIndex

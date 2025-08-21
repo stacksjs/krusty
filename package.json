@@ -55,7 +55,8 @@
     "dev:docs": "bun --bun vitepress dev docs",
     "build:docs": "bun --bun vitepress build docs",
     "preview:docs": "bun --bun vitepress preview docs",
-    "typecheck": "bun --bun tsc --noEmit"
+    "typecheck": "bun --bun tsc --noEmit",
+    "bench": "bun --bun packages/benchmark/index.ts"
   },
   "devDependencies": {
     "@stacksjs/docs": "^0.70.23",

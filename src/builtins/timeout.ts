@@ -115,7 +115,9 @@ export const timeoutCommand: BuiltinCommand = {
       let timedOut = false
       let timer: ReturnType<typeof setTimeout> | null = null
       try {
-        timer = setTimeout(() => { timedOut = true }, ms)
+        timer = setTimeout(() => {
+          timedOut = true
+        }, ms)
         const result = await shell.executeCommand(command, commandArgs)
         if (timer)
           clearTimeout(timer)

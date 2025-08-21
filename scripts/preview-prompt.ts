@@ -13,6 +13,7 @@ async function main() {
   const prompt = await renderer.render(process.cwd(), systemInfo, gitInfo, 0)
   const right = await renderer.renderRight(process.cwd(), systemInfo, gitInfo, 0)
 
+  // eslint-disable-next-line no-control-regex
   const sanitize = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '')
   console.error(`[debug] left.length=${prompt.length} right.length=${right.length}`)
   console.error(`[debug] left(sanitized)='${sanitize(prompt)}'`)
