@@ -1135,6 +1135,14 @@ export class KrustyShell implements Shell {
           stdio: ['pipe', 'pipe', 'pipe'],
         })
 
+        // CI debug: log spawn
+        if (process.env.KRUSTY_CI_DEBUG) {
+          try {
+            this.log.info(`[ci-debug] spawn(pipe stage ${i}): pid=${child.pid} cmd=${cmd.raw || `${cmd.name} ${extArgs.join(' ')}`}`)
+          }
+          catch {}
+        }
+
         // Add to job manager (foreground)
         try {
           this.addJob(cmd.raw || `${cmd.name} ${extArgs.join(' ')}`, child, false)
@@ -1193,6 +1201,12 @@ export class KrustyShell implements Shell {
               rightChild.stdin?.end()
             }
             catch {}
+            if (process.env.KRUSTY_CI_DEBUG) {
+              try {
+                this.log.info(`[ci-debug] pipe(skip wire ext->ext, end right stdin) stage=${i}->${i + 1}`)
+              }
+              catch {}
+            }
           }
         }
         else {
@@ -1221,9 +1235,21 @@ export class KrustyShell implements Shell {
               merge.pipe(rightChild.stdin!, { end: true })
             }
             catch {}
+            if (process.env.KRUSTY_CI_DEBUG) {
+              try {
+                this.log.info(`[ci-debug] pipe(ext 2>&1)->ext wired stage=${i}->${i + 1}`)
+              }
+              catch {}
+            }
           }
           else {
             leftChild.stdout?.pipe(rightChild.stdin!, { end: true })
+            if (process.env.KRUSTY_CI_DEBUG) {
+              try {
+                this.log.info(`[ci-debug] pipe(ext->ext) wired stage=${i}->${i + 1}`)
+              }
+              catch {}
+            }
           }
         }
       }
@@ -1238,6 +1264,12 @@ export class KrustyShell implements Shell {
                 rightChild.stdin?.end()
               }
               catch {}
+              if (process.env.KRUSTY_CI_DEBUG) {
+                try {
+                  this.log.info(`[ci-debug] pipe(skip wire builtin->ext, end right stdin) stage=${i}->${i + 1}`)
+                }
+                catch {}
+              }
             }
           }
           else {
@@ -1252,6 +1284,12 @@ export class KrustyShell implements Shell {
                 }
               })
               src.pipe(rightChild.stdin!)
+              if (process.env.KRUSTY_CI_DEBUG) {
+                try {
+                  this.log.info(`[ci-debug] pipe(builtin->ext) wrote ${data.length}B stage=${i}->${i + 1}`)
+                }
+                catch {}
+              }
             }
             else {
               // No data to write; explicitly end stdin of the right child to avoid waiting
@@ -1259,6 +1297,12 @@ export class KrustyShell implements Shell {
                 rightChild.stdin?.end()
               }
               catch {}
+              if (process.env.KRUSTY_CI_DEBUG) {
+                try {
+                  this.log.info(`[ci-debug] pipe(builtin->ext) no data, ended right stdin stage=${i}->${i + 1}`)
+                }
+                catch {}
+              }
             }
           }
         }
@@ -1293,8 +1337,15 @@ export class KrustyShell implements Shell {
         // If nothing is piped or redirected into the first child, close its stdin to prevent hanging
         const hasUpstream = false
         const hasOwnInput = hasInputSource(0)
-        if (!hasUpstream && !hasOwnInput)
+        if (!hasUpstream && !hasOwnInput) {
           firstChild.stdin?.end()
+          if (process.env.KRUSTY_CI_DEBUG) {
+            try {
+              this.log.info(`[ci-debug] first stage stdin explicitly ended`)
+            }
+            catch {}
+          }
+        }
       }
       catch {}
     }
@@ -1320,6 +1371,12 @@ export class KrustyShell implements Shell {
                 ec = signal === 'SIGTERM' ? 143 : 130
               exitCodes[idx] = ec
               closed += 1
+              if (process.env.KRUSTY_CI_DEBUG) {
+                try {
+                  this.log.info(`[ci-debug] child close(stage ${idx}) code=${code} signal=${signal} ec=${ec}`)
+                }
+                catch {}
+              }
               if (closed === children.length)
                 resolve()
             })
@@ -1976,43 +2033,66 @@ export class KrustyShell implements Shell {
         }
       })
 
-      // Handle errors
-      child.on('error', (_error) => {
-        this.lastExitCode = 127
-        resolve({
-          exitCode: this.lastExitCode,
-          stdout: '',
-          stderr: `krusty: ${command.name}: command not found\n`,
-          duration: performance.now() - start,
-          streamed: false,
-        })
-      })
-
-      // Handle process completion
-      child.on('close', (code, signal) => {
+      // Single-shot resolver to avoid multiple resolve calls
+      let resolved = false
+      const finish = (code?: number | null, signal?: NodeJS.Signals | null) => {
+        if (resolved)
+          return
+        resolved = true
         // Clear any pending timeout
         if (timeoutHandle) {
           clearTimeout(timeoutHandle)
           timeoutHandle = null
         }
-        // Update the shell's last exit code
+        // Compute exit code
         let exitCode = code || 0
-
-        // Handle signals (like SIGTERM, SIGKILL)
-        if (signal) {
+        if (signal)
           exitCode = signal === 'SIGTERM' ? 143 : 130
-        }
-
         this.lastExitCode = exitCode
-
         resolve({
           exitCode: this.lastExitCode,
           stdout: skipStdoutCapture ? '' : stdout,
           stderr: killedForTimeout ? `${stderr}krusty: process timed out after ${timeoutMs}ms\n` : stderr,
           duration: performance.now() - start,
-          // If we streamed during execution, signal that callers shouldn't re-print
           streamed: shouldStream,
         })
+      }
+
+      // Handle errors
+      child.on('error', (_error) => {
+        if (process.env.KRUSTY_CI_DEBUG) {
+          try {
+            this.log.info(`[ci-debug] child error: ${String(_error)}`)
+          }
+          catch {}
+        }
+        this.lastExitCode = 127
+        // Provide a friendly stderr when executable is missing or spawn fails
+        if (!stderr.includes('command not found')) {
+          stderr += `krusty: ${command.name}: command not found\n`
+        }
+        finish(127, null)
+      })
+
+      // Handle process completion via both 'close' and 'exit'
+      child.on('close', (code, signal) => {
+        if (process.env.KRUSTY_CI_DEBUG) {
+          try {
+            this.log.info(`[ci-debug] child close: code=${code} signal=${signal}`)
+          }
+          catch {}
+        }
+        finish(code ?? 0, signal ?? null)
+      })
+      child.on('exit', (code, signal) => {
+        if (process.env.KRUSTY_CI_DEBUG) {
+          try {
+            this.log.info(`[ci-debug] child exit: code=${code} signal=${signal}`)
+          }
+          catch {}
+        }
+        // Some environments may emit 'exit' without 'close' if stdio already ended
+        setTimeout(() => finish(code ?? 0, signal ?? null), 0)
       })
 
       // Handle input: write provided input, pipe from file, or explicitly close stdin to signal EOF
