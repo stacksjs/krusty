@@ -43,4 +43,49 @@ describe('printf builtin', () => {
     expect(res.exitCode).toBe(0)
     expect(res.stdout).toBe('"a b"')
   })
+
+  it('supports width and left/right alignment for %s', async () => {
+    const r1 = await shell.execute('printf "%5s" hi')
+    expect(r1.stdout).toBe('   hi')
+    const r2 = await shell.execute('printf "%-5s" hi')
+    expect(r2.stdout).toBe('hi   ')
+  })
+
+  it('supports zero-padding, width and precision for %d', async () => {
+    const r1 = await shell.execute('printf "%05d" 42')
+    expect(r1.stdout).toBe('00042')
+    const r2 = await shell.execute('printf "%8.4d" 42')
+    expect(r2.stdout).toBe('    0042')
+    const r3 = await shell.execute('printf "%8d" -7')
+    expect(r3.stdout).toBe('      -7')
+  })
+
+  it('supports octal/hex with %o/%x/%X', async () => {
+    const r1 = await shell.execute('printf "%o" 8')
+    expect(r1.stdout).toBe('10')
+    const r2 = await shell.execute('printf "%x %X" 255 255')
+    expect(r2.stdout).toBe('ff FF')
+  })
+
+  it('supports floating formats %f/%e/%g with precision and width', async () => {
+    const r1 = await shell.execute('printf "%7.2f" 3.14159')
+    expect(r1.stdout).toBe('   3.14')
+    const r2 = await shell.execute('printf "%-10.2e" 3.14159')
+    // bun uses lowercase e after our normalization
+    expect(r2.stdout).toMatch(/^3\.14e[-+]?0?\d\s+$/)
+    const r3 = await shell.execute('printf "%g" 3.1400')
+    expect(r3.stdout).toBe('3.14')
+  })
+
+  it('expands backslash escapes with %b', async () => {
+    // Pass a literal backslash-n to be expanded by %b
+    const r = await shell.execute('printf "%b" "line\\\\nb"')
+    expect(r.stdout).toBe('line\nb'.replace('\\n', '\n'))
+  })
+
+  it('handles invalid/unknown specifiers by leaving them literal', async () => {
+    const r = await shell.execute('printf "%y %s" hello')
+    // %y should be left intact, %s filled with hello
+    expect(r.stdout).toBe('%y hello')
+  })
 })
