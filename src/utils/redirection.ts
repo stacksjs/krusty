@@ -177,9 +177,13 @@ export class RedirectionHandler {
     redirection: Redirection,
     cwd: string,
   ): Promise<void> {
-    const filePath = redirection.target.startsWith('/')
-      ? redirection.target
-      : `${cwd}/${redirection.target}`
+    // Normalize APPEND:: marker off the raw target before resolving path
+    const rawTarget = redirection.target.startsWith('APPEND::')
+      ? redirection.target.replace(/^APPEND::/, '')
+      : redirection.target
+    const filePath = rawTarget.startsWith('/')
+      ? rawTarget
+      : `${cwd}/${rawTarget}`
 
     switch (redirection.direction) {
       case 'input': {
@@ -227,8 +231,7 @@ export class RedirectionHandler {
       case 'both': {
         // Support APPEND:: marker for combined append (&>>)
         const isAppendBoth = redirection.target.startsWith('APPEND::')
-        const actualPath = isAppendBoth ? filePath.replace(/APPEND::/, '') : filePath
-        const bothStream = createWriteStream(actualPath, { flags: isAppendBoth ? 'a' : 'w' })
+        const bothStream = createWriteStream(filePath, { flags: isAppendBoth ? 'a' : 'w' })
         if (process.stdout) {
           process.stdout.pipe(bothStream)
         }
@@ -280,22 +283,25 @@ export class RedirectionHandler {
     if (dst === '&-') {
       if (redirection.fd === 1 && process.stdout) {
         try {
-          (process.stdout as any).end?.()
-          (process.stdout as any).destroy?.()
+          const out: any = process.stdout
+          if (out && typeof out.end === 'function') out.end()
+          if (out && typeof out.destroy === 'function') out.destroy()
         }
         catch {}
       }
       else if (redirection.fd === 2 && process.stderr) {
         try {
-          (process.stderr as any).end?.()
-          (process.stderr as any).destroy?.()
+          const err: any = process.stderr
+          if (err && typeof err.end === 'function') err.end()
+          if (err && typeof err.destroy === 'function') err.destroy()
         }
         catch {}
       }
       else if (redirection.fd === 0 && process.stdin) {
         try {
-          (process.stdin as any).end?.()
-          (process.stdin as any).destroy?.()
+          const inn: any = process.stdin
+          if (inn && typeof inn.end === 'function') inn.end()
+          if (inn && typeof inn.destroy === 'function') inn.destroy()
         }
         catch {}
       }
