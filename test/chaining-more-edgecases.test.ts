@@ -25,7 +25,8 @@ describe('chaining more edge cases', () => {
     const res = await shell.execute('echo ok ||')
     if (res.stdout.includes('ok')) {
       expect(res.exitCode).toBe(0)
-    } else {
+    }
+    else {
       expect(res.exitCode).not.toBe(0)
     }
   })
@@ -59,7 +60,7 @@ describe('chaining more edge cases', () => {
   })
 
   it('fd dup redirection 2>&1 merges stderr into stdout', async () => {
-    const res = await shell.execute("sh -c 'echo err 1>&2' 2>&1")
+    const res = await shell.execute('sh -c \'echo err 1>&2\' 2>&1')
     // Accept either merged stdout or separate stderr depending on platform/runner behavior
     const inStdout = res.stdout.includes('err')
     const inStderr = res.stderr.includes('err')
@@ -67,7 +68,7 @@ describe('chaining more edge cases', () => {
   })
 
   it('failure in left side triggers || fallback', async () => {
-    const res = await shell.execute("sh -c 'exit 1' || echo fallback")
+    const res = await shell.execute('sh -c \'exit 1\' || echo fallback')
     expect(res.exitCode).toBe(0)
     expect(res.stdout).toContain('fallback')
   })
