@@ -82,6 +82,13 @@ export class ExpansionEngine {
    * Handles parameter expansion: ${VAR:-default}, ${VAR:+alt}, ${VAR:?error}
    */
   private expandParameter(content: string): string {
+    // Length form: ${#VAR}
+    if (content.startsWith('#')) {
+      const varName = content.slice(1)
+      const value = (varName in this.context.environment) ? this.context.environment[varName] : process.env[varName]
+      const len = (value ?? '').length
+      return String(len)
+    }
     // Handle ${VAR:-default} - use default if unset or empty
     if (content.includes(':-')) {
       const [varName, defaultValue] = content.split(':-', 2)
@@ -137,16 +144,44 @@ export class ExpansionEngine {
   private async expandCommandSubstitution(input: string): Promise<string> {
     let result = input
 
-    // Handle $(command) syntax
-    const dollarParenRegex = /\$\(([^)]+)\)/g
-    const dollarMatches = Array.from(result.matchAll(dollarParenRegex))
-    for (const match of dollarMatches) {
-      const command = match[1]
-      const output = await this.executeCommand(command)
-      result = result.replace(match[0], output.trim())
+    // Handle nested $(...) by scanning for balanced parentheses
+    const expandDollarParen = async (str: string): Promise<string> => {
+      let i = 0
+      while (i < str.length) {
+        if (str[i] === '$' && str[i + 1] === '(') {
+          // find matching ) with nesting
+          let depth = 0
+          let j = i + 2
+          for (; j < str.length; j++) {
+            const ch = str[j]
+            const prev = str[j - 1]
+            if (ch === '(' && prev !== '\\') {
+              depth += 1
+            }
+            else if (ch === ')' && prev !== '\\') {
+              if (depth === 0) break
+              depth -= 1
+            }
+          }
+          if (j >= str.length) break // unmatched; leave as-is
+          const inner = str.slice(i + 2, j)
+          const expandedInner = await expandDollarParen(inner)
+          const output = await this.executeCommand(expandedInner)
+          const before = str.slice(0, i)
+          const after = str.slice(j + 1)
+          str = `${before}${output.trim()}${after}`
+          // restart scan from beginning of replaced segment
+          i = before.length
+          continue
+        }
+        i += 1
+      }
+      return str
     }
 
-    // Handle `command` syntax
+    result = await expandDollarParen(result)
+
+    // Handle `command` syntax (no nesting support required here)
     const backtickRegex = /`([^`]+)`/g
     const backtickMatches = Array.from(result.matchAll(backtickRegex))
     for (const match of backtickMatches) {
@@ -167,13 +202,20 @@ export class ExpansionEngine {
       try {
         // Simple arithmetic evaluation - expand variables first
         let expr = expression
-        const varRegex = /\$?([A-Z_]\w*)/gi
-        expr = expr.replace(varRegex, (varMatch: string, varName: string) => {
+        // Replace $VAR explicitly
+        expr = expr.replace(/\$([A-Z_]\w*)/gi, (_m: string, varName: string) => {
           const value = this.context.environment[varName]
-          return value && !Number.isNaN(Number(value)) ? value : '0'
+          if (typeof value === 'string' && value.length > 0) return value
+          return '0'
+        })
+        // Replace bare VAR identifiers not preceded by hex/octal digits or 'x'
+        expr = expr.replace(/(?<![\da-fx_])([A-Z_]\w*)\b/gi, (_m: string, varName: string) => {
+          const value = this.context.environment[varName]
+          if (typeof value === 'string' && value.length > 0) return value
+          return '0'
         })
 
-        // Evaluate the expression safely
+        // Evaluate the expression safely with base prefixes
         const result = this.evaluateArithmetic(expr)
         return result.toString()
       }
@@ -187,16 +229,50 @@ export class ExpansionEngine {
    * Safe arithmetic evaluation
    */
   private evaluateArithmetic(expression: string): number {
-    // Remove whitespace and validate characters
-    const cleaned = expression.replace(/\s/g, '')
-    if (!/^[0-9+\-*/%()]+$/.test(cleaned)) {
+    // Normalize whitespace
+    const cleaned = expression.replace(/\s+/g, '')
+    // Validate allowed tokens: numbers (with 0x... hex or leading-0 octal), operators and parens
+    if (!/^[\da-fA-Fx+\-*/%()]+$/.test(cleaned)) {
       throw new Error('Invalid arithmetic expression')
     }
 
+    // Tokenize numbers and operators; convert hex and octal to decimal explicitly
+    const tokens: string[] = []
+    let buf = ''
+    for (let i = 0; i < cleaned.length; i++) {
+      const ch = cleaned[i]
+      if (/[0-9a-fA-Fx]/.test(ch)) {
+        buf += ch
+      }
+      else {
+        if (buf) {
+          tokens.push(buf)
+          buf = ''
+        }
+        tokens.push(ch)
+      }
+    }
+    if (buf) tokens.push(buf)
+
+    const toDec = (numTok: string): string => {
+      if (/^0x[\da-fA-F]+$/.test(numTok)) return String(Number.parseInt(numTok.slice(2), 16))
+      // Leading zero implies octal (but a single 0 is zero)
+      if (/^0[0-7]+$/.test(numTok)) return String(Number.parseInt(numTok, 8))
+      if (/^\d+$/.test(numTok)) return numTok
+      // Anything else is invalid
+      throw new Error('Invalid arithmetic literal')
+    }
+
+    const normalized = tokens.map((t) => {
+      if (/^[\da-fA-Fx]+$/.test(t)) return toDec(t)
+      if (/^[+\-*/%()]$/.test(t)) return t
+      // Unexpected token
+      throw new Error('Invalid arithmetic token')
+    }).join('')
+
     try {
-      // Use Function constructor for safe evaluation
       // eslint-disable-next-line no-new-func
-      return new Function(`"use strict"; return (${cleaned})`)()
+      return new Function(`return (${normalized})`)()
     }
     catch {
       return 0
@@ -242,8 +318,13 @@ export class ExpansionEngine {
     if (!Number.isNaN(startNum) && !Number.isNaN(endNum)) {
       const result: string[] = []
       const step = startNum <= endNum ? 1 : -1
+      // Zero-padding width if either endpoint has leading zeros and same width
+      const width = (start.startsWith('0') || end.startsWith('0'))
+        ? Math.max(start.length, end.length)
+        : 0
       for (let i = startNum; step > 0 ? i <= endNum : i >= endNum; i += step) {
-        result.push(i.toString())
+        const s = i.toString()
+        result.push(width > 0 ? s.padStart(width, '0') : s)
       }
       return result
     }

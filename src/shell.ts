@@ -436,7 +436,10 @@ export class KrustyShell implements Shell {
           }
           catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
-            const stderr = `krusty: syntax error: ${msg}\n`
+            // Build a caret indicator when feasible (unterminated quotes -> caret at end)
+            const caretIdx = segment.length // best-effort: end of segment for unterminated quotes
+            const caretLine = `${segment}\n${' '.repeat(Math.max(0, caretIdx))}^\n`
+            const stderr = `krusty: syntax error: ${msg}\n${caretLine}`
             const segResult = { exitCode: 2, stdout: '', stderr, duration: 0 }
             // Include parse error in aggregation and stop processing further segments
             aggregate = this.aggregateResults(aggregate, segResult)
@@ -465,7 +468,10 @@ export class KrustyShell implements Shell {
       }
       catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        const stderr = `krusty: syntax error: ${msg}\n`
+        // Caret at end of input as best-effort for syntax errors thrown by parser
+        const caretIdx = command.length
+        const caretLine = `${command}\n${' '.repeat(Math.max(0, caretIdx))}^\n`
+        const stderr = `krusty: syntax error: ${msg}\n${caretLine}`
         const result = { exitCode: 2, stdout: '', stderr, duration: performance.now() - start }
         // Execute command:error hooks with parse context
         await this.hookManager.executeHooks('command:error', { command, error: msg, result })

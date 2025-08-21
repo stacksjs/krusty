@@ -1,10 +1,9 @@
 /* eslint-disable no-template-curly-in-string */
-import type { Shell } from '../src/types'
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { ExpansionEngine, ExpansionUtils } from '../src/utils/expansion'
 
 describe('ExpansionEngine', () => {
-  let mockShell: Shell
+  let mockShell: any
   let expansionEngine: ExpansionEngine
 
   beforeEach(() => {
@@ -18,13 +17,26 @@ describe('ExpansionEngine', () => {
         NUM_VAR: '42',
         EMPTY_VAR: '',
       },
-    } as Shell
+    }
 
     expansionEngine = new ExpansionEngine({
       shell: mockShell,
       cwd: mockShell.cwd,
       environment: mockShell.environment,
     })
+
+  describe('Parameter and Escapes', () => {
+    it('supports ${#VAR} length form', async () => {
+      const result = await expansionEngine.expand('len=${#USER}')
+      expect(result).toBe(`len=${mockShell.environment.USER.length}`)
+    })
+
+    it('does not expand escaped $', async () => {
+      const result = await expansionEngine.expand('cost:\n\\$5 and \\${USER}')
+      // ExpansionEngine preserves backslashes; later stages may unescape
+      expect(result).toBe('cost:\n\\$5 and \\${USER}')
+    })
+  })
   })
 
   describe('Variable Expansion', () => {
@@ -89,6 +101,12 @@ describe('ExpansionEngine', () => {
       const result = await expansionEngine.expand('$((invalid))')
       expect(result).toBe('0')
     })
+
+    it('supports hex and octal literals', async () => {
+      const result = await expansionEngine.expand('$((0x10 + 010))')
+      // 0x10 = 16, 010 (octal) = 8
+      expect(result).toBe('24')
+    })
   })
 
   describe('Brace Expansion', () => {
@@ -120,6 +138,11 @@ describe('ExpansionEngine', () => {
     it('should handle nested expansions', async () => {
       const result = await expansionEngine.expand('prefix_{1..3}_suffix')
       expect(result).toBe('prefix_1_suffix prefix_2_suffix prefix_3_suffix')
+    })
+
+    it('should zero-pad numeric ranges when endpoints have padding', async () => {
+      const result = await expansionEngine.expand('{01..10}')
+      expect(result).toBe('01 02 03 04 05 06 07 08 09 10')
     })
   })
 
@@ -153,6 +176,18 @@ describe('ExpansionEngine', () => {
       expect(result).toBe('Current dir: /current/dir')
 
       // Restore original method
+      expansionEngine.executeCommand = originalExecuteCommand
+    })
+
+    it('should handle nested $() substitution', async () => {
+      const originalExecuteCommand = expansionEngine.executeCommand
+      expansionEngine.executeCommand = async (cmd: string) => {
+        if (cmd.trim() === 'echo hi') return 'hi\n'
+        return ''
+      }
+
+      const result = await expansionEngine.expand('Value: $(echo $(echo hi))')
+      expect(result).toBe('Value: hi')
       expansionEngine.executeCommand = originalExecuteCommand
     })
   })
