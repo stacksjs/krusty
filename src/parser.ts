@@ -2,6 +2,15 @@ import type { Command, ParsedCommand, Redirection } from './types'
 import { ExpansionEngine, ExpansionUtils } from './utils/expansion'
 import { RedirectionHandler } from './utils/redirection'
 
+export class ParseError extends Error {
+  index?: number
+  constructor(message: string, index?: number) {
+    super(message)
+    this.name = 'ParseError'
+    this.index = index
+  }
+}
+
 export class CommandParser {
   async parse(input: string, shell?: any): Promise<ParsedCommand> {
     const trimmed = input.trim()
@@ -11,7 +20,8 @@ export class CommandParser {
 
     // Basic syntax validation: detect unterminated quotes early
     if (this.hasUnterminatedQuotes(trimmed)) {
-      throw new Error('unterminated quote')
+      // Caret at end of input for unterminated quotes
+      throw new ParseError('unterminated quote', trimmed.length)
     }
 
     // For parser.parse(), only split pipelines within a single command segment.

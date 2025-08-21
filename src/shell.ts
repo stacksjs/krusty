@@ -16,7 +16,7 @@ import { HookManager } from './hooks'
 import { AutoSuggestInput } from './input/auto-suggest'
 import { JobManager } from './jobs/job-manager'
 import { Logger } from './logger'
-import { CommandParser } from './parser'
+import { CommandParser, ParseError } from './parser'
 import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 import { ScriptManager } from './scripting/script-manager'
@@ -468,8 +468,13 @@ export class KrustyShell implements Shell {
       }
       catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        // Caret at end of input as best-effort for syntax errors thrown by parser
-        const caretIdx = command.length
+        // Prefer precise caret index from parser when available
+        let caretIdx = command.length
+        if (err instanceof ParseError && typeof err.index === 'number') {
+          // Parser calculated index relative to trimmed input. Map to original input by offsetting
+          const startIdx = command.search(/\S|$/)
+          caretIdx = Math.max(0, Math.min(command.length, startIdx + err.index))
+        }
         const caretLine = `${command}\n${' '.repeat(Math.max(0, caretIdx))}^\n`
         const stderr = `krusty: syntax error: ${msg}\n${caretLine}`
         const result = { exitCode: 2, stdout: '', stderr, duration: performance.now() - start }
