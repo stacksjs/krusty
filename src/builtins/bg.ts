@@ -13,31 +13,41 @@ export const bgCommand: BuiltinCommand = {
     if (shell.config.verbose)
       shell.log.debug('[bg] args: %o', args)
 
-    // Parse job ID from argument
+    // Resolve job designator
+    const parseDesignator = (token: string): number | undefined => {
+      const t = token.trim()
+      if (t === '%+' || t === '+') {
+        // current job is the most recent non-done job
+        const jobs = shell.getJobs().filter(j => j.status !== 'done')
+        return jobs.length ? jobs[jobs.length - 1].id : undefined
+      }
+      if (t === '%-' || t === '-') {
+        const jobs = shell.getJobs().filter(j => j.status !== 'done')
+        return jobs.length >= 2 ? jobs[jobs.length - 2].id : undefined
+      }
+      const norm = t.startsWith('%') ? t.slice(1) : t
+      const n = Number.parseInt(norm, 10)
+      return Number.isNaN(n) ? undefined : n
+    }
+
     let jobId: number | undefined
     if (args.length > 0) {
-      const arg = args[0]
-      if (arg.startsWith('%')) {
-        jobId = Number.parseInt(arg.slice(1), 10)
-      }
-      else {
-        jobId = Number.parseInt(arg, 10)
-      }
-
-      if (Number.isNaN(jobId)) {
+      jobId = parseDesignator(args[0])
+      if (jobId === undefined) {
         return {
           exitCode: 1,
           stdout: '',
-          stderr: `bg: invalid job id: ${arg}\n`,
+          stderr: `bg: ${args[0]}: no such job\n`,
           duration: performance.now() - start,
         }
       }
     }
     else {
-      // Find the most recent stopped job
+      // Default to most recent stopped job
       const jobs = shell.getJobs()
-      const stoppedJobs = jobs.filter(job => job.status === 'stopped')
-      if (stoppedJobs.length === 0) {
+      const stopped = jobs.filter(j => j.status === 'stopped')
+      jobId = stopped.length ? stopped[stopped.length - 1].id : undefined
+      if (jobId === undefined) {
         return {
           exitCode: 1,
           stdout: '',
@@ -45,7 +55,6 @@ export const bgCommand: BuiltinCommand = {
           duration: performance.now() - start,
         }
       }
-      jobId = stoppedJobs[stoppedJobs.length - 1].id
     }
 
     if (shell.config.verbose)

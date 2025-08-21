@@ -34,6 +34,9 @@ export class JobManager extends EventEmitter {
   private signalHandlers = new Map<string, (signal: string) => void>()
   private monitoringInterval?: NodeJS.Timeout
   private foregroundJob?: Job
+  // Track job recency for %+ (current) and %- (previous) designators.
+  // Contains job IDs in order of most-recent interactions (added/suspended/resumed).
+  private jobRecency: number[] = []
 
   constructor(shell?: Shell) {
     super()
@@ -182,6 +185,9 @@ export class JobManager extends EventEmitter {
       this.foregroundJob = job
     }
 
+    // Update job recency/designators
+    this.updateDesignators(jobId)
+
     // Setup process event handlers if we have a ChildProcess object
     if (childProcessOrPid && typeof childProcessOrPid !== 'number') {
       const childProcess = childProcessOrPid as ChildProcess
@@ -278,6 +284,9 @@ export class JobManager extends EventEmitter {
       this.emit('jobStatusChanged', jobEvent)
       this.emit('jobSuspended', { job: updatedJob } as JobEvent)
 
+      // Update job recency/designators
+      this.updateDesignators(jobId)
+
       return true
     }
     catch (error) {
@@ -332,6 +341,9 @@ export class JobManager extends EventEmitter {
       this.emit('jobStatusChanged', jobEvent)
       this.emit('jobResumed', { job: updatedJob } as JobEvent)
 
+      // Update job recency/designators
+      this.updateDesignators(jobId)
+
       return true
     }
     catch (error) {
@@ -345,49 +357,69 @@ export class JobManager extends EventEmitter {
    */
   resumeJobForeground(jobId: number): boolean {
     const job = this.jobs.get(jobId)
-    if (!job || job.status !== 'stopped') {
+    if (!job)
       return false
+
+    // If job is stopped, send SIGCONT and bring to foreground.
+    if (job.status === 'stopped') {
+      try {
+        try {
+          if (job.pgid > 0) {
+            // Send SIGCONT to the entire process group
+            process.kill(-job.pgid, 'SIGCONT')
+          }
+          else if (job.pid > 0) {
+            process.kill(job.pid, 'SIGCONT')
+          }
+        }
+        catch (killError) {
+          // In test environment, process.kill might throw but we still want to update job status
+          if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
+            throw killError
+          }
+        }
+
+        const previousStatus = job.status
+        const updatedJob = {
+          ...job,
+          status: 'running' as const,
+          background: false,
+        }
+
+        this.jobs.set(jobId, updatedJob)
+        this.foregroundJob = updatedJob
+
+        const jobEvent = { job: updatedJob, previousStatus, signal: 'SIGCONT' } as JobEvent
+        this.emit('jobStatusChanged', jobEvent)
+        this.emit('jobResumed', { job: updatedJob } as JobEvent)
+
+        // Update designators
+        this.updateDesignators(jobId)
+        return true
+      }
+      catch (error) {
+        this.shell?.log?.error(`Failed to resume job ${jobId} in foreground:`, error)
+        return false
+      }
     }
 
-    try {
-      try {
-        if (job.pgid > 0) {
-          // Send SIGCONT to the entire process group
-          process.kill(-job.pgid, 'SIGCONT')
-        }
-        else if (job.pid > 0) {
-          process.kill(job.pid, 'SIGCONT')
-        }
-      }
-      catch (killError) {
-        // In test environment, process.kill might throw but we still want to update job status
-        if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
-          throw killError
-        }
-      }
-
+    // If job is already running in background, just mark as foreground without signals.
+    if (job.status === 'running' && job.background) {
       const previousStatus = job.status
       const updatedJob = {
         ...job,
-        status: 'running' as const,
         background: false,
       }
-
-      // Update the job in the map and set as foreground job
       this.jobs.set(jobId, updatedJob)
       this.foregroundJob = updatedJob
-
-      // Emit events synchronously to avoid test timeouts
-      const jobEvent = { job: updatedJob, previousStatus, signal: 'SIGCONT' } as JobEvent
+      const jobEvent = { job: updatedJob, previousStatus } as JobEvent
       this.emit('jobStatusChanged', jobEvent)
       this.emit('jobResumed', { job: updatedJob } as JobEvent)
-
+      this.updateDesignators(jobId)
       return true
     }
-    catch (error) {
-      this.shell?.log?.error(`Failed to resume job ${jobId} in foreground:`, error)
-      return false
-    }
+
+    return false
   }
 
   /**
@@ -454,6 +486,8 @@ export class JobManager extends EventEmitter {
     }
 
     this.emit('jobRemoved', { job } as JobEvent)
+    // Remove from recency tracking
+    this.jobRecency = this.jobRecency.filter(id => id !== jobId)
     return true
   }
 
@@ -469,6 +503,64 @@ export class JobManager extends EventEmitter {
    */
   getJobs(): Job[] {
     return Array.from(this.jobs.values())
+  }
+
+  /**
+   * Resolve a job designator string to a job ID.
+   * Supports: %n, n, %%, %+, + (current), %- , - (previous)
+   */
+  resolveJobDesignator(token: string): number | undefined {
+    const t = token.trim()
+    const norm = t.startsWith('%') ? t.slice(1) : t
+    if (norm === '' || norm === '+') {
+      return this.getCurrentJobId()
+    }
+    if (norm === '-') {
+      return this.getPreviousJobId()
+    }
+    if (norm === '%') { // literal %%
+      return this.getCurrentJobId()
+    }
+    const n = Number.parseInt(norm, 10)
+    if (!Number.isNaN(n))
+      return this.jobs.has(n) ? n : undefined
+    return undefined
+  }
+
+  /** Get the current (%+) job id (most recent non-done job) */
+  getCurrentJobId(): number | undefined {
+    for (let i = this.jobRecency.length - 1; i >= 0; i--) {
+      const id = this.jobRecency[i]
+      const j = this.jobs.get(id)
+      if (j && j.status !== 'done')
+        return id
+    }
+    // Fallback to highest existing non-done job id
+    const live = Array.from(this.jobs.values()).filter(j => j.status !== 'done').map(j => j.id).sort((a, b) => a - b)
+    return live.length ? live[live.length - 1] : undefined
+  }
+
+  /** Get the previous (%-) job id (second most recent non-done job) */
+  getPreviousJobId(): number | undefined {
+    let seen = 0
+    for (let i = this.jobRecency.length - 1; i >= 0; i--) {
+      const id = this.jobRecency[i]
+      const j = this.jobs.get(id)
+      if (j && j.status !== 'done') {
+        seen += 1
+        if (seen === 2)
+          return id
+      }
+    }
+    // Fallback: pick the second highest non-done id
+    const live = Array.from(this.jobs.values()).filter(j => j.status !== 'done').map(j => j.id).sort((a, b) => a - b)
+    return live.length >= 2 ? live[live.length - 2] : undefined
+  }
+
+  /** Update the recency list with a job id */
+  private updateDesignators(jobId: number): void {
+    this.jobRecency = this.jobRecency.filter(id => id !== jobId)
+    this.jobRecency.push(jobId)
   }
 
   /**

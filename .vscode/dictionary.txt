@@ -31,6 +31,7 @@ openweb
 osascript
 outdir
 pausable
+pgid
 pipefail
 popd
 Postcardware

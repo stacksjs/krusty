@@ -54,7 +54,7 @@ describe('enhanced Job Control Builtins', () => {
       expect(result.stdout).toBe('')
     })
 
-    it('should display running jobs with basic format', async () => {
+    it('should display running jobs with %+ (current) and %- (previous)', async () => {
       const shell = createMockShell([
         { id: 1, command: 'sleep 100', status: 'running', background: true },
         { id: 2, command: 'ping google.com', status: 'running', background: false },
@@ -63,11 +63,11 @@ describe('enhanced Job Control Builtins', () => {
       const result = await jobsCommand.execute([], shell)
 
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain('[1]+ running sleep 100 &')
+      expect(result.stdout).toContain('[1]- running sleep 100 &')
       expect(result.stdout).toContain('[2]+ running ping google.com')
     })
 
-    it('should display stopped jobs correctly', async () => {
+    it('should display stopped jobs marking current with +', async () => {
       const shell = createMockShell([
         { id: 1, command: 'vim file.txt', status: 'stopped', background: true },
       ])
@@ -75,7 +75,7 @@ describe('enhanced Job Control Builtins', () => {
       const result = await jobsCommand.execute([], shell)
 
       expect(result.exitCode).toBe(0)
-      expect(result.stdout).toContain('[1]- stopped vim file.txt &')
+      expect(result.stdout).toContain('[1]+ stopped vim file.txt &')
     })
 
     it('should display completed jobs', async () => {
@@ -156,7 +156,7 @@ describe('enhanced Job Control Builtins', () => {
       const result = await bgCommand.execute(['invalid'], shell)
 
       expect(result.exitCode).toBe(1)
-      expect(result.stderr).toContain('invalid job id')
+      expect(result.stderr).toContain('no such job')
     })
 
     it('should return error when no stopped jobs exist', async () => {

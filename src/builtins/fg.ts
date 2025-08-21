@@ -10,7 +10,6 @@ export const fgCommand: BuiltinCommand = {
   usage: 'fg [job_id]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-
     // Get all jobs
     const jobs = shell.getJobs()
 
@@ -23,33 +22,36 @@ export const fgCommand: BuiltinCommand = {
       }
     }
 
-    let jobId: number
-
-    // If no job ID is provided, use the most recent job
-    if (args.length === 0) {
-      const lastJob = jobs[jobs.length - 1]
-      if (!lastJob) {
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: 'fg: no current job\n',
-          duration: performance.now() - start,
-        }
+    const parseDesignator = (token: string): number | undefined => {
+      const t = token.trim()
+      if (t === '%+' || t === '+') {
+        const live = jobs.filter(j => j.status !== 'done')
+        return live.length ? live[live.length - 1].id : undefined
       }
-      jobId = lastJob.id
+      if (t === '%-' || t === '-') {
+        const live = jobs.filter(j => j.status !== 'done')
+        return live.length >= 2 ? live[live.length - 2].id : undefined
+      }
+      const norm = t.startsWith('%') ? t.slice(1) : t
+      const n = Number.parseInt(norm, 10)
+      return Number.isNaN(n) ? undefined : n
+    }
+
+    let jobId: number | undefined
+    if (args.length === 0) {
+      const live = jobs.filter(j => j.status !== 'done')
+      jobId = live.length ? live[live.length - 1].id : undefined
     }
     else {
-      // Parse the job ID from the argument
-      const id = Number.parseInt(args[0], 10)
-      if (Number.isNaN(id)) {
-        return {
-          exitCode: 1,
-          stdout: '',
-          stderr: `fg: ${args[0]}: no such job\n`,
-          duration: performance.now() - start,
-        }
+      jobId = parseDesignator(args[0])
+    }
+    if (jobId === undefined) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'fg: no current job\n',
+        duration: performance.now() - start,
       }
-      jobId = id
     }
     if (shell.config.verbose)
       shell.log.debug('[fg] parsed jobId=%s', String(jobId))
@@ -63,6 +65,16 @@ export const fgCommand: BuiltinCommand = {
         exitCode: 1,
         stdout: '',
         stderr: `fg: ${jobId}: no such job\n`,
+        duration: performance.now() - start,
+      }
+    }
+
+    // Allow stopped jobs or already-running background jobs
+    if (!(job.status === 'stopped' || (job.status === 'running' && job.background))) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `fg: job ${jobId} is not stoppable or attachable\n`,
         duration: performance.now() - start,
       }
     }

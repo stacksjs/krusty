@@ -30,7 +30,7 @@ describe('help examples', () => {
   it('help disown shows usage and examples', async () => {
     const res = await shell.execute('help disown')
     expect(res.exitCode).toBe(0)
-    expect(res.stdout).toContain('Usage: disown [job_id...]')
+    expect(res.stdout).toContain('Usage: disown [-h|--help] [job_spec ...]')
     expect(res.stdout).toContain('Examples:')
   })
 })

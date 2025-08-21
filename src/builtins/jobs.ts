@@ -28,12 +28,26 @@ export const jobsCommand: BuiltinCommand = {
       }
     }
 
+    // Determine current (%+) and previous (%-) among non-done jobs
+    const live = jobs.filter(j => j.status !== 'done')
+    const currentId = live.length ? live[live.length - 1].id : undefined
+    const previousId = live.length >= 2 ? live[live.length - 2].id : undefined
+
     // Format job entries
     const jobEntries = jobs.map((job) => {
-      const statusSymbol
-        = job.status === 'running'
-          ? '+'
-          : job.status === 'stopped' ? '-' : 'Done'
+      let statusSymbol = ''
+      if (job.status === 'done') {
+        statusSymbol = 'Done'
+      }
+      else if (job.id === currentId) {
+        statusSymbol = '+'
+      }
+      else if (job.id === previousId) {
+        statusSymbol = '-'
+      }
+      else {
+        statusSymbol = job.status === 'stopped' ? '-' : '+'
+      }
 
       let line = `[${job.id}]${statusSymbol} ${job.status}`
 
