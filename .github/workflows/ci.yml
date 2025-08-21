@@ -22,6 +22,8 @@ jobs:
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Use cached node_modules
         uses: actions/cache@v4
@@ -45,6 +47,8 @@ jobs:
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Use cached node_modules
         uses: actions/cache@v4
@@ -62,14 +66,14 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    env:
-      KRUSTY_CI_DEBUG: '1'
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Use cached node_modules
         uses: actions/cache@v4
@@ -83,6 +87,12 @@ jobs:
         run: bun install
 
       - name: Unit Test
+        run: bun test --timeout 2000
+
+      - name: Rerun tests with extended timeout on failure (debug)
+        if: failure()
+        env:
+          KRUSTY_CI_DEBUG: '1'
         run: bun test --timeout 60000
 
   publish-commit:
@@ -93,6 +103,8 @@ jobs:
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Use cached node_modules
         uses: actions/cache@v4
