@@ -7,6 +7,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import process from 'node:process'
+import { PassThrough, Readable } from 'node:stream'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
 import { defaultConfig, loadKrustyConfig } from './config'
@@ -20,6 +21,7 @@ import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 import { ScriptManager } from './scripting/script-manager'
 import { ThemeManager } from './theme/theme-manager'
+import { RedirectionHandler } from './utils/redirection'
 
 export class KrustyShell implements Shell {
   public config: KrustyConfig
@@ -833,7 +835,18 @@ export class KrustyShell implements Shell {
       // Apply redirections to builtin output if needed
       if (redirections && redirections.length > 0) {
         await this.applyRedirectionsToBuiltinResult(result, redirections)
-        return { ...result, stdout: '' } // Clear stdout since it was redirected
+        // Determine which streams were redirected and clear them from the buffered result
+        const affectsStdout = redirections.some(r => r?.type === 'file' && (
+          r.direction === 'output' || r.direction === 'append' || r.direction === 'both'
+        ))
+        const affectsStderr = redirections.some(r => r?.type === 'file' && (
+          r.direction === 'error' || r.direction === 'error-append' || r.direction === 'both'
+        ))
+        return {
+          ...result,
+          stdout: affectsStdout ? '' : (result.stdout || ''),
+          stderr: affectsStderr ? '' : (result.stderr || ''),
+        }
       }
 
       return result
@@ -995,6 +1008,8 @@ export class KrustyShell implements Shell {
     const exitCodes: Array<number | null> = Array.from({ length: commands.length }, () => null)
     let stderrAgg = ''
     let stdoutLast = ''
+    // Per-stage redirections parsed from the original segment
+    const stageRedirs: Array<any[] | undefined> = Array.from({ length: commands.length }, () => undefined)
 
     for (let i = 0; i < commands.length; i++) {
       // Expand alias for this segment if applicable
@@ -1015,7 +1030,21 @@ export class KrustyShell implements Shell {
         const processedArgs = (cmd as any).preserveQuotedArgs || cmd.name === 'alias'
           ? cmd.args
           : cmd.args.map((arg: string) => this.processAliasArgument(arg))
+        // Parse redirections for this stage from the raw segment
+        try {
+          // Prefer the original segment's raw representation to preserve quotes
+          const rawForRedirs = (commands[i] && (commands[i] as any).raw)
+            || (cmd as any).raw
+            || `${cmd.name} ${(cmd.args || []).join(' ')}`
+          const parsed = RedirectionHandler.parseRedirections(rawForRedirs)
+          stageRedirs[i] = parsed.redirections
+        }
+        catch {}
         const res = await builtin.execute(processedArgs, this)
+        // Apply builtin redirections to the buffered result before any downstream piping
+        if (Array.isArray(stageRedirs[i]) && stageRedirs[i]!.length > 0) {
+          await this.applyRedirectionsToBuiltinResult(res, stageRedirs[i]!)
+        }
         builtinResults[i] = res
         stderrAgg += res.stderr || ''
         exitCodes[i] = res.exitCode
@@ -1024,6 +1053,16 @@ export class KrustyShell implements Shell {
       else {
         // External command
         const extArgs = (cmd.args || []).map((arg: string) => this.processAliasArgument(arg))
+        // Parse redirections for this stage from the raw segment
+        try {
+          // Prefer the original segment's raw representation to preserve quotes
+          const rawForRedirs = (commands[i] && (commands[i] as any).raw)
+            || (cmd as any).raw
+            || `${cmd.name} ${extArgs.join(' ')}`
+          const parsed = RedirectionHandler.parseRedirections(rawForRedirs)
+          stageRedirs[i] = parsed.redirections
+        }
+        catch {}
         const child = spawn(cmd.name, extArgs, {
           cwd: this.cwd,
           env: cleanEnv,
@@ -1036,13 +1075,38 @@ export class KrustyShell implements Shell {
         }
         catch {}
 
-        // Collect stderr from each process
-        child.stderr?.on('data', (d) => {
-          stderrAgg += d.toString()
-        })
+        // Apply per-stage redirections to this external child
+        if (Array.isArray(stageRedirs[i]) && stageRedirs[i]!.length > 0) {
+          try {
+            await RedirectionHandler.applyRedirections(child, stageRedirs[i]!, this.cwd)
+          }
+          catch {}
+        }
+
+        // Collect stderr from each process unless this stage duplicates 2>&1,
+        // in which case stderr will be merged into stdout and forwarded down the pipe.
+        const stageHas2To1 = (stageRedirs[i] || []).some((rd: any) => rd.type === 'fd' && rd.fd === 2 && rd.target === '&1')
+        if (!stageHas2To1) {
+          child.stderr?.on('data', (d) => {
+            stderrAgg += d.toString()
+          })
+        }
 
         children.push(child)
       }
+    }
+
+    // Helpers to determine if a stage has input/output FD or file redirection that should override piping
+    const hasInputSource = (idx: number): boolean => {
+      const r = stageRedirs[idx] || []
+      return r.some((rd: any) => rd.direction === 'input' && (rd.type === 'file' || rd.type === 'here-string' || rd.type === 'here-doc'))
+    }
+    const hasStdoutRedirect = (idx: number): boolean => {
+      const r = stageRedirs[idx] || []
+      return r.some((rd: any) =>
+        (rd.type === 'file' && (rd.direction === 'output' || rd.direction === 'append' || rd.direction === 'both'))
+        || (rd.type === 'fd' && rd.fd === 1),
+      )
     }
 
     // Wire pipes between processes
@@ -1050,17 +1114,87 @@ export class KrustyShell implements Shell {
       const leftChild = children[i]
       const rightChild = children[i + 1]
       const leftBuiltin = builtinResults[i]
+      const rightHasOwnInput = hasInputSource(i + 1)
+      const leftStdoutOverridden = hasStdoutRedirect(i)
       // If left is external and right is external
       if (leftChild && rightChild) {
-        leftChild.stdout?.pipe(rightChild.stdin!)
+        if (rightHasOwnInput || leftStdoutOverridden) {
+          // Respect redirection precedence: do not connect pipe when right has input redirect
+          // or left stdout was redirected/closed/duplicated.
+          // However, if the right does NOT have its own input source, close its stdin to avoid hanging.
+          if (!rightHasOwnInput) {
+            try {
+              rightChild.stdin?.end()
+            }
+            catch {}
+          }
+        }
+        else {
+          const wants2To1 = (leftChild as any).__kr_fd_2_to_1 === true
+            || (stageRedirs[i] || []).some((rd: any) => rd.type === 'fd' && rd.fd === 2 && rd.target === '&1')
+          if (wants2To1) {
+            // Merge stdout and stderr into one stream and pipe to next stdin
+            const merge = new PassThrough()
+            let endedCount = 0
+            const tryEnd = () => {
+              endedCount += 1
+              if (endedCount >= 2) {
+                try {
+                  merge.end()
+                }
+                catch {}
+              }
+            }
+            leftChild.stdout?.on('error', () => {})
+            leftChild.stderr?.on('error', () => {})
+            leftChild.stdout?.on('end', tryEnd)
+            leftChild.stderr?.on('end', tryEnd)
+            leftChild.stdout?.pipe(merge, { end: false })
+            leftChild.stderr?.pipe(merge, { end: false })
+            try {
+              merge.pipe(rightChild.stdin!, { end: true })
+            }
+            catch {}
+          }
+          else {
+            leftChild.stdout?.pipe(rightChild.stdin!, { end: true })
+          }
+        }
       }
       // If left is builtin and right is external, write the builtin stdout to right stdin
       else if (!leftChild && rightChild) {
         try {
-          if (leftBuiltin?.stdout) {
-            rightChild.stdin?.write(leftBuiltin.stdout)
+          if (rightHasOwnInput || leftStdoutOverridden) {
+            // Do not feed builtin output if right has its own stdin source or left stdout was redirected
+            // But if right has no own input, close its stdin to avoid waiting forever
+            if (!rightHasOwnInput) {
+              try {
+                rightChild.stdin?.end()
+              }
+              catch {}
+            }
           }
-          rightChild.stdin?.end()
+          else {
+            // Pseudo-stream builtin output using a Readable to respect backpressure
+            const data = leftBuiltin?.stdout || ''
+            if (data && data.length > 0) {
+              const src = Readable.from([data])
+              src.on('error', () => {})
+              rightChild.stdin?.on('error', (err: any) => {
+                if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END')) {
+                  // ignore benign pipe errors
+                }
+              })
+              src.pipe(rightChild.stdin!)
+            }
+            else {
+              // No data to write; explicitly end stdin of the right child to avoid waiting
+              try {
+                rightChild.stdin?.end()
+              }
+              catch {}
+            }
+          }
         }
         catch {}
       }
@@ -1079,12 +1213,22 @@ export class KrustyShell implements Shell {
       stdoutLast = lastBuiltin.stdout || ''
     }
 
-    // Ensure first process stdin is closed if no input is provided by the user
-    // (interactive input for pipelines is not supported here)
+    // If the final stage redirects or closes stdout, suppress returned stdout buffer
+    if (hasStdoutRedirect(children.length - 1)) {
+      stdoutLast = ''
+    }
+
+    // Ensure first process stdin is closed if no input provider exists and it's an external.
+    // Avoid double-ending; piping above already set end for downstreams.
     const firstChild = children[0]
-    if (firstChild) {
+    const firstIsBuiltin = builtinResults[0] !== null
+    if (firstChild && !firstIsBuiltin) {
       try {
-        firstChild.stdin?.end()
+        // If nothing is piped or redirected into the first child, close its stdin to prevent hanging
+        const hasUpstream = false
+        const hasOwnInput = hasInputSource(0)
+        if (!hasUpstream && !hasOwnInput)
+          firstChild.stdin?.end()
       }
       catch {}
     }
@@ -1514,23 +1658,8 @@ export class KrustyShell implements Shell {
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
 
-    // Configure stdio based on redirections
+    // Configure stdio (we keep pipes and let RedirectionHandler rewire/close as needed)
     const stdio: any = ['pipe', 'pipe', 'pipe']
-    let outputFile: string | undefined
-    let inputFile: string | undefined
-
-    if (redirections && redirections.length > 0) {
-      for (const redirection of redirections) {
-        if (redirection.type === 'file') {
-          if (redirection.direction === 'output') {
-            outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
-          }
-          else if (redirection.direction === 'input') {
-            inputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
-          }
-        }
-      }
-    }
 
     // For external commands, remove surrounding quotes and unescape so spawn receives clean args
     const externalArgs = (command.args || []).map((arg: string) => this.processAliasArgument(arg))
@@ -1540,26 +1669,27 @@ export class KrustyShell implements Shell {
       stdio,
     })
 
-    // Handle file redirections manually
-    if (outputFile) {
-      const { createWriteStream } = await import('node:fs')
-      const outStream = createWriteStream(outputFile)
-      child.stdout?.pipe(outStream)
-      // Use streaming process but skip stdout capture since it's redirected
-      return this.setupStreamingProcess(child, start, command, undefined, true)
-    }
-
-    if (inputFile) {
-      const { createReadStream, existsSync } = await import('node:fs')
-      if (existsSync(inputFile)) {
-        const inStream = createReadStream(inputFile)
-        inStream.pipe(child.stdin!)
+    // Apply any parsed redirections (files, fd dup/close, here-string/doc, &> etc.)
+    if (redirections && redirections.length > 0) {
+      try {
+        await RedirectionHandler.applyRedirections(child, redirections, this.cwd)
       }
+      catch {}
     }
 
     // Add job to JobManager and stream output
     const jobId = this.addJob(command.raw || `${command.name} ${command.args.join(' ')}`, child, command.background)
-    return this.setupStreamingProcess(child, start, command, undefined, false, jobId)
+
+    // If stdout was redirected/closed, avoid capturing it again
+    const skipStdoutCapture = Array.isArray(redirections) && redirections.some((rd: any) => {
+      if (rd.type === 'file' && (rd.direction === 'output' || rd.direction === 'append' || rd.direction === 'both'))
+        return true
+      if (rd.type === 'fd' && rd.fd === 1 && (rd.target === '&-' || /^&\d+$/.test(rd.target)))
+        return true
+      return false
+    })
+
+    return this.setupStreamingProcess(child, start, command, undefined, !!skipStdoutCapture, jobId)
   }
 
   /**
@@ -1567,24 +1697,106 @@ export class KrustyShell implements Shell {
    */
   private async applyRedirectionsToBuiltinResult(result: CommandResult, redirections: any[]): Promise<void> {
     for (const redirection of redirections) {
+      // Handle FD duplication/closing for builtin results by manipulating buffers
+      if (redirection.type === 'fd') {
+        const fd: number | undefined = redirection.fd
+        const dst: string = redirection.target
+        if (typeof fd === 'number') {
+          if (dst === '&-') {
+            // Close: discard the selected stream buffer
+            if (fd === 1) {
+              result.stdout = ''
+            }
+            else if (fd === 2) {
+              result.stderr = ''
+            }
+            else if (fd === 0) {
+              // stdin close has no effect on already-produced builtin output
+            }
+          }
+          else {
+            const m = dst.match(/^&(\d+)$/)
+            if (m) {
+              const targetFd = Number.parseInt(m[1], 10)
+              // Duplicate: merge buffers accordingly
+              if (fd === 2 && targetFd === 1) {
+                // 2>&1: send stderr to stdout
+                result.stdout = (result.stdout || '') + (result.stderr || '')
+                result.stderr = ''
+              }
+              else if (fd === 1 && targetFd === 2) {
+                // 1>&2: send stdout to stderr
+                result.stderr = (result.stderr || '') + (result.stdout || '')
+                result.stdout = ''
+              }
+              // Other FDs are not represented for builtins; ignore safely
+            }
+          }
+        }
+        continue
+      }
+
       if (redirection.type === 'file') {
-        const outputFile = redirection.target.startsWith('/') ? redirection.target : `${this.cwd}/${redirection.target}`
+        let rawTarget = typeof redirection.target === 'string' && redirection.target.startsWith('APPEND::')
+          ? redirection.target.replace(/^APPEND::/, '')
+          : redirection.target
+        if (typeof rawTarget === 'string' && ((rawTarget.startsWith('"') && rawTarget.endsWith('"')) || (rawTarget.startsWith('\'') && rawTarget.endsWith('\'')))) {
+          rawTarget = rawTarget.slice(1, -1)
+        }
+        if (typeof rawTarget !== 'string') {
+          continue
+        }
+        const outputFile: string = rawTarget.startsWith('/') ? rawTarget : `${this.cwd}/${rawTarget}`
+
+        if (redirection.direction === 'input') {
+          // Input redirections do not affect builtin buffered output here
+          continue
+        }
 
         if (redirection.direction === 'output') {
           const { writeFileSync } = await import('node:fs')
-          writeFileSync(outputFile, result.stdout)
+          writeFileSync(outputFile, result.stdout || '')
+          // If only stdout was redirected, clear it from the result
+          result.stdout = ''
         }
         else if (redirection.direction === 'append') {
           const { appendFileSync } = await import('node:fs')
-          appendFileSync(outputFile, result.stdout)
+          appendFileSync(outputFile, result.stdout || '')
+          result.stdout = ''
         }
         else if (redirection.direction === 'error') {
           const { writeFileSync } = await import('node:fs')
-          writeFileSync(outputFile, result.stderr)
+          writeFileSync(outputFile, result.stderr || '')
+          result.stderr = ''
         }
         else if (redirection.direction === 'error-append') {
           const { appendFileSync } = await import('node:fs')
-          appendFileSync(outputFile, result.stderr)
+          appendFileSync(outputFile, result.stderr || '')
+          result.stderr = ''
+        }
+        else if (redirection.direction === 'both') {
+          const isAppend = typeof redirection.target === 'string' && redirection.target.startsWith('APPEND::')
+          if (isAppend) {
+            const { appendFileSync } = await import('node:fs')
+            if (result.stdout) {
+              appendFileSync(outputFile, result.stdout)
+            }
+            if (result.stderr) {
+              appendFileSync(outputFile, result.stderr)
+            }
+          }
+          else {
+            const { writeFileSync } = await import('node:fs')
+            // Write stdout then stderr to mimic streaming order approximation
+            writeFileSync(outputFile, result.stdout || '')
+            if (result.stderr) {
+              const { appendFileSync } = await import('node:fs')
+              appendFileSync(outputFile, result.stderr)
+            }
+          }
+          // Clear both since they were redirected together
+          result.stdout = ''
+          result.stderr = ''
         }
       }
     }
