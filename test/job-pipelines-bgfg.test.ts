@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import { afterEach, beforeEach, describe, expect, it, mock, vi } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { JobManager } from '../src/jobs/job-manager'
 
 function createMockChildProcess(pid: number = 32100): Partial<ChildProcess> {

@@ -334,7 +334,96 @@ export async function loadKrustyConfig(options?: { path?: string }): Promise<Kru
 
 function resolvePath(p: string): string {
   // Support tilde expansion and relative paths
-  if (p.startsWith('~'))
+  if (p.startsWith('~')) {
     return resolve(homedir(), p.slice(1))
+  }
   return resolve(p)
+}
+
+// Validate a loaded Krusty config and return errors/warnings without throwing.
+export function validateKrustyConfig(cfg: KrustyConfig): { valid: boolean, errors: string[], warnings: string[] } {
+  const errors: string[] = []
+  const warnings: string[] = []
+
+  if (!cfg) {
+    errors.push('Config is undefined or null')
+  }
+
+  // History validation
+  const hist = cfg?.history as any
+  if (hist) {
+    if (hist.maxEntries != null && (typeof hist.maxEntries !== 'number' || hist.maxEntries <= 0)) {
+      errors.push(`history.maxEntries must be a positive number (got: ${hist.maxEntries})`)
+    }
+    const allowedModes = new Set(['fuzzy', 'exact', 'startswith', 'regex'])
+    if (hist.searchMode && !allowedModes.has(hist.searchMode)) {
+      errors.push(`history.searchMode must be one of ${Array.from(allowedModes).join(', ')} (got: ${hist.searchMode})`)
+    }
+    if (hist.searchLimit != null && (typeof hist.searchLimit !== 'number' || hist.searchLimit <= 0)) {
+      errors.push(`history.searchLimit must be a positive number (got: ${hist.searchLimit})`)
+    }
+  }
+
+  // Completion validation
+  const comp = (cfg as any).completion
+  if (comp) {
+    if (comp.maxSuggestions != null && (typeof comp.maxSuggestions !== 'number' || comp.maxSuggestions <= 0)) {
+      errors.push(`completion.maxSuggestions must be a positive number (got: ${comp.maxSuggestions})`)
+    }
+  }
+
+  // Plugins validation (shape only)
+  if (cfg?.plugins != null && !Array.isArray(cfg.plugins)) {
+    errors.push('plugins must be an array of plugin configuration objects')
+  }
+
+  // Hooks validation (shape only)
+  if (cfg?.hooks != null && typeof cfg.hooks !== 'object') {
+    errors.push('hooks must be an object mapping hook names to arrays of hook configs')
+  }
+
+  return { valid: errors.length === 0, errors, warnings }
+}
+
+// Create a human-readable diff between two configs (shallow for readability)
+export function diffKrustyConfigs(oldCfg: KrustyConfig, newCfg: KrustyConfig): string[] {
+  const changes: string[] = []
+  const keys = new Set<string>([...Object.keys(oldCfg || {}), ...Object.keys(newCfg || {})])
+
+  const summarize = (val: any): string => {
+    if (val === undefined) {
+      return 'undefined'
+    }
+    if (val === null) {
+      return 'null'
+    }
+    if (typeof val === 'object') {
+      if (val && (val.maxEntries != null || val.searchMode != null)) {
+        return JSON.stringify({
+          maxEntries: val.maxEntries,
+          ignoreDuplicates: val.ignoreDuplicates,
+          ignoreSpace: val.ignoreSpace,
+          searchMode: val.searchMode,
+          searchLimit: val.searchLimit,
+          file: val.file,
+        })
+      }
+      if (Array.isArray(val)) {
+        return `[array:${val.length}]`
+      }
+      return '{...}'
+    }
+    return JSON.stringify(val)
+  }
+
+  for (const k of Array.from(keys).sort()) {
+    const a = (oldCfg as any)?.[k]
+    const b = (newCfg as any)?.[k]
+    const same = (JSON.stringify(a) === JSON.stringify(b))
+    if (!same) {
+      changes.push(`${k}: ${summarize(a)} -> ${summarize(b)}`)
+    }
+  }
+
+  return changes
 }

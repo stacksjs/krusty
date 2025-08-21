@@ -55,7 +55,7 @@ export class RedirectionHandler {
       let spanStart = -1
       while (i < command.length) {
         const ch = command[i]
-        if (!inDouble && ch === '\'' ) {
+        if (!inDouble && ch === '\'') {
           if (!inSingle) {
             inSingle = true
             spanStart = i
@@ -139,7 +139,7 @@ export class RedirectionHandler {
       // Fallback: only run naive pass when there are no quotes at all.
       // This prevents operators inside quoted scripts (e.g., sh -c 'cat > f')
       // from being misinterpreted as stage-level redirections.
-      const hasAnyQuotes = /['"]/g.test(command)
+      const hasAnyQuotes = /['"]/.test(command)
       if (!hasAnyQuotes) {
         for (const pattern of patterns) {
           const matches = Array.from(command.matchAll(pattern.regex))

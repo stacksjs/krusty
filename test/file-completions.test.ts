@@ -17,7 +17,7 @@ describe('File/path completions edge cases', () => {
   })
 
   it('handles single-quoted path fragments', () => {
-    const input = "cat './src/co"
+    const input = 'cat \'./src/co'
     const out = shell.getCompletions(input, input.length)
     // With folder-based completion module, expect directory suggestion
     expect(out.some(x => x.includes('completion/'))).toBe(true)

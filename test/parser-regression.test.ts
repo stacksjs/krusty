@@ -21,7 +21,7 @@ describe('parser regression', () => {
   })
 
   it('reports unterminated quote as syntax error with exit code 2', async () => {
-    const cmd = "echo 'unterminated"
+    const cmd = 'echo \'unterminated'
     const res = await shell.execute(cmd)
     expect(res.exitCode).toBe(2)
     const caretLine = `${cmd}\n${' '.repeat(cmd.length)}^\n`

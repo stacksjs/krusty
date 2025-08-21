@@ -25,18 +25,18 @@ describe('ExpansionEngine', () => {
       environment: mockShell.environment,
     })
 
-  describe('Parameter and Escapes', () => {
-    it('supports ${#VAR} length form', async () => {
-      const result = await expansionEngine.expand('len=${#USER}')
-      expect(result).toBe(`len=${mockShell.environment.USER.length}`)
-    })
+    describe('Parameter and Escapes', () => {
+      it('supports ${#VAR} length form', async () => {
+        const result = await expansionEngine.expand('len=${#USER}')
+        expect(result).toBe(`len=${mockShell.environment.USER.length}`)
+      })
 
-    it('does not expand escaped $', async () => {
-      const result = await expansionEngine.expand('cost:\n\\$5 and \\${USER}')
-      // ExpansionEngine preserves backslashes; later stages may unescape
-      expect(result).toBe('cost:\n\\$5 and \\${USER}')
+      it('does not expand escaped $', async () => {
+        const result = await expansionEngine.expand('cost:\n\\$5 and \\${USER}')
+        // ExpansionEngine preserves backslashes; later stages may unescape
+        expect(result).toBe('cost:\n\\$5 and \\${USER}')
+      })
     })
-  })
   })
 
   describe('Variable Expansion', () => {
@@ -182,7 +182,8 @@ describe('ExpansionEngine', () => {
     it('should handle nested $() substitution', async () => {
       const originalExecuteCommand = expansionEngine.executeCommand
       expansionEngine.executeCommand = async (cmd: string) => {
-        if (cmd.trim() === 'echo hi') return 'hi\n'
+        if (cmd.trim() === 'echo hi')
+          return 'hi\n'
         return ''
       }
 

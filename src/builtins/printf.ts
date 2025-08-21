@@ -11,24 +11,43 @@ function expandEscapes(input: string): string {
     }
     // Handle escape
     i++
-    if (i >= input.length) { out += '\\'; break }
+    if (i >= input.length) {
+      out += '\\'
+      break
+    }
     const e = input[i]
     switch (e) {
       // Simple escapes
-      case 'n': out += '\n'; break
-      case 't': out += '\t'; break
-      case 'r': out += '\r'; break
-      case 'a': out += '\x07'; break
-      case 'b': out += '\b'; break
-      case 'f': out += '\f'; break
-      case 'v': out += '\v'; break
-      case '\\': out += '\\'; break
+      case 'n':
+        out += '\n'
+        break
+      case 't':
+        out += '\t'
+        break
+      case 'r':
+        out += '\r'
+        break
+      case 'a':
+        out += '\x07'
+        break
+      case 'b':
+        out += '\b'
+        break
+      case 'f':
+        out += '\f'
+        break
+      case 'v':
+        out += '\v'
+        break
+      case '\\':
+        out += '\\'
+        break
       // Hex: \xHH
       case 'x': {
         const h1 = input[i + 1]
         const h2 = input[i + 2]
-        if (h1 && h2 && /[0-9a-fA-F]{2}/.test(h1 + h2)) {
-          out += String.fromCharCode(parseInt(h1 + h2, 16))
+        if (h1 && h2 && /[0-9a-f]{2}/i.test(h1 + h2)) {
+          out += String.fromCharCode(Number.parseInt(h1 + h2, 16))
           i += 2
         }
         else {
@@ -38,13 +57,15 @@ function expandEscapes(input: string): string {
       }
       // Octal: \0OOO (up to 3 octal digits)
       case '0': {
-        let j = 0, oct = ''
+        let j = 0
+        let oct = ''
         while (j < 3 && /[0-7]/.test(input[i + 1])) {
           oct += input[i + 1]
-          i++; j++
+          i++
+          j++
         }
         if (oct)
-          out += String.fromCharCode(parseInt(oct, 8))
+          out += String.fromCharCode(Number.parseInt(oct, 8))
         else
           out += '\0'
         break
@@ -150,7 +171,7 @@ function formatPrintf(spec: string, args: string[]): string {
         if (precision != null)
           s = s.padStart(precision, '0')
         if (isNeg)
-          s = '-' + s
+          s = `-${s}`
         const padChar = zeroPad && precision == null ? '0' : ' '
         formatted = pad(s, width, leftAlign, padChar)
         break
@@ -161,7 +182,7 @@ function formatPrintf(spec: string, args: string[]): string {
         if (precision != null)
           s = s.padStart(precision, '0')
         if (n < 0)
-          s = '-' + s
+          s = `-${s}`
         const padChar = zeroPad && precision == null ? '0' : ' '
         formatted = pad(s, width, leftAlign, padChar)
         break
@@ -174,7 +195,7 @@ function formatPrintf(spec: string, args: string[]): string {
         if (precision != null)
           s = s.padStart(precision, '0')
         if (n < 0)
-          s = '-' + s
+          s = `-${s}`
         const padChar = zeroPad && precision == null ? '0' : ' '
         formatted = pad(s, width, leftAlign, padChar)
         break

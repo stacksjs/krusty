@@ -107,8 +107,10 @@ export class CompletionProvider {
           for (const file of files) {
             if (results.length >= max)
               return results
-            if (!file.isFile()) continue
-            if (!file.name.startsWith(prefix)) continue
+            if (!file.isFile())
+              continue
+            if (!file.name.startsWith(prefix))
+              continue
             try {
               const fullPath = join(dir, file.name)
               const stat = statSync(fullPath)
@@ -855,7 +857,6 @@ export class CompletionProvider {
       return []
     }
   }
-
 
   /**
    * Get file and directory completions for a given path prefix

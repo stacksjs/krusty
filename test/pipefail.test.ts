@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { KrustyShell } from '../src/shell'
 import type { KrustyConfig } from '../src/types'
+import { beforeEach, describe, expect, it } from 'bun:test'
+import { KrustyShell } from '../src/shell'
 
 describe('pipefail option', () => {
   let shell: KrustyShell

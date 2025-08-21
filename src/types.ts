@@ -33,7 +33,12 @@ export interface HistoryConfig {
   file?: string
   ignoreDuplicates?: boolean
   ignoreSpace?: boolean
-  searchMode?: 'fuzzy' | 'exact'
+  searchMode?: 'fuzzy' | 'exact' | 'startswith' | 'regex'
+  /**
+   * Optional limit for number of results returned by search().
+   * If provided, results will be truncated to this size when no explicit limit is passed.
+   */
+  searchLimit?: number
 }
 
 export interface CompletionCacheConfig {

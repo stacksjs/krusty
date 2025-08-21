@@ -19,6 +19,7 @@ export class HistoryManager {
       ignoreDuplicates: true,
       ignoreSpace: true,
       searchMode: 'fuzzy',
+      searchLimit: undefined,
       ...config,
     }
     // Resolve the history file path
@@ -114,20 +115,46 @@ export class HistoryManager {
     })
   }
 
-  search(query: string): string[] {
+  search(query: string, limit?: number): string[] {
     if (!query.trim())
       return []
 
     const lowerQuery = query.toLowerCase()
 
+    // Determine result limit
+    const resultLimit = typeof limit === 'number' ? limit : this.config.searchLimit
+
+    // Exact (substring) search
     if (this.config.searchMode === 'exact') {
-      return this.history.filter(cmd =>
+      const results = this.history.filter(cmd =>
         cmd.toLowerCase().includes(lowerQuery),
       )
+      return typeof resultLimit === 'number' ? results.slice(0, resultLimit) : results
+    }
+
+    // Startswith search
+    if (this.config.searchMode === 'startswith') {
+      const results = this.history.filter(cmd =>
+        cmd.toLowerCase().startsWith(lowerQuery),
+      )
+      return typeof resultLimit === 'number' ? results.slice(0, resultLimit) : results
+    }
+
+    // Regex search (query treated as regex pattern)
+    if (this.config.searchMode === 'regex') {
+      try {
+        const pattern = new RegExp(query)
+        const results = this.history.filter(cmd => pattern.test(cmd))
+        return typeof resultLimit === 'number' ? results.slice(0, resultLimit) : results
+      }
+      catch {
+        // Invalid regex: return empty results
+        return []
+      }
     }
 
     // Fuzzy search
-    return this.history.filter((cmd) => {
+    const results = this.history.filter((cmd) => {
       const lowerCmd = cmd.toLowerCase()
       let queryIndex = 0
 
@@ -139,6 +166,7 @@ export class HistoryManager {
 
       return queryIndex === lowerQuery.length
     })
+    return typeof resultLimit === 'number' ? results.slice(0, resultLimit) : results
   }
 
   clear(): void {

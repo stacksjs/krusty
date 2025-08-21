@@ -159,11 +159,13 @@ export class ExpansionEngine {
               depth += 1
             }
             else if (ch === ')' && prev !== '\\') {
-              if (depth === 0) break
+              if (depth === 0)
+                break
               depth -= 1
             }
           }
-          if (j >= str.length) break // unmatched; leave as-is
+          if (j >= str.length)
+            break // unmatched; leave as-is
           const inner = str.slice(i + 2, j)
           const expandedInner = await expandDollarParen(inner)
           const output = await this.executeCommand(expandedInner)
@@ -205,13 +207,15 @@ export class ExpansionEngine {
         // Replace $VAR explicitly
         expr = expr.replace(/\$([A-Z_]\w*)/gi, (_m: string, varName: string) => {
           const value = this.context.environment[varName]
-          if (typeof value === 'string' && value.length > 0) return value
+          if (typeof value === 'string' && value.length > 0)
+            return value
           return '0'
         })
         // Replace bare VAR identifiers not preceded by hex/octal digits or 'x'
         expr = expr.replace(/(?<![\da-fx_])([A-Z_]\w*)\b/gi, (_m: string, varName: string) => {
           const value = this.context.environment[varName]
-          if (typeof value === 'string' && value.length > 0) return value
+          if (typeof value === 'string' && value.length > 0)
+            return value
           return '0'
         })
 
@@ -252,20 +256,26 @@ export class ExpansionEngine {
         tokens.push(ch)
       }
     }
-    if (buf) tokens.push(buf)
+    if (buf)
+      tokens.push(buf)
 
     const toDec = (numTok: string): string => {
-      if (/^0x[\da-fA-F]+$/.test(numTok)) return String(Number.parseInt(numTok.slice(2), 16))
+      if (/^0x[\da-fA-F]+$/.test(numTok))
+        return String(Number.parseInt(numTok.slice(2), 16))
       // Leading zero implies octal (but a single 0 is zero)
-      if (/^0[0-7]+$/.test(numTok)) return String(Number.parseInt(numTok, 8))
-      if (/^\d+$/.test(numTok)) return numTok
+      if (/^0[0-7]+$/.test(numTok))
+        return String(Number.parseInt(numTok, 8))
+      if (/^\d+$/.test(numTok))
+        return numTok
       // Anything else is invalid
       throw new Error('Invalid arithmetic literal')
     }
 
     const normalized = tokens.map((t) => {
-      if (/^[\da-fA-Fx]+$/.test(t)) return toDec(t)
-      if (/^[+\-*/%()]$/.test(t)) return t
+      if (/^[\da-fA-Fx]+$/.test(t))
+        return toDec(t)
+      if (/^[+\-*/%()]$/.test(t))
+        return t
       // Unexpected token
       throw new Error('Invalid arithmetic token')
     }).join('')

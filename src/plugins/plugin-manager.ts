@@ -13,6 +13,37 @@ export class PluginManager {
   // Keep lazily-configured plugins to load on demand
   private lazyPlugins: Map<string, { item: NonNullable<PluginConfig['list']>[number], parent: PluginConfig }> = new Map()
 
+  // Safely invoke lifecycle methods and isolate errors per plugin
+  private async callLifecycle<K extends 'initialize' | 'activate' | 'deactivate' | 'destroy'>(
+    plugin: Plugin,
+    phase: K,
+    context: PluginContext | undefined,
+  ): Promise<boolean> {
+    const logger = this.shell?.log
+    try {
+      const fn = (plugin as any)[phase] as ((ctx: PluginContext) => Promise<void> | void) | undefined
+      if (!fn) {
+        return true
+      }
+      if (!context) {
+        // If no context could be created, skip but do not treat as failure of plugin code
+        logger?.warn?.(`Skipping plugin ${plugin.name} ${phase} due to missing context`)
+        return false
+      }
+      await fn(context)
+      return true
+    }
+    catch (error) {
+      if (logger) {
+        logger.error(`Plugin ${plugin.name} ${phase} failed:`, error)
+      }
+      else {
+        console.error(`Plugin ${plugin.name} ${phase} failed:`, error)
+      }
+      return false
+    }
+  }
+
   constructor(shell: Shell, shellConfig: KrustyConfig) {
     this.shell = shell
     this.config = shellConfig
@@ -40,10 +71,9 @@ export class PluginManager {
         const plugin = autoSuggestPlugin.default
 
         this.plugins.set(name, plugin)
-        if (plugin.initialize)
-          await plugin.initialize(context)
-        if (plugin.activate)
-          await plugin.activate(context)
+        const okInit = await this.callLifecycle(plugin, 'initialize', context)
+        if (okInit)
+          await this.callLifecycle(plugin, 'activate', context)
       }
       catch (error) {
         console.error('Failed to load auto-suggest plugin:', error)
@@ -70,10 +100,9 @@ export class PluginManager {
       }
 
       this.plugins.set(name, plugin)
-      if (plugin.initialize)
-        await plugin.initialize(context)
-      if (plugin.activate)
-        await plugin.activate(context)
+      const okInit = await this.callLifecycle(plugin, 'initialize', context)
+      if (okInit)
+        await this.callLifecycle(plugin, 'activate', context)
     }
   }
 
@@ -83,7 +112,7 @@ export class PluginManager {
     if (!lazy)
       return
 
-    const { item, parent } = lazy
+    const { item } = lazy
     try {
       // Handle built-in default plugins
       if (item.name === 'auto-suggest' || item.name === 'highlight') {
@@ -280,14 +309,9 @@ export class PluginManager {
         },
       },
     }
-
-    if (plugin.initialize) {
-      await plugin.initialize(context)
-    }
-
-    if (plugin.activate) {
-      await plugin.activate(context)
-    }
+    const okInit = await this.callLifecycle(plugin, 'initialize', context)
+    if (okInit)
+      await this.callLifecycle(plugin, 'activate', context)
   }
 
   private async installPluginItem(pluginItem: { name: string, url?: string, version?: string }): Promise<void> {
@@ -334,22 +358,20 @@ export class PluginManager {
 
     for (const [name, plugin] of this.plugins) {
       try {
-        if (plugin.deactivate) {
-          const context: PluginContext = {
-            shell: this.shell,
-            config: this.config,
-            logger: {
-              // eslint-disable-next-line no-console
-              debug: console.debug.bind(console, `[${plugin.name}]`),
-              // eslint-disable-next-line no-console
-              info: console.info.bind(console, `[${plugin.name}]`),
-              warn: console.warn.bind(console, `[${plugin.name}]`),
-              error: console.error.bind(console, `[${plugin.name}]`),
-            },
-            utils: {} as any, // Simplified for shutdown
-          }
-          await plugin.deactivate(context)
+        const context: PluginContext = {
+          shell: this.shell,
+          config: this.config,
+          logger: {
+            // eslint-disable-next-line no-console
+            debug: console.debug.bind(console, `[${plugin.name}]`),
+            // eslint-disable-next-line no-console
+            info: console.info.bind(console, `[${plugin.name}]`),
+            warn: console.warn.bind(console, `[${plugin.name}]`),
+            error: console.error.bind(console, `[${plugin.name}]`),
+          },
+          utils: {} as any, // Simplified for shutdown
         }
+        await this.callLifecycle(plugin, 'deactivate', context)
       }
       catch (error) {
         console.error(`Error deactivating plugin ${name}:`, error)
@@ -449,12 +471,8 @@ export class PluginManager {
       return
 
     try {
-      if (plugin.deactivate) {
-        const context = this.getPluginContext(name)
-        if (context) {
-          await plugin.deactivate(context)
-        }
-      }
+      const context = this.getPluginContext(name)
+      await this.callLifecycle(plugin, 'deactivate', context)
       this.plugins.delete(name)
     }
     catch (error) {

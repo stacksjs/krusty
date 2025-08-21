@@ -197,21 +197,24 @@ export class CommandParser {
           const nextCh = input[i + 3] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep) inLoopHeader = true
+          if (prevSep && nextSep)
+            inLoopHeader = true
         }
         if (ch === 'w' && input.slice(i, i + 5) === 'while') {
           const prev = i === 0 ? '' : input[i - 1]
           const nextCh = input[i + 5] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep) inLoopHeader = true
+          if (prevSep && nextSep)
+            inLoopHeader = true
         }
         if (ch === 'u' && input.slice(i, i + 5) === 'until') {
           const prev = i === 0 ? '' : input[i - 1]
           const nextCh = input[i + 5] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep) inLoopHeader = true
+          if (prevSep && nextSep)
+            inLoopHeader = true
         }
         if (ch === 'd' && input.slice(i, i + 2) === 'do') {
           const prev = i === 0 ? '' : input[i - 1]
@@ -230,7 +233,8 @@ export class CommandParser {
           const nextCh = input[i + 4] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep && loopDepth > 0) loopDepth -= 1
+          if (prevSep && nextSep && loopDepth > 0)
+            loopDepth -= 1
         }
 
         // Token-aware case/esac
@@ -239,19 +243,23 @@ export class CommandParser {
           const nextCh = input[i + 4] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep) caseDepth += 1
+          if (prevSep && nextSep)
+            caseDepth += 1
         }
         if (ch === 'e' && input.slice(i, i + 4) === 'esac') {
           const prev = i === 0 ? '' : input[i - 1]
           const nextCh = input[i + 4] || ''
           const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
           const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
-          if (prevSep && nextSep && caseDepth > 0) caseDepth -= 1
+          if (prevSep && nextSep && caseDepth > 0)
+            caseDepth -= 1
         }
 
         // Brace tracking for function bodies and blocks
-        if (ch === '{') braceDepth += 1
-        if (ch === '}') braceDepth = Math.max(0, braceDepth - 1)
+        if (ch === '{')
+          braceDepth += 1
+        if (ch === '}')
+          braceDepth = Math.max(0, braceDepth - 1)
 
         // Detect operators when not in quotes/here-doc and not inside any script construct
         if (ifDepth === 0 && loopDepth === 0 && caseDepth === 0 && braceDepth === 0 && !inLoopHeader) {

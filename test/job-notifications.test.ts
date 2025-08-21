@@ -1,5 +1,5 @@
-import { describe, expect, it, mock, vi } from 'bun:test'
 import type { ChildProcess } from 'node:child_process'
+import { describe, expect, it, mock, vi } from 'bun:test'
 import { JobManager } from '../src/jobs/job-manager'
 
 function createShellWithLogger() {
@@ -59,7 +59,7 @@ describe('Background job completion notifications', () => {
     const jobId = jm.addJob('echo ok', cp as ChildProcess, true)
 
     // Fire exit event
-    listeners['exit']?.forEach(cb => cb(0, null))
+    listeners.exit?.forEach(cb => cb(0, null))
 
     // Expect notification with explicit exit code
     expect(info).toHaveBeenCalledWith(`[${jobId}] exited with code 0 echo ok`)

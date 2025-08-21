@@ -10,7 +10,7 @@ import process from 'node:process'
 import { PassThrough, Readable } from 'node:stream'
 import { createBuiltins } from './builtins'
 import { CompletionProvider } from './completion'
-import { defaultConfig, loadKrustyConfig } from './config'
+import { defaultConfig, diffKrustyConfigs, loadKrustyConfig, validateKrustyConfig } from './config'
 import { HistoryManager, sharedHistory } from './history'
 import { HookManager } from './hooks'
 import { AutoSuggestInput } from './input/auto-suggest'
@@ -289,7 +289,41 @@ export class KrustyShell implements Shell {
     const start = performance.now()
     try {
       // Load latest config from disk
+      const oldConfig = this.config
       const newConfig = await loadKrustyConfig()
+
+      // Validate before applying
+      const { valid, errors, warnings } = validateKrustyConfig(newConfig)
+      if (!valid) {
+        // Log validation errors and abort reload
+        this.log.error('Reload aborted: invalid configuration')
+        for (const e of errors) {
+          this.log.error(` - ${e}`)
+        }
+        const stderr = `${['reload: invalid configuration', ...errors.map(e => ` - ${e}`)].join('\n')}\n`
+        return { exitCode: 1, stdout: '', stderr, duration: performance.now() - start }
+      }
+
+      // Log warnings if any
+      if (warnings && warnings.length) {
+        this.log.warn('Configuration warnings:')
+        for (const w of warnings) this.log.warn(` - ${w}`)
+      }
+
+      // Compute and log a diff for visibility
+      try {
+        const diff = diffKrustyConfigs(oldConfig, newConfig)
+        if (diff.length) {
+          this.log.info('Config changes on reload:')
+          for (const line of diff) this.log.info(` - ${line}`)
+        }
+        else {
+          this.log.info('No config changes detected.')
+        }
+      }
+      catch (e) {
+        this.log.debug('Failed to compute config diff', e)
+      }
 
       // Apply environment: start from current process.env to keep runtime updates, then overlay new config
       this.environment = Object.fromEntries(

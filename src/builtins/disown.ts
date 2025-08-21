@@ -20,13 +20,13 @@ export const disownCommand: BuiltinCommand = {
 
     // Help flag
     if (args.includes('-h') || args.includes('--help')) {
-      const help = `Usage: disown [-h|--help] [job_spec ...]\n\n` +
-        `Remove jobs from the job table without sending signals.\n\n` +
-        `Job spec can be one of:\n` +
-        `  %n   job number n\n` +
-        `  %+   current job\n` +
-        `  %-   previous job\n` +
-        `  +|-  shorthand for %+ or %-\n`
+      const help = `Usage: disown [-h|--help] [job_spec ...]\n\n`
+        + `Remove jobs from the job table without sending signals.\n\n`
+        + `Job spec can be one of:\n`
+        + `  %n   job number n\n`
+        + `  %+   current job\n`
+        + `  %-   previous job\n`
+        + `  +|-  shorthand for %+ or %-\n`
       return { exitCode: 0, stdout: help, stderr: '', duration: performance.now() - start }
     }
 
