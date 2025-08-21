@@ -105,7 +105,7 @@ export const umaskCommand: BuiltinCommand = {
         duration: performance.now() - start,
       }
       if (shell.config.verbose)
-        shell.log.debug('[umask] set to %s in %dms', shell.umask.toString(8).padStart(3, '0'), Math.round(res.duration))
+        shell.log.debug('[umask] set to %s in %dms', shell.umask.toString(8).padStart(3, '0'), Math.round(res.duration || 0))
       return res
     }
 
@@ -141,7 +141,7 @@ export const umaskCommand: BuiltinCommand = {
       duration: performance.now() - start,
     }
     if (shell.config.verbose)
-      shell.log.debug('[umask] display mode=%s output=%s in %dms', preserveOutput ? 'preserve' : printSymbolic ? 'symbolic' : 'numeric', output.trim(), Math.round(res.duration))
+      shell.log.debug('[umask] display mode=%s output=%s in %dms', preserveOutput ? 'preserve' : printSymbolic ? 'symbolic' : 'numeric', output.trim(), Math.round(res.duration || 0))
     return res
   },
 }

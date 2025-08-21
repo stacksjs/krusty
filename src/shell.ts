@@ -31,6 +31,12 @@ export class KrustyShell implements Shell {
   public history: string[] = []
   public jobManager: JobManager
   public jobs: Job[] = [] // Compatibility property for Shell interface
+  // POSIX-like shell options
+  public nounset: boolean = false
+  public xtrace: boolean = false
+  public pipefail: boolean = false
+  // Last xtrace line printed (for testing/support tooling)
+  public lastXtraceLine: string | undefined
   private lastExitCode: number = 0
 
   private parser: CommandParser
@@ -369,27 +375,27 @@ export class KrustyShell implements Shell {
       // Add to history (before execution to capture the command even if it fails)
       this.addToHistory(command)
 
-      // Detect and execute scripts (if/for/while/case/functions) via ScriptManager
-      if (!options?.bypassScriptDetection && this.scriptManager.isScript(command)) {
-        const scriptResult = await this.scriptManager.executeScript(command)
-        this.lastExitCode = scriptResult.exitCode
-        // Execute command:after hooks for script execution as well
-        await this.hookManager.executeHooks('command:after', { command, result: scriptResult })
-        return scriptResult
+      // Detect scripts (functions/control flow) unless bypassed
+      if (!options?.bypassScriptDetection) {
+        if (this.scriptManager.isScript(command)) {
+          const scriptResult = await this.scriptManager.executeScript(command)
+          return scriptResult
+        }
       }
 
-      // Detect and execute operator chains: ;, &&, ||
-      const chain = this.splitByOperators(command)
+      // Operator-aware chaining: split into segments with ;, &&, ||
+      const chain = this.parser.splitByOperatorsDetailed(command)
       if (chain.length > 1) {
         let aggregate: CommandResult | null = null
         let lastExit = 0
         for (let i = 0; i < chain.length; i++) {
-          const { segment, op } = chain[i]
-          // Conditional execution based on previous exit code
+          const { segment } = chain[i]
+          // Conditional execution based on previous operator
           if (i > 0) {
-            if (op === '&&' && lastExit !== 0)
+            const prevOp = chain[i - 1].op
+            if (prevOp === '&&' && lastExit !== 0)
               continue
-            if (op === '||' && lastExit === 0)
+            if (prevOp === '||' && lastExit === 0)
               continue
           }
 
@@ -415,7 +421,7 @@ export class KrustyShell implements Shell {
           aggregate = this.aggregateResults(aggregate, segResult)
         }
 
-        const result = aggregate || { exitCode: 0, stdout: '', stderr: '', duration: 0 }
+        const result = aggregate || { exitCode: lastExit, stdout: '', stderr: '', duration: performance.now() - start }
         this.lastExitCode = result.exitCode
         // Execute command:after hooks
         await this.hookManager.executeHooks('command:after', { command, result })
@@ -778,6 +784,18 @@ export class KrustyShell implements Shell {
         }
       }
 
+      // xtrace for builtins: print command before execution
+      if (this.xtrace) {
+        const formatArg = (a: string) => (/\s/.test(a) ? `"${a}"` : a)
+        const argsStr = Array.isArray(command.args) ? command.args.map((a: string) => formatArg(a)).join(' ') : ''
+        const line = `+ ${command.name}${argsStr ? ` ${argsStr}` : ''}`
+        this.lastXtraceLine = line
+        try {
+          process.stderr.write(`${line}\n`)
+        }
+        catch {}
+      }
+
       // Process arguments to remove quotes for builtin commands (except alias which handles quotes itself)
       const processedArgs = command.name === 'alias'
         ? command.args
@@ -795,6 +813,18 @@ export class KrustyShell implements Shell {
 
     // Expand aliases with cycle detection
     const expandedCommand = options?.bypassAliases ? command : this.expandAliasWithCycleDetection(command)
+
+    // xtrace: print command before execution
+    if (this.xtrace) {
+      const formatArg = (a: string) => (/\s/.test(a) ? `"${a}"` : a)
+      const argsStr = Array.isArray(expandedCommand.args) ? expandedCommand.args.map((a: string) => formatArg(a)).join(' ') : ''
+      const line = `+ ${expandedCommand.name}${argsStr ? ` ${argsStr}` : ''}`
+      this.lastXtraceLine = line
+      try {
+        process.stderr.write(`${line}\n`)
+      }
+      catch {}
+    }
 
     // If the expanded command represents a pipeline constructed by alias expansion
     if ((expandedCommand as any).pipe && Array.isArray((expandedCommand as any).pipeCommands)) {
@@ -916,43 +946,175 @@ export class KrustyShell implements Shell {
     return this.expandAliasWithCycleDetection(expanded, visited)
   }
 
-  private async executePipedCommands(commands: any[], redirections?: any[], options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
-    // For now, implement simple pipe execution
-    // This is a simplified version - full pipe implementation would be more complex
+  private async executePipedCommands(commands: any[], _redirections?: any[], _options?: { bypassAliases?: boolean, bypassFunctions?: boolean }): Promise<CommandResult> {
+    const start = performance.now()
 
-    let lastResult: CommandResult = {
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      duration: 0,
-    }
+    // Environment for all spawned processes
+    const cleanEnv = Object.fromEntries(
+      Object.entries({
+        ...process.env,
+        ...this.environment,
+        FORCE_COLOR: '3',
+        COLORTERM: 'truecolor',
+        TERM: 'xterm-256color',
+        BUN_FORCE_COLOR: '3',
+      }).filter(([_, value]) => value !== undefined) as [string, string][],
+    )
+
+    // Prepare execution plan that supports a mix of externals and builtins
+    const children: Array<ChildProcess | null> = []
+    const builtinResults: Array<CommandResult | null> = Array.from({ length: commands.length }, () => null)
+    const exitCodes: Array<number | null> = Array.from({ length: commands.length }, () => null)
+    let stderrAgg = ''
+    let stdoutLast = ''
 
     for (let i = 0; i < commands.length; i++) {
-      const command = commands[i]
-      const isLast = i === commands.length - 1
+      // Expand alias for this segment if applicable
+      const cmd = this.expandAlias(commands[i])
+      // xtrace
+      if (this.xtrace) {
+        const formatArg = (a: string) => (a.includes(' ') ? `"${a}"` : a)
+        const argsStr = Array.isArray(cmd.args) ? cmd.args.map((a: string) => formatArg(a)).join(' ') : ''
+        try {
+          process.stderr.write(`+ ${cmd.name}${argsStr ? ` ${argsStr}` : ''}\n`)
+        }
+        catch {}
+      }
 
-      if (i === 0) {
-        // First command
-        lastResult = await this.executeSingleCommand(command, redirections, options)
+      // If the command is a builtin, execute it inline
+      if (this.builtins.has(cmd.name)) {
+        const builtin = this.builtins.get(cmd.name)!
+        const processedArgs = (cmd as any).preserveQuotedArgs || cmd.name === 'alias'
+          ? cmd.args
+          : cmd.args.map((arg: string) => this.processAliasArgument(arg))
+        const res = await builtin.execute(processedArgs, this)
+        builtinResults[i] = res
+        stderrAgg += res.stderr || ''
+        exitCodes[i] = res.exitCode
+        children.push(null)
       }
       else {
-        // Pipe previous output to current command
-        const result = await this.executeWithInput(command, lastResult.stdout)
-        lastResult = {
-          exitCode: result.exitCode,
-          stdout: result.stdout,
-          stderr: lastResult.stderr + result.stderr,
-          duration: (lastResult.duration || 0) + (result.duration || 0),
-          streamed: (lastResult.streamed === true) || (result.streamed === true),
-        }
-      }
+        // External command
+        const extArgs = (cmd.args || []).map((arg: string) => this.processAliasArgument(arg))
+        const child = spawn(cmd.name, extArgs, {
+          cwd: this.cwd,
+          env: cleanEnv,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
 
-      if (lastResult.exitCode !== 0 && !isLast) {
-        break // Stop on error unless it's the last command
+        // Add to job manager (foreground)
+        try {
+          this.addJob(cmd.raw || `${cmd.name} ${extArgs.join(' ')}`, child, false)
+        }
+        catch {}
+
+        // Collect stderr from each process
+        child.stderr?.on('data', (d) => {
+          stderrAgg += d.toString()
+        })
+
+        children.push(child)
       }
     }
 
-    return lastResult
+    // Wire pipes between processes
+    for (let i = 0; i < children.length - 1; i++) {
+      const leftChild = children[i]
+      const rightChild = children[i + 1]
+      const leftBuiltin = builtinResults[i]
+      // If left is external and right is external
+      if (leftChild && rightChild) {
+        leftChild.stdout?.pipe(rightChild.stdin!)
+      }
+      // If left is builtin and right is external, write the builtin stdout to right stdin
+      else if (!leftChild && rightChild) {
+        try {
+          if (leftBuiltin?.stdout) {
+            rightChild.stdin?.write(leftBuiltin.stdout)
+          }
+          rightChild.stdin?.end()
+        }
+        catch {}
+      }
+      // If right is builtin, we don't need to wire anything; builtins don't read stdin in our current model
+    }
+
+    // Capture stdout only from the last process in the pipeline
+    const lastChild = children[children.length - 1]
+    const lastBuiltin = builtinResults[commands.length - 1]
+    if (lastChild) {
+      lastChild.stdout?.on('data', (d) => {
+        stdoutLast += d.toString()
+      })
+    }
+    else if (lastBuiltin) {
+      stdoutLast = lastBuiltin.stdout || ''
+    }
+
+    // Ensure first process stdin is closed if no input is provided by the user
+    // (interactive input for pipelines is not supported here)
+    const firstChild = children[0]
+    if (firstChild) {
+      try {
+        firstChild.stdin?.end()
+      }
+      catch {}
+    }
+
+    // Await all processes (if any were spawned). If the pipeline is all builtins,
+    // there are no children to await and exit codes are already populated.
+    if (children.length > 0) {
+      await new Promise<void>((resolve) => {
+        let closed = 0
+        children.forEach((child, idx) => {
+          const isBuiltin = builtinResults[idx] !== null
+          if (child) {
+            child.on('error', (_error) => {
+              stderrAgg += `${String(_error)}\n`
+              exitCodes[idx] = 127
+              closed += 1
+              if (closed === children.length)
+                resolve()
+            })
+            child.on('close', (code, signal) => {
+              let ec = code ?? 0
+              if (signal)
+                ec = signal === 'SIGTERM' ? 143 : 130
+              exitCodes[idx] = ec
+              closed += 1
+              if (closed === children.length)
+                resolve()
+            })
+          }
+          else if (isBuiltin) {
+            // Already have exit code from builtin; count it as closed
+            closed += 1
+            if (closed === children.length)
+              resolve()
+          }
+        })
+      })
+    }
+
+    // Compute final exit code according to pipefail
+    let finalExit = exitCodes[exitCodes.length - 1] ?? 0
+    if (this.pipefail) {
+      for (let i = exitCodes.length - 1; i >= 0; i--) {
+        if ((exitCodes[i] ?? 0) !== 0) {
+          finalExit = exitCodes[i] ?? 0
+          break
+        }
+      }
+    }
+
+    this.lastExitCode = finalExit
+    return {
+      exitCode: finalExit,
+      stdout: stdoutLast,
+      stderr: stderrAgg,
+      duration: performance.now() - start,
+      streamed: false,
+    }
   }
 
   /**
@@ -1315,6 +1477,7 @@ export class KrustyShell implements Shell {
     // Create a clean environment object without undefined values
     const cleanEnv = Object.fromEntries(
       Object.entries({
+        ...process.env,
         ...this.environment,
         FORCE_COLOR: '3',
         COLORTERM: 'truecolor',
@@ -1420,6 +1583,7 @@ export class KrustyShell implements Shell {
     // Clean env
     const cleanEnv = Object.fromEntries(
       Object.entries({
+        ...process.env,
         ...this.environment,
         FORCE_COLOR: '3',
         COLORTERM: 'truecolor',
@@ -1472,7 +1636,10 @@ export class KrustyShell implements Shell {
             child.kill(killSignal)
             // Force kill after grace period if still alive
             setTimeout(() => {
-              try { child.kill('SIGKILL') } catch {}
+              try {
+                child.kill('SIGKILL')
+              }
+              catch {}
             }, 5000)
           }
           catch {}
@@ -1517,6 +1684,11 @@ export class KrustyShell implements Shell {
 
       // Handle process completion
       child.on('close', (code, signal) => {
+        // Clear any pending timeout
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle)
+          timeoutHandle = null
+        }
         // Update the shell's last exit code
         let exitCode = code || 0
 
@@ -1537,12 +1709,14 @@ export class KrustyShell implements Shell {
         })
       })
 
-      // Handle input if provided
+      // Handle input: write provided input, pipe from file, or explicitly close stdin to signal EOF
       if (child.stdin) {
-        if (input) {
+        if (input !== undefined) {
           try {
-            child.stdin.setDefaultEncoding('utf-8')
-            child.stdin.write(input)
+            if (input) {
+              // Write as UTF-8 string by default
+              child.stdin.write(input)
+            }
             child.stdin.end()
           }
           catch (err) {
@@ -1576,6 +1750,13 @@ export class KrustyShell implements Shell {
               console.error(endError)
             }
           }
+        }
+        else {
+          // No input provided and no stdin file: close stdin so processes that read from it don't hang
+          try {
+            child.stdin.end()
+          }
+          catch {}
         }
       }
 

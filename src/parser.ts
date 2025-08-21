@@ -14,8 +14,10 @@ export class CommandParser {
       throw new Error('unterminated quote')
     }
 
-    // Handle command chaining (;, &&, ||) first, before expansion
-    const segments = this.splitByOperators(trimmed)
+    // For parser.parse(), only split pipelines within a single command segment.
+    // Higher-level chaining (;, &&, ||) is handled by the shell using
+    // splitByOperatorsDetailed() to retain operator semantics.
+    const segments = this.splitByPipes(trimmed)
     const commands: Command[] = []
     const redirections: Redirection[] = []
 
@@ -70,9 +72,113 @@ export class CommandParser {
     return Object.keys(redirects).length > 0 ? redirects : undefined
   }
 
-  private splitByOperators(input: string): string[] {
-    // For now, handle pipes. More complex operators (&&, ||, ;) can be added later
-    return this.splitByPipes(input)
+  // Backwards-compatible helper used by older callers; returns just the segments.
+  public splitByOperators(input: string): string[] {
+    return this.splitByOperatorsDetailed(input).map(s => s.segment)
+  }
+
+  // Detailed operator-aware splitter: returns segments with the operator
+  // that follows each segment (except the last). Handles quotes, escapes,
+  // and basic here-doc detection ("<<DELIM ... DELIM"), avoiding splits inside.
+  public splitByOperatorsDetailed(input: string): Array<{ segment: string, op?: ';' | '&&' | '||' }> {
+    const out: Array<{ segment: string, op?: ';' | '&&' | '||' }> = []
+    let buf = ''
+    let inQuotes = false
+    let quoteChar = ''
+    let escaped = false
+    let i = 0
+    // Here-doc lightweight tracking: when encountering <<DELIM, we avoid
+    // operator splitting until the end of input (single-line safety). This
+    // prevents accidental splits on operators embedded in here-doc content.
+    let inHereDoc = false
+
+    const push = (op?: ';' | '&&' | '||') => {
+      const t = buf.trim()
+      if (t)
+        out.push({ segment: t, op })
+      buf = ''
+    }
+
+    while (i < input.length) {
+      const ch = input[i]
+      const next = input[i + 1]
+
+      if (escaped) {
+        buf += ch
+        escaped = false
+        i += 1
+        continue
+      }
+
+      if (ch === '\\') {
+        escaped = true
+        // Preserve the backslash for downstream tokenization
+        buf += ch
+        i += 1
+        continue
+      }
+
+      // Quote handling
+      if (!inQuotes && (ch === '"' || ch === '\'')) {
+        inQuotes = true
+        quoteChar = ch
+        buf += ch
+        i += 1
+        continue
+      }
+      if (inQuotes && ch === quoteChar) {
+        inQuotes = false
+        quoteChar = ''
+        buf += ch
+        i += 1
+        continue
+      }
+
+      // Here-doc start (only when not quoted)
+      if (!inQuotes && !inHereDoc && ch === '<' && next === '<') {
+        inHereDoc = true
+        buf += '<<'
+        i += 2
+        // Consume an optional delimiter token (best-effort)
+        while (i < input.length && /\s/.test(input[i])) {
+          buf += input[i]
+          i += 1
+        }
+        while (i < input.length && /[^\s]/.test(input[i])) {
+          buf += input[i]
+          i += 1
+        }
+        continue
+      }
+
+      // Detect operators when not in quotes or here-doc
+      if (!inQuotes && !inHereDoc) {
+        // &&, || have priority over ;
+        if (ch === '&' && next === '&') {
+          push('&&')
+          i += 2
+          continue
+        }
+        if (ch === '|' && next === '|') {
+          push('||')
+          i += 2
+          continue
+        }
+        if (ch === ';') {
+          push(';')
+          i += 1
+          continue
+        }
+      }
+
+      buf += ch
+      i += 1
+    }
+
+    if (buf.trim())
+      out.push({ segment: buf.trim() })
+
+    return out
   }
 
   private splitByPipes(input: string): string[] {
@@ -176,6 +282,12 @@ export class CommandParser {
       }
 
       current += char
+    }
+
+    // If line ends with a lonely backslash, keep it literal
+    if (escaped) {
+      current += '\\'
+      escaped = false
     }
 
     if (current) {

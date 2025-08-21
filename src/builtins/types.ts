@@ -16,12 +16,7 @@ export interface Shell extends BaseShell {
 }
 
 export interface BuiltinCommand extends Omit<BaseBuiltinCommand, 'execute'> {
-  execute: (args: string[], shell: Shell) => Promise<{
-    exitCode: number
-    stdout: string
-    stderr: string
-    duration: number
-  }>
+  execute: (args: string[], shell: Shell) => Promise<import('../types').CommandResult>
 }
 
 export interface BuiltinExecuteArgs {
@@ -29,12 +24,7 @@ export interface BuiltinExecuteArgs {
   shell: Shell
 }
 
-export type BuiltinExecute = (args: string[], shell: Shell) => Promise<{
-  exitCode: number
-  stdout: string
-  stderr: string
-  duration: number
-}>
+export type BuiltinExecute = (args: string[], shell: Shell) => Promise<import('../types').CommandResult>
 
 // Helper types for command definitions
 export interface CommandDefinition {

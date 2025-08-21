@@ -1,11 +1,10 @@
 import type { CommandResult, Plugin, PluginCommand, PluginContext } from '../types'
-import { BasePlugin } from './index'
 
 /**
  * Highlight Plugin
  * - Provides a demo highlight command and prepares hooks for future inline highlighting
  */
-class HighlightPlugin extends BasePlugin implements Plugin {
+class HighlightPlugin implements Plugin {
   name = 'highlight'
   version = '1.0.0'
   description = 'Simple command highlighting utilities'

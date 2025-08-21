@@ -1,4 +1,4 @@
-import type { Shell } from '../types'
+import type { Shell } from '../types/shell'
 import { spawn } from 'node:child_process'
 import * as process from 'node:process'
 
@@ -55,12 +55,19 @@ export class ExpansionEngine {
 
     // Handle simple $VAR syntax (only uppercase variables and underscores)
     const simpleRegex = /\$([A-Z_][A-Z0-9_]*)/g
-    result = result.replace(simpleRegex, (match, varName) => {
+    result = result.replace(simpleRegex, (_match, varName) => {
       // Use shell environment first, then system environment
       if (varName in this.context.environment) {
         return this.context.environment[varName]
       }
-      return process.env[varName] || ''
+      const sys = process.env[varName]
+      if (sys !== undefined)
+        return sys
+      // Enforce nounset: error on unset variables for simple $VAR
+      if (this.context.shell?.nounset) {
+        throw new Error(`${varName}: unbound variable`)
+      }
+      return ''
     })
 
     // Restore escaped variables
@@ -111,7 +118,17 @@ export class ExpansionEngine {
     }
 
     // Simple variable expansion
-    return (content in this.context.environment) ? this.context.environment[content] : (process.env[content] ?? '')
+    if (content in this.context.environment) {
+      return this.context.environment[content]
+    }
+    const sys = process.env[content]
+    if (sys !== undefined)
+      return sys
+    // Enforce nounset for ${VAR} when no operator used
+    if (this.context.shell?.nounset) {
+      throw new Error(`${content}: unbound variable`)
+    }
+    return ''
   }
 
   /**

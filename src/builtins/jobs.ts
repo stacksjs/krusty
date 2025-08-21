@@ -57,7 +57,7 @@ export const jobsCommand: BuiltinCommand = {
       duration: performance.now() - start,
     }
     if (shell.config.verbose)
-      shell.log.debug('[jobs] done in %dms', Math.round(result.duration))
+      shell.log.debug('[jobs] done in %dms', Math.round(result.duration || 0))
     return result
   },
 }

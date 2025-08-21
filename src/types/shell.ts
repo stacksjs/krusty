@@ -30,9 +30,13 @@ export interface Shell {
   log: Logger
   umask: number
   jobs: Job[]
+  // POSIX-like flags
+  nounset: boolean
+  xtrace: boolean
+  pipefail: boolean
 
   // Core methods
-  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean }) => Promise<CommandResult>
+  execute: (command: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean, bypassScriptDetection?: boolean }) => Promise<CommandResult>
   executeCommand: (command: string, args: string[]) => Promise<CommandResult>
   parseCommand: (input: string) => ParsedCommand
   addJob: (command: string, pid?: number) => number

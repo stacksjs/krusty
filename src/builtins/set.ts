@@ -3,7 +3,7 @@ import type { BuiltinCommand, CommandResult, Shell } from '../types'
 export const setCommand: BuiltinCommand = {
   name: 'set',
   description: 'Set shell options and positional parameters or display variables',
-  usage: 'set [-e] [name=value ...]',
+  usage: 'set [-eux] [-o option] [+eux] [+o option] [name=value ...]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
 
@@ -21,13 +21,27 @@ export const setCommand: BuiltinCommand = {
       }
     }
 
-    // Simple option support: -e (ignored for now but succeed)
+    // Parse flags: -e (ignored here), -u, -x, -o pipefail and their + counterparts
     let i = 0
     let sawE = false
+    const setOption = (opt: string, on: boolean) => {
+      switch (opt) {
+        case 'u': shell.nounset = on
+          break
+        case 'x': shell.xtrace = on
+          break
+        default: break
+      }
+    }
     while (i < args.length && args[i].startsWith('-')) {
       const opt = args[i]
       if (opt === '--') {
         i++
+        break
+      }
+      // If this is the dedicated option token (-o), stop here and let the
+      // -o/+o handler below process it together with its option name.
+      if (opt === '-o' || opt === '+o') {
         break
       }
       // handle combined flags like -ex; only -e recognized
@@ -38,12 +52,45 @@ export const setCommand: BuiltinCommand = {
             // could set a flag on shell.options if exists
             sawE = true
             break
+          case 'u':
+            setOption('u', true)
+            break
+          case 'x':
+            setOption('x', true)
+            break
           default:
             // ignore unknown flags for compatibility; continue
             break
         }
       }
       i++
+    }
+
+    // Handle + flags (disable)
+    while (i < args.length && args[i].startsWith('+')) {
+      const opt = args[i]
+      // If this is the dedicated option token (+o), stop here and let the
+      // -o/+o handler below process it together with its option name.
+      if (opt === '+o') {
+        break
+      }
+      for (let j = 1; j < opt.length; j++) {
+        const flag = opt[j]
+        if (flag === 'u' || flag === 'x')
+          setOption(flag, false)
+      }
+      i++
+    }
+
+    // Handle -o / +o
+    while (i < args.length && (args[i] === '-o' || args[i] === '+o')) {
+      const enable = args[i] === '-o'
+      const name = args[i + 1]
+      if (!name)
+        break
+      if (name === 'pipefail')
+        shell.pipefail = enable
+      i += 2
     }
 
     // Remaining args should be NAME=VALUE pairs
@@ -67,7 +114,7 @@ export const setCommand: BuiltinCommand = {
     }
 
     if (shell.config.verbose) {
-      shell.log.debug('[set] flags: -e=%s, assignments: %o', String(sawE), assignments)
+      shell.log.debug('[set] flags: -e=%s, nounset=%s, xtrace=%s, pipefail=%s, assignments: %o', String(sawE), String(shell.nounset), String(shell.xtrace), String(shell.pipefail), assignments)
     }
 
     return {

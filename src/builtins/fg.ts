@@ -103,7 +103,7 @@ export const fgCommand: BuiltinCommand = {
         duration: performance.now() - start,
       }
       if (shell.config.verbose)
-        shell.log.debug('[fg] done in %dms', Math.round(res.duration))
+        shell.log.debug('[fg] done in %dms', Math.round(res.duration || 0))
       return res
     }
     else {

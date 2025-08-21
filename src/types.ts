@@ -264,6 +264,11 @@ export interface Shell {
   builtins: Map<string, BuiltinCommand>
   log: Logger
 
+  // Execution flags
+  nounset?: boolean
+  xtrace?: boolean
+  pipefail?: boolean
+
   // Optional state used by some builtins
   hashTable?: Map<string, string>
   signalHandlers?: Map<string, string | null>
@@ -296,25 +301,25 @@ export interface Shell {
     command: string
     pid?: number
     status: 'running' | 'stopped' | 'done'
-    fg?: boolean
+    background?: boolean
   }>
   addJob: (command: string, childProcess?: any, background?: boolean) => number
-  removeJob: (id: number) => boolean
   getJob: (id: number) => {
     id: number
     command: string
     pid?: number
     status: 'running' | 'stopped' | 'done'
-    fg?: boolean
+    background?: boolean
   } | undefined
   getJobs: () => Array<{
     id: number
     command: string
     pid?: number
     status: 'running' | 'stopped' | 'done'
-    fg?: boolean
+    background?: boolean
   }>
   setJobStatus: (id: number, status: 'running' | 'stopped' | 'done') => boolean
+  removeJob: (id: number, force?: boolean) => boolean
 
   // Enhanced job control methods
   suspendJob?: (jobId: number) => boolean

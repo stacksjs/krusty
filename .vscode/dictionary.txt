@@ -26,10 +26,12 @@ iconify
 keymap
 krusty
 lockb
+nounset
 openweb
 osascript
 outdir
 pausable
+pipefail
 popd
 Postcardware
 prefetch
@@ -56,3 +58,4 @@ vitebook
 vitejs
 vue-demi
 vueus
+xtrace
