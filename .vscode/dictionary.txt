@@ -46,6 +46,7 @@ socio
 Solana
 Spatie
 stacksjs
+timeit
 twoslash
 typecheck
 unalias

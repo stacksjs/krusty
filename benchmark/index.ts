@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-import type { ExpansionContext } from '../../src/utils/expansion'
+import type { ExpansionContext } from '../src/utils/expansion'
 import process from 'node:process'
-import { ExpansionEngine, ExpansionUtils } from '../../src/utils/expansion'
+import { ExpansionEngine, ExpansionUtils } from '../src/utils/expansion'
 
 function hrtimeMs(): number {
   const t = process.hrtime.bigint()
