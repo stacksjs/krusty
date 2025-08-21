@@ -41,6 +41,19 @@ const exampleConfig: KrustyConfig = {
     maxSuggestions: 15,
   },
 
+  // Expansion engine settings
+  expansion: {
+    // Configure cache size limits for expansion caches
+    cacheLimits: {
+      // Argument splitting cache (e.g., whitespace/tokenization)
+      arg: 300,
+      // Executable resolution cache (PATH lookups)
+      exec: 800,
+      // Arithmetic expression evaluation cache
+      arithmetic: 600,
+    },
+  },
+
   // Shell aliases
   aliases: {
     ll: 'ls -la',

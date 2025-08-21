@@ -14,6 +14,10 @@ export interface KrustyConfig {
   modules?: ModuleConfig
   hooks?: HooksConfig
   logging?: LoggingConfig
+  /**
+   * Expansion engine configuration
+   */
+  expansion?: ExpansionEngineConfig
 }
 
 export interface PromptConfig {
@@ -85,6 +89,21 @@ export interface CompletionConfig {
   cache?: CompletionCacheConfig
   context?: CompletionContextConfig
   commands?: CompletionCommandsConfig
+}
+
+// Expansion engine configuration
+export interface ExpansionCacheLimits {
+  /** Maximum cached entries for argument splitting */
+  arg?: number
+  /** Maximum cached entries for executable resolution (PATH lookups) */
+  exec?: number
+  /** Maximum cached entries for arithmetic expression evaluation */
+  arithmetic?: number
+}
+
+export interface ExpansionEngineConfig {
+  /** Cache size limits for expansion-related caches */
+  cacheLimits?: ExpansionCacheLimits
 }
 
 export interface LoggingConfig {

@@ -7,6 +7,13 @@ import { loadConfig } from 'bunfig'
 export const defaultConfig: KrustyConfig = {
   verbose: false,
   streamOutput: true,
+  expansion: {
+    cacheLimits: {
+      arg: 200,
+      exec: 500,
+      arithmetic: 500,
+    },
+  },
   logging: {
     prefixes: {
       debug: 'DEBUG',
@@ -370,6 +377,18 @@ export function validateKrustyConfig(cfg: KrustyConfig): { valid: boolean, error
     if (comp.maxSuggestions != null && (typeof comp.maxSuggestions !== 'number' || comp.maxSuggestions <= 0)) {
       errors.push(`completion.maxSuggestions must be a positive number (got: ${comp.maxSuggestions})`)
     }
+  }
+
+  // Expansion cache limits validation
+  const exp = (cfg as any).expansion
+  if (exp && exp.cacheLimits) {
+    const { arg, exec, arithmetic } = exp.cacheLimits
+    if (arg != null && (typeof arg !== 'number' || arg <= 0))
+      errors.push(`expansion.cacheLimits.arg must be a positive number (got: ${arg})`)
+    if (exec != null && (typeof exec !== 'number' || exec <= 0))
+      errors.push(`expansion.cacheLimits.exec must be a positive number (got: ${exec})`)
+    if (arithmetic != null && (typeof arithmetic !== 'number' || arithmetic <= 0))
+      errors.push(`expansion.cacheLimits.arithmetic must be a positive number (got: ${arithmetic})`)
   }
 
   // Plugins validation (shape only)

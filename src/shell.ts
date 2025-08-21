@@ -21,6 +21,7 @@ import { PluginManager } from './plugins/plugin-manager'
 import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from './prompt'
 import { ScriptManager } from './scripting/script-manager'
 import { ThemeManager } from './theme/theme-manager'
+import { ExpansionUtils } from './utils/expansion'
 import { RedirectionHandler } from './utils/redirection'
 
 export class KrustyShell implements Shell {
@@ -191,6 +192,14 @@ export class KrustyShell implements Shell {
     this.jobManager = new JobManager(this)
     this.scriptManager = new ScriptManager(this)
 
+    // Apply expansion cache limits from config (if any)
+    try {
+      const limits = this.config.expansion?.cacheLimits
+      if (limits) {
+        ExpansionUtils.setCacheLimits(limits)
+      }
+    } catch {}
+
     // Load history
     this.loadHistory()
   }
@@ -198,8 +207,7 @@ export class KrustyShell implements Shell {
   private loadHistory(): void {
     try {
       this.history = this.historyManager.getHistory()
-    }
-    catch (error) {
+    } catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to load history:', error)
       }
@@ -209,8 +217,7 @@ export class KrustyShell implements Shell {
   private saveHistory(): void {
     try {
       this.historyManager.save()
-    }
-    catch (error) {
+    } catch (error) {
       if (this.config.verbose) {
         this.log.warn('Failed to save history:', error)
       }
@@ -316,14 +323,10 @@ export class KrustyShell implements Shell {
         if (diff.length) {
           this.log.info('Config changes on reload:')
           for (const line of diff) this.log.info(` - ${line}`)
-        }
-        else {
+        } else {
           this.log.info('No config changes detected.')
         }
-      }
-      catch (e) {
-        this.log.debug('Failed to compute config diff', e)
-      }
+      } catch {}
 
       // Apply environment: start from current process.env to keep runtime updates, then overlay new config
       this.environment = Object.fromEntries(
@@ -349,6 +352,17 @@ export class KrustyShell implements Shell {
 
       // Recreate hooks with new config
       this.hookManager = new HookManager(this, this.config)
+
+      // Apply expansion cache limits and clear caches on reload
+      try {
+        const limits = this.config.expansion?.cacheLimits
+        if (limits) {
+          ExpansionUtils.setCacheLimits(limits)
+        }
+      } catch {}
+      try {
+        ExpansionUtils.clearCaches()
+      } catch {}
 
       // Restart plugins to reflect new config
       await this.pluginManager.shutdown()
