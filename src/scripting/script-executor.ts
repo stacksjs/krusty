@@ -1,5 +1,6 @@
 import type { CommandResult, Shell } from '../types'
 import type { ParsedScript, ScriptBlock, ScriptStatement } from './script-parser'
+import { CommandParser } from '../parser'
 
 export interface ScriptContext {
   variables: Map<string, string>
@@ -13,6 +14,7 @@ export interface ScriptContext {
 
 export class ScriptExecutor {
   private contexts: ScriptContext[] = []
+  private commandParser = new CommandParser()
 
   async executeScript(script: ParsedScript, shell: Shell, options: { exitOnError?: boolean } = {}): Promise<CommandResult> {
     const context: ScriptContext = {
@@ -74,6 +76,40 @@ export class ScriptExecutor {
     }
 
     const command = statement.command
+
+    // Handle inline chaining inside a script line: e.g., "myfn && echo Y" or "cmd1; cmd2".
+    // We use the raw line to detect operators and execute segments within the same script context
+    // so that script-defined functions and variables are visible.
+    if (statement.raw && (statement.raw.includes('&&') || statement.raw.includes('||') || statement.raw.includes(';'))) {
+      const chain = this.commandParser.splitByOperatorsDetailed(statement.raw)
+      let aggregate: CommandResult | null = null
+      let lastExit = 0
+      for (let i = 0; i < chain.length; i++) {
+        const { segment } = chain[i]
+        if (i > 0) {
+          const prevOp = chain[i - 1].op
+          if (prevOp === '&&' && lastExit !== 0)
+            continue
+          if (prevOp === '||' && lastExit === 0)
+            continue
+        }
+        // Parse the segment into a single command (no pipes handled here)
+        const parsed = await this.commandParser.parse(segment, context.shell)
+        if (parsed.commands.length === 0)
+          continue
+        const segStmt: ScriptStatement = {
+          type: 'command',
+          command: parsed.commands[0],
+          raw: segment,
+        }
+        const segRes = await this.executeCommand(segStmt, context)
+        lastExit = segRes.exitCode
+        aggregate = aggregate
+          ? { ...segRes, stdout: (aggregate.stdout || '') + (segRes.stdout || ''), stderr: (aggregate.stderr || '') + (segRes.stderr || '') }
+          : { ...segRes }
+      }
+      return aggregate || { success: true, exitCode: lastExit, stdout: '', stderr: '' }
+    }
 
     // Handle built-in script commands
     switch (command.name) {
@@ -164,13 +200,17 @@ export class ScriptExecutor {
     const conditionResult = await this.evaluateCondition(block.condition, context)
 
     if (conditionResult) {
-      return await this.executeStatements(block.body, context)
+      const res = await this.executeStatements(block.body, context)
+      return { ...res, exitCode: 0, success: true }
     }
     else if (block.elseBody) {
-      return await this.executeStatements(block.elseBody, context)
+      const res = await this.executeStatements(block.elseBody, context)
+      // Condition was false => make overall if-statement exit non-zero to allow `||` chains
+      return { ...res, exitCode: 1, success: false }
     }
 
-    return { success: true, exitCode: 0, stdout: '', stderr: '' }
+    // No body executed; return non-zero to reflect false condition
+    return { success: false, exitCode: 1, stdout: '', stderr: '' }
   }
 
   private async executeForBlock(block: ScriptBlock, context: ScriptContext): Promise<CommandResult> {

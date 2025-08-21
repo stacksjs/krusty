@@ -62,7 +62,7 @@ export class ScriptManager {
 
   isScript(input: string): boolean {
     // Quick checks for clear starters
-    const starters = [/^\s*if\b/, /^\s*for\b/, /^\s*while\b/, /^\s*until\b/, /^\s*case\b/, /^\s*function\b/, /^\s*\w+\s*\(\)\s*\{/]
+    const starters = [/^\s*if\b/, /^\s*for\b/, /^\s*while\b/, /^\s*until\b/, /^\s*case\b/, /^\s*function\b/, /\b\w+\s*\(\)\s*\{/]
     if (starters.some(r => r.test(input)))
       return true
 

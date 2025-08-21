@@ -36,17 +36,16 @@ export class RedirectionHandler {
 
     // Parse in order of complexity to avoid conflicts
     const patterns = [
-      // Here documents: <<EOF, <<-EOF
-      { regex: /\s+<<-?\s*([A-Z_]\w*)\s*$/gi, type: 'here-doc' },
-      // Here strings: <<<string
-      // eslint-disable-next-line regexp/no-super-linear-backtracking
-      { regex: /\s+<<<\s*(.+)$/g, type: 'here-string' },
+      // Here documents: <<EOF, <<-EOF (capture leading - in group 1 for indent stripping)
+      { regex: /\s+<<(-)?\s*([A-Z_]\w*)\s*$/gi, type: 'here-doc' },
+      // Here strings: <<<"str" or <<< 'str' or <<< unquoted
+      { regex: /\s+<<<\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)\s*$/g, type: 'here-string' },
       // Combined stderr+stdout: &>, &>>
-      { regex: /\s+(&>>?)\s+(\S+)/g, type: 'both' },
+      { regex: /(?:\s+|^)(&>|&>>)\s+(\S+)/g, type: 'both' },
       // Standard redirection: >, >>, <, 2>, 2>>
-      { regex: /\s+(2>>?|>>?|<)\s+(\S+)/g, type: 'standard' },
-      // File descriptor redirection: 3>file, 4<file, 2>&1 (but not 2>file which is handled above)
-      { regex: /\s+(\d+)(>>?|<)\s*(&\d+)/g, type: 'fd' },
+      { regex: /(?:\s+|^)(\d*>>|\d*>|<)\s+(\S+)/g, type: 'standard' },
+      // File descriptor duplication/close: n>&m, n>&-, also allow compact without spaces
+      { regex: /(?:\s+|^)(\d+)>\s*&(-|\d+)\b/g, type: 'fd-dup' },
     ]
 
     for (const pattern of patterns) {
@@ -75,7 +74,8 @@ export class RedirectionHandler {
         return {
           type: 'here-doc',
           direction: 'input',
-          target: match[1],
+          // Store delimiter; prefix with '-' if indentation stripping requested so downstream can detect
+          target: `${match[1] ? '-' : ''}${match[2]}`,
         }
 
       case 'here-string':
@@ -85,21 +85,24 @@ export class RedirectionHandler {
           target: match[1],
         }
 
-      case 'both':
+      case 'both': {
+        const op = match[1]
+        // Normalize: &> file -> both, &>> file -> append
+        const isAppend = op.includes('>>')
         return {
           type: 'file',
-          direction: match[1] === '&>>' ? 'append' : 'both',
-          target: match[2],
+          direction: 'both',
+          // For append on both, mark target and interpret later
+          target: isAppend ? `APPEND::${match[2]}` : match[2],
         }
+      }
 
-      case 'fd': {
+      case 'fd-dup': {
         const fd = Number.parseInt(match[1], 10)
-        const operator = match[2]
-        const target = match[3]
-
+        const target = match[2] === '-' ? '&-' : `&${match[2]}`
         return {
           type: 'fd',
-          direction: operator.includes('>') ? 'output' : 'input',
+          direction: 'output',
           target,
           fd,
         }
@@ -109,20 +112,21 @@ export class RedirectionHandler {
         const op = match[1]
         const file = match[2]
 
-        if (op === '<') {
-          return { type: 'file', direction: 'input', target: file }
-        }
-        else if (op === '>') {
-          return { type: 'file', direction: 'output', target: file }
-        }
-        else if (op === '>>') {
-          return { type: 'file', direction: 'append', target: file }
-        }
-        else if (op === '2>') {
-          return { type: 'file', direction: 'error', target: file }
-        }
-        else if (op === '2>>') {
-          return { type: 'file', direction: 'error-append', target: file }
+        // Detect file descriptor-specific standard ops like 2>, 2>>
+        const fdMatch = op.match(/^(\d*)(>>?|<)$/)
+        if (fdMatch) {
+          const fdStr = fdMatch[1]
+          const sym = fdMatch[2]
+          if (sym === '<') {
+            return { type: 'file', direction: 'input', target: file }
+          }
+          if (sym === '>' || sym === '>>') {
+            if (fdStr === '2') {
+              return { type: 'file', direction: sym === '>>' ? 'error-append' : 'error', target: file }
+            }
+            // stdout or generic > / >>
+            return { type: 'file', direction: sym === '>>' ? 'append' : 'output', target: file }
+          }
         }
         break
       }
@@ -212,8 +216,19 @@ export class RedirectionHandler {
         break
       }
 
+      case 'error-append': {
+        const errAppendStream = createWriteStream(filePath, { flags: 'a' })
+        if (process.stderr) {
+          process.stderr.pipe(errAppendStream)
+        }
+        break
+      }
+
       case 'both': {
-        const bothStream = createWriteStream(filePath)
+        // Support APPEND:: marker for combined append (&>>)
+        const isAppendBoth = redirection.target.startsWith('APPEND::')
+        const actualPath = isAppendBoth ? filePath.replace(/APPEND::/, '') : filePath
+        const bothStream = createWriteStream(actualPath, { flags: isAppendBoth ? 'a' : 'w' })
         if (process.stdout) {
           process.stdout.pipe(bothStream)
         }
@@ -229,9 +244,9 @@ export class RedirectionHandler {
     process: ChildProcess,
     redirection: Redirection,
   ): Promise<void> {
-    // Here documents need to be handled during parsing
-    // This is a placeholder for the actual implementation
-    const content = redirection.target // This would contain the here-doc content
+    // Here documents need to be handled during parsing stage to provide content.
+    // We treat redirection.target as the already-parsed content here.
+    const content = redirection.target
     if (process.stdin) {
       process.stdin.write(content)
       process.stdin.end()
@@ -242,7 +257,11 @@ export class RedirectionHandler {
     process: ChildProcess,
     redirection: Redirection,
   ): Promise<void> {
-    const content = redirection.target
+    // Strip surrounding quotes if present for here-strings
+    let content = redirection.target
+    if ((content.startsWith('"') && content.endsWith('"')) || (content.startsWith('\'') && content.endsWith('\''))) {
+      content = content.slice(1, -1)
+    }
     if (process.stdin) {
       process.stdin.write(`${content}\n`)
       process.stdin.end()
@@ -253,14 +272,61 @@ export class RedirectionHandler {
     process: ChildProcess,
     redirection: Redirection,
   ): Promise<void> {
-    // File descriptor redirection (e.g., 2>&1)
-    if (redirection.target === '&1' && redirection.fd === 2) {
-      // Redirect stderr to stdout
-      if (process.stderr && process.stdout) {
-        process.stderr.pipe(process.stdout as any)
+    if (typeof redirection.fd !== 'number')
+      return
+
+    const dst = redirection.target // like &1 or &-
+    // Close FD: n>&-
+    if (dst === '&-') {
+      if (redirection.fd === 1 && process.stdout) {
+        try {
+          (process.stdout as any).end?.()
+          (process.stdout as any).destroy?.()
+        }
+        catch {}
       }
+      else if (redirection.fd === 2 && process.stderr) {
+        try {
+          (process.stderr as any).end?.()
+          (process.stderr as any).destroy?.()
+        }
+        catch {}
+      }
+      else if (redirection.fd === 0 && process.stdin) {
+        try {
+          (process.stdin as any).end?.()
+          (process.stdin as any).destroy?.()
+        }
+        catch {}
+      }
+      return
     }
-    // Additional FD redirections can be implemented here
+
+    const m = dst.match(/^&(\d+)$/)
+    if (!m)
+      return
+    const targetFd = Number.parseInt(m[1], 10)
+
+    // Duplicate FD: implement as piping one stream to the other
+    // For output FDs (1: stdout, 2: stderr)
+    const outMap: Record<number, Readable | Writable | null | undefined> = {
+      0: process.stdin as any,
+      1: process.stdout as any,
+      2: process.stderr as any,
+    }
+    const from = outMap[redirection.fd]
+    const to = outMap[targetFd]
+    if (!from || !to)
+      return
+
+    // If redirecting stderr to stdout (2>&1), pipe stderr into stdout
+    // If redirecting stdout to stderr (1>&2), pipe stdout into stderr
+    if ((from as any).pipe && (to as any).write) {
+      try {
+        (from as any).pipe(to as any, { end: false })
+      }
+      catch {}
+    }
   }
 
   /**
@@ -270,13 +336,19 @@ export class RedirectionHandler {
     content: string
     remainingLines: string[]
   } {
+    const stripTabs = delimiter.startsWith('-')
+    const delim = stripTabs ? delimiter.slice(1) : delimiter
     const content: string[] = []
     let i = 0
 
     for (i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      if (line.trim() === delimiter) {
+      let line = lines[i]
+      if (line.trim() === delim) {
         break
+      }
+      if (stripTabs) {
+        // Remove leading tabs only, per <<- spec
+        line = line.replace(/^\t+/, '')
       }
       content.push(line)
     }
@@ -312,18 +384,43 @@ export class RedirectionHandler {
           break
 
         case 'append':
-          config.stdout = redirection.target
-          config.stdoutAppend = true
+          if (redirection.type === 'file' && redirection.target.startsWith('APPEND::')) {
+            const path = redirection.target.replace(/^APPEND::/, '')
+            config.stdout = path
+            config.stderr = path
+            config.stdoutAppend = true
+            config.stderrAppend = true
+            config.combineStderr = true
+          }
+          else {
+            config.stdout = redirection.target
+            config.stdoutAppend = true
+          }
           break
 
         case 'error':
           config.stderr = redirection.target
           break
 
-        case 'both':
-          config.stdout = redirection.target
+        case 'error-append':
           config.stderr = redirection.target
-          config.combineStderr = true
+          config.stderrAppend = true
+          break
+
+        case 'both':
+          if (redirection.type === 'file' && redirection.target.startsWith('APPEND::')) {
+            const path = redirection.target.replace(/^APPEND::/, '')
+            config.stdout = path
+            config.stderr = path
+            config.combineStderr = true
+            config.stdoutAppend = true
+            config.stderrAppend = true
+          }
+          else {
+            config.stdout = redirection.target
+            config.stderr = redirection.target
+            config.combineStderr = true
+          }
           break
       }
     }

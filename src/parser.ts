@@ -91,6 +91,13 @@ export class CommandParser {
     // operator splitting until the end of input (single-line safety). This
     // prevents accidental splits on operators embedded in here-doc content.
     let inHereDoc = false
+    // Track simple if...fi blocks to avoid splitting operators inside script constructs.
+    // This is token-aware and ignores substrings like 'printf'. Supports basic nesting.
+    let ifDepth = 0
+    let loopDepth = 0 // do/done
+    let inLoopHeader = false // after for/while/until and before matching 'do'
+    let caseDepth = 0 // case/esac
+    let braceDepth = 0 // { ... }
 
     const push = (op?: ';' | '&&' | '||') => {
       const t = buf.trim()
@@ -144,30 +151,122 @@ export class CommandParser {
           buf += input[i]
           i += 1
         }
-        while (i < input.length && /[^\s]/.test(input[i])) {
+        while (i < input.length && /\S/.test(input[i])) {
           buf += input[i]
           i += 1
         }
         continue
       }
 
-      // Detect operators when not in quotes or here-doc
+      // Detect script tokens when not in quotes or here-doc to manage depths
       if (!inQuotes && !inHereDoc) {
-        // &&, || have priority over ;
-        if (ch === '&' && next === '&') {
-          push('&&')
-          i += 2
-          continue
+        // Token-aware 'if' start: previous is start or separator, next is separator
+        if (ch === 'i' && input.slice(i, i + 2) === 'if') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 2] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) {
+            ifDepth += 1
+          }
         }
-        if (ch === '|' && next === '|') {
-          push('||')
-          i += 2
-          continue
+        // Token-aware 'fi' end
+        if (ch === 'f' && input.slice(i, i + 2) === 'fi') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 2] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep && ifDepth > 0) {
+            ifDepth -= 1
+          }
         }
-        if (ch === ';') {
-          push(';')
-          i += 1
-          continue
+
+        // Token-aware loop headers: for/while/until ... do ... done
+        if (ch === 'f' && input.slice(i, i + 3) === 'for') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 3] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) inLoopHeader = true
+        }
+        if (ch === 'w' && input.slice(i, i + 5) === 'while') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 5] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) inLoopHeader = true
+        }
+        if (ch === 'u' && input.slice(i, i + 5) === 'until') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 5] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) inLoopHeader = true
+        }
+        if (ch === 'd' && input.slice(i, i + 2) === 'do') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 2] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) {
+            if (inLoopHeader) {
+              loopDepth += 1
+              inLoopHeader = false
+            }
+          }
+        }
+        if (ch === 'd' && input.slice(i, i + 4) === 'done') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 4] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep && loopDepth > 0) loopDepth -= 1
+        }
+
+        // Token-aware case/esac
+        if (ch === 'c' && input.slice(i, i + 4) === 'case') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 4] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep) caseDepth += 1
+        }
+        if (ch === 'e' && input.slice(i, i + 4) === 'esac') {
+          const prev = i === 0 ? '' : input[i - 1]
+          const nextCh = input[i + 4] || ''
+          const prevSep = i === 0 || /[\s;|&(){}]/.test(prev)
+          const nextSep = nextCh === '' || /[\s;|&(){}]/.test(nextCh)
+          if (prevSep && nextSep && caseDepth > 0) caseDepth -= 1
+        }
+
+        // Brace tracking for function bodies and blocks
+        if (ch === '{') braceDepth += 1
+        if (ch === '}') braceDepth = Math.max(0, braceDepth - 1)
+
+        // Detect operators when not in quotes/here-doc and not inside any script construct
+        if (ifDepth === 0 && loopDepth === 0 && caseDepth === 0 && braceDepth === 0 && !inLoopHeader) {
+          // &&, || have priority over ;
+          if (ch === '&' && next === '&') {
+            push('&&')
+            i += 2
+            continue
+          }
+          if (ch === '|' && next === '|') {
+            push('||')
+            i += 2
+            continue
+          }
+          if (ch === ';') {
+            push(';')
+            i += 1
+            continue
+          }
+          // Treat newline as a command separator similar to ';' when not in quotes or here-doc
+          if (ch === '\n') {
+            push(';')
+            i += 1
+            continue
+          }
         }
       }
 

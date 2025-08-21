@@ -382,6 +382,14 @@ export class KrustyShell implements Shell {
           return scriptResult
         }
       }
+      else {
+        // Even when bypassing, if the input defines a function, execute the whole input as a script
+        // so that subsequent chained segments can call the function within the same script context.
+        if (/\bfunction\b/.test(command) || /\b\w+\s*\(\)\s*\{/.test(command)) {
+          const scriptResult = await this.scriptManager.executeScript(command, { isFile: true })
+          return scriptResult
+        }
+      }
 
       // Operator-aware chaining: split into segments with ;, &&, ||
       const chain = this.parser.splitByOperatorsDetailed(command)
@@ -397,6 +405,26 @@ export class KrustyShell implements Shell {
               continue
             if (prevOp === '||' && lastExit === 0)
               continue
+          }
+
+          // If this segment is a script construct (if/for/while/functions/etc),
+          // execute it via the script engine and treat its exit code for chaining.
+          // This allows patterns like: "if ... fi && echo ok".
+          try {
+            if (this.scriptManager.isScript(segment)) {
+              const segResult = await this.scriptManager.executeScript(segment)
+              lastExit = segResult.exitCode
+              aggregate = this.aggregateResults(aggregate, segResult)
+              continue
+            }
+          }
+          catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            const stderr = `krusty: script error: ${msg}\n`
+            const segResult = { exitCode: 2, stdout: '', stderr, duration: 0 }
+            aggregate = this.aggregateResults(aggregate, segResult)
+            lastExit = segResult.exitCode
+            break
           }
 
           // Parse + execute this segment (supports pipes/redirections inside)

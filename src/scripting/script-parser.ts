@@ -90,8 +90,9 @@ export class ScriptParser {
         line = `${line.slice(0, -1)} ${rawLines[++i].trim()}`
       }
 
-      // Handle semicolon-separated commands on same line
-      if (line.includes(';')) {
+      // If this is a single-line function definition, keep it intact even if it contains semicolons
+      const isSingleLineFunc = /^\s*[A-Z_]\w*\s*\(\)\s*\{[\s\S]*\}\s*$/i.test(line) || /^\s*function\b[^{]*\{[\s\S]*\}\s*$/.test(line)
+      if (!isSingleLineFunc && line.includes(';')) {
         const parts = this.splitBySemicolon(line)
         lines.push(...parts)
       }
@@ -162,6 +163,36 @@ export class ScriptParser {
     nextIndex: number
   }> {
     const line = lines[startIndex]
+    // Detect inline short function definitions like: name() { echo X; }
+    const inlineFuncMatch = line.match(/^\s*([A-Z_]\w*)\s*\(\)\s*\{([\s\S]*)\}\s*$/i)
+    if (inlineFuncMatch) {
+      const name = inlineFuncMatch[1]
+      const bodyRaw = inlineFuncMatch[2].trim()
+      const bodyStmts: ScriptStatement[] = []
+      if (bodyRaw.length > 0) {
+        const parts = this.splitBySemicolon(bodyRaw)
+        for (const part of parts) {
+          const res = await this.parseCommandStatement(part, shell, startIndex)
+          bodyStmts.push(res.statement)
+        }
+      }
+
+      const block: ScriptBlock = {
+        type: 'function',
+        functionName: name,
+        parameters: [],
+        body: bodyStmts,
+      }
+
+      return {
+        statement: {
+          type: 'block',
+          block,
+          raw: line,
+        },
+        nextIndex: startIndex + 1,
+      }
+    }
     const tokens = this.commandParser.tokenize(line)
 
     if (tokens.length === 0) {
@@ -210,12 +241,24 @@ export class ScriptParser {
       const tokens = this.commandParser.tokenize(line)
 
       if (tokens[0] === 'then') {
+        // Support inline command on the same line as 'then'
+        const after = line.slice(line.indexOf('then') + 4).trim()
+        if (after) {
+          const res = await this.parseCommandStatement(after, shell, i)
+          body.push(res.statement)
+        }
         i++
         continue
       }
 
       if (tokens[0] === 'else') {
+        // Support inline command on the same line as 'else'
+        const after = line.slice(line.indexOf('else') + 4).trim()
         inElse = true
+        if (after) {
+          const res = await this.parseCommandStatement(after, shell, i)
+          elseBody.push(res.statement)
+        }
         i++
         continue
       }
