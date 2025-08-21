@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import { describe, expect, it, mock, vi } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import { JobManager } from '../src/jobs/job-manager'
 
 function createShellWithLogger() {
@@ -22,7 +22,8 @@ describe('Background job completion notifications', () => {
     const jobId = jm.addJob('sleep 1', 12345, true)
 
     // Simulate process.kill(pid, 0) throwing ESRCH for this pid
-    const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid: any, sig?: any) => {
+    const originalKill = process.kill
+    const killSpy = mock((pid: any, sig?: any) => {
       if ((pid === 12345 || pid === -12345) && (sig === 0 || sig === undefined)) {
         const err: any = new Error('No such process')
         err.code = 'ESRCH'
@@ -30,6 +31,7 @@ describe('Background job completion notifications', () => {
       }
       return true as any
     })
+    process.kill = killSpy as unknown as typeof process.kill
 
     // Invoke private monitor method to detect completion
     ;(jm as any).checkJobStatuses()
@@ -37,7 +39,7 @@ describe('Background job completion notifications', () => {
     // Expect notification using "Done" format
     expect(info).toHaveBeenCalledWith(`[${jobId}] Done sleep 1`)
 
-    killSpy.mockRestore()
+    process.kill = originalKill
     jm.shutdown()
   })
 
@@ -46,10 +48,10 @@ describe('Background job completion notifications', () => {
     const jm = new JobManager(shell)
 
     // Minimal ChildProcess mock that supports on('exit', cb)
-    const listeners: Record<string, Function[]> = {}
+    const listeners: Record<string, Array<(...args: any[]) => void>> = {}
     const cp: Partial<ChildProcess> = {
       pid: 24680,
-      on: (event: any, cb: any) => {
+      on: (event: string, cb: (...args: any[]) => void) => {
         listeners[event] = listeners[event] || []
         listeners[event].push(cb)
         return cp as any

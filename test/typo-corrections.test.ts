@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 
 describe('Typo Corrections Test', () => {
   let mockOutput = ''
-  let writeCallCount = 0
+  let _writeCallCount = 0
   let keypressHandlers: Array<(str: string, key: any) => void> = []
   const originalWrite = process.stdout.write
   const originalOn = process.stdin.on
@@ -15,7 +15,7 @@ describe('Typo Corrections Test', () => {
     keypressHandlers = []
 
     process.stdout.write = mock((chunk: any) => {
-      writeCallCount++
+      _writeCallCount++
       const str = chunk.toString()
       mockOutput += str
       return true

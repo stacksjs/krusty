@@ -45,7 +45,7 @@ describe('signal Handling and Job Suspension', () => {
   describe('sIGINT (Ctrl+C) Handling', () => {
     it('should terminate foreground job on SIGINT', () => {
       const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)
-      const job = jobManager.getJob(jobId)!
+      const _job = jobManager.getJob(jobId)!
 
       // Simulate SIGINT signal
       const sigintHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGINT')?.[1]
@@ -57,8 +57,8 @@ describe('signal Handling and Job Suspension', () => {
     })
 
     it('should not affect background jobs on SIGINT', () => {
-      const bgJobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
-      const fgJobId = jobManager.addJob('vim file.txt', createMockChildProcess(12346) as ChildProcess, false)
+      const _bgJobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
+      const _fgJobId = jobManager.addJob('vim file.txt', createMockChildProcess(12346) as ChildProcess, false)
 
       const sigintHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGINT')?.[1]
       sigintHandler()
@@ -69,7 +69,7 @@ describe('signal Handling and Job Suspension', () => {
     })
 
     it('should handle SIGINT when no foreground job exists', () => {
-      const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
+      const _jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
 
       const sigintHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGINT')?.[1]
 
@@ -110,7 +110,7 @@ describe('signal Handling and Job Suspension', () => {
     })
 
     it('should handle SIGTSTP when no foreground job exists', () => {
-      const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
+      const _jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, true)
 
       const sigtstpHandler = mockProcessOn.mock.calls.find(call => call[0] === 'SIGTSTP')?.[1]
 
@@ -210,7 +210,7 @@ describe('signal Handling and Job Suspension', () => {
       jobManager.suspendJob(jobId)
 
       mockKill.mockClear()
-      const success = jobManager.resumeJobBackground(jobId)
+      const _success = jobManager.resumeJobBackground(jobId)
       const job = jobManager.getJob(jobId)!
 
       expect(success).toBe(true)
@@ -236,7 +236,7 @@ describe('signal Handling and Job Suspension', () => {
     it('should not resume already running job', () => {
       const jobId = jobManager.addJob('sleep 100', mockChildProcess as ChildProcess, false)
 
-      const success = jobManager.resumeJobBackground(jobId)
+      const _success = jobManager.resumeJobBackground(jobId)
     })
 
     it('should resume suspended job in foreground', () => {

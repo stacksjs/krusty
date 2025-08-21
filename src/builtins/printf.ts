@@ -115,7 +115,13 @@ function formatFloat(value: number, spec: 'f' | 'e' | 'g', precision?: number): 
       }
       // For decimal, trim trailing zeros
       if (out.includes('.')) {
-        out = out.replace(/\.0+$/g, '').replace(/(\.\d*?)0+$/g, '$1').replace(/\.$/, '')
+        // Trim trailing zeros safely without catastrophic backtracking
+        // 1) Remove trailing zeros after a non-zero decimal digit
+        out = out.replace(/(\.\d*[1-9])0+$/u, '$1')
+        // 2) If only zeros after decimal remain, drop the fractional part
+        out = out.replace(/\.0+$/u, '')
+        // 3) Remove trailing dot if any
+        out = out.replace(/\.$/u, '')
       }
       return out
     }
@@ -127,7 +133,8 @@ function formatPrintf(spec: string, args: string[]): string {
   let i = 0
   let out = ''
   // Regex for % [flags] [width] [.precision] [specifier]
-  const re = /%(%|([-0]?)(\d+)?(?:\.(\d+))?([sdqboxXfeg]))/g
+  // Use non-ambiguous width ([1-9]\d*) so '0' belongs to flags, avoiding overlap
+  const re = /%(%|([-0]*)([1-9]\d*)?(?:\.(\d+))?([sdqboxXfeg]))/g
   let lastIndex = 0
   let match: RegExpExecArray | null
   // eslint-disable-next-line no-cond-assign
