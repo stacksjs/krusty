@@ -12,19 +12,17 @@ Krusty is a modern, feature-rich shell built with TypeScript and Bun. It provide
 
 ## Features
 
-- 🚀 **Performant** - Built on Bun for exceptional performance
-- 🔍 **Intelligent Tab Completion** - Context-aware command and file completion
-- 📝 **Scripting Support** - Write complex shell scripts with JavaScript/TypeScript
-- 🔧 **Extensible** - Easily add custom commands and plugins
-- 🎨 **Themable** - Customize the look and feel to your preference with built-in theme support
-- 🔄 **Modern Syntax** - Supports modern shell features and operators
-- 📦 **Built-in Package Manager** - Manage your shell extensions with ease
-- 🔌 **Plugin System** - Extend functionality with plugins
-- 🎯 **Git Integration** - Built-in Git status in prompt
-- ⚡ **Async by Default** - Non-blocking command execution
-- 🧪 **Tested** - Comprehensive test suite for reliability
+- 🚀 **Performance**: Built on Bun
+- 🧠 **Smart completion**: Context-aware command/file completions
+- 🧩 **Aliases & functions**: Powerful aliasing and shell functions
+- 🧵 **Pipelines & redirections**: Full `|`, `>`, `>>`, `2>&1`, here-strings, etc.
+- 🧭 **Job control**: `jobs`, `bg`, `fg`, `kill`, `wait` with proper signal handling
+- 📜 **Scripting**: if/then/else, for/while/until, case/esac, functions, and more
+- 🎨 **Themes**: Configurable prompt with Git integration
+- 🔌 **Plugins**: Extend functionality cleanly
+- 🧪 **Tested**: Comprehensive test suite for reliability
 
-## Installation
+## Quick start
 
 ```bash
 # Install Krusty globally
@@ -39,59 +37,68 @@ krusty
 
 ## Built-in Commands
 
-Krusty comes with a variety of built-in commands:
+Krusty ships with a comprehensive set of built-ins. Run `help` for details.
 
-### File Operations
+### Core shell
 
-- `cd` - Change directory
-- `ls` - List directory contents
-- `pwd` - Print working directory
-- `cat` - Display file contents
-- `mkdir` - Create directories
-- `rm` - Remove files or directories
-- `cp` - Copy files
-- `mv` - Move or rename files
+- [`alias`](https://krusty.sh/commands/alias), [`unalias`](https://krusty.sh/commands/unalias) — manage aliases
+- [`type`](https://krusty.sh/commands/type), [`which`](https://krusty.sh/commands/which), [`hash`](https://krusty.sh/commands/hash) — identify commands and hash lookups
+- [`help`](https://krusty.sh/commands/help), [`history`](https://krusty.sh/commands/history) — builtin help and command history
+- [`set`](https://krusty.sh/commands/set), [`export`](https://krusty.sh/commands/export), [`unset`](https://krusty.sh/commands/unset), [`umask`](https://krusty.sh/commands/umask) — shell/options and environment
+- [`source`](https://krusty.sh/commands/source), [`eval`](https://krusty.sh/commands/eval), [`exec`](https://krusty.sh/commands/exec), [`read`](https://krusty.sh/commands/read) — script and execution helpers
+- [`printf`](https://krusty.sh/commands/printf), [`echo`](https://krusty.sh/commands/echo), [`test`](https://krusty.sh/commands/test), [`true`](https://krusty.sh/commands/true), [`false`](https://krusty.sh/commands/false) — basic utilities
+- [`time`](https://krusty.sh/commands/time), [`times`](https://krusty.sh/commands/times), [`trap`](https://krusty.sh/commands/trap), [`timeout`](https://krusty.sh/commands/timeout), [`getopts`](https://krusty.sh/commands/getopts) — timing, signals, option parsing
+- [`command`](https://krusty.sh/commands/command) — run a command bypassing functions/aliases
+- [`exit`](https://krusty.sh/commands/exit), [`pwd`](https://krusty.sh/commands/pwd), [`cd`](https://krusty.sh/commands/cd), [`dirs`](https://krusty.sh/commands/dirs), [`pushd`](https://krusty.sh/commands/pushd), [`popd`](https://krusty.sh/commands/popd) — navigation and exit
+- [`env`](https://krusty.sh/commands/env), [`clear`](https://krusty.sh/commands/clear) — environment display and screen clear
 
-### Process Management
+### Jobs & processes
 
-- `jobs` - List background jobs
-- `fg` - Bring job to foreground
-- `bg` - Run job in background
-- `kill` - Terminate processes
+- [`jobs`](https://krusty.sh/commands/jobs) — list jobs
+- [`bg`](https://krusty.sh/commands/bg) — resume a job in background
+- [`fg`](https://krusty.sh/commands/fg) — bring a job to foreground
+- [`kill`](https://krusty.sh/commands/kill) — send signals to jobs/processes
+- [`disown`](https://krusty.sh/commands/disown) — remove jobs from job table
+- [`wait`](https://krusty.sh/commands/wait) — wait for jobs to complete
 
-### System Information
+### Developer utilities
 
-- `date` - Display current date and time
-- `whoami` - Print current user
-- `hostname` - Print system hostname
-- `env` - List environment variables
-- `echo` - Display a line of text
-- `export` - Set environment variables
-- `unset` - Remove environment variables
+- [`reload`](https://krusty.sh/commands/reload) — reload configuration
+- [`library`](https://krusty.sh/commands/library) — manage/inspect libraries
+- [`show`](https://krusty.sh/commands/show) — display information/details
+- [`script-builtins`](https://krusty.sh/commands/script-builtins) — scripting helpers (internal)
 
-### Shell Features
+### Networking & system helpers
 
-- `alias` - Create command aliases
-- `unalias` - Remove aliases
-- `history` - Command history
-- `exit` - Exit the shell
-- `clear` - Clear the terminal screen
-- `bg` - Run job in background
-- `kill` - Send signal to process
+- [`ip`](https://krusty.sh/commands/ip) — display IP info
+- [`localip`](https://krusty.sh/commands/localip) — show local IP
+- [`reloaddns`](https://krusty.sh/commands/reloaddns) — reload DNS cache
 
-### Environment
+### Productivity helpers
 
-- `env` - Display or set environment variables
-- `set` - Set shell options and variables
-- `unset` - Remove variables or functions
-- `export` - Set environment variables
+- [`bookmark`](https://krusty.sh/commands/bookmark) — manage bookmarks/paths
+- [`copyssh`](https://krusty.sh/commands/copyssh) — copy SSH public key
+- [`dotfiles`](https://krusty.sh/commands/dotfiles) — dotfiles helper
+- [`emptytrash`](https://krusty.sh/commands/emptytrash) — empty system trash
+- [`ft`](https://krusty.sh/commands/ft) — quick fuzzy file helper
+- [`hide`](https://krusty.sh/commands/hide) — hide/show files
+- [`pstorm`](https://krusty.sh/commands/pstorm) — open in PhpStorm
+- [`code`](https://krusty.sh/commands/code) — open in VS Code
+- [`shrug`](https://krusty.sh/commands/shrug) — print ¯\\_(ツ)_/¯
+- [`web`](https://krusty.sh/commands/web) — open URLs/web helpers
+- [`wip`](https://krusty.sh/commands/wip) — work-in-progress helper
 
-### Utilities
+### Short aliases (quality-of-life)
 
-- `alias` - Create command aliases
-- `type` - Display command type information
-- `time` - Time command execution
-- `source` - Execute commands from a file
+- [`b`](https://krusty.sh/commands/b), [`bb`](https://krusty.sh/commands/bb), [`bd`](https://krusty.sh/commands/bd), [`bf`](https://krusty.sh/commands/bf), [`bi`](https://krusty.sh/commands/bi), [`bl`](https://krusty.sh/commands/bl), [`br`](https://krusty.sh/commands/br) — convenience wrappers
+
+_Note: A few items are convenience helpers specific to Krusty and not POSIX/Bash standard._
+
+## Usage
+
+- Execute external commands and pipelines: `echo hi | tr a-z A-Z`
+- Redirect output and duplicate FDs: `sh -c 'echo out; echo err 1>&2' 2>&1 | wc -l`
+- Backgrounding and job control: `sleep 5 &` → `jobs` → `fg %1`
 
 ## Customization
 
@@ -110,6 +117,22 @@ export default {
 }
 ```
 
+### Themes
+
+Theme configuration powers prompt styling and Git status:
+
+```ts
+export default {
+  theme: {
+    prompt: {
+      left: '{cwd} ❯ ',
+      right: '',
+    },
+    git: { enabled: true },
+  },
+}
+```
+
 ### Environment Variables
 
 Set environment variables in your `krusty.config.ts` file:
@@ -124,6 +147,22 @@ export default {
   // ... other config
 }
 ```
+
+## Scripting
+
+Krusty includes a script engine with:
+
+- Control flow: `if/then/else/fi`, `for/while/until`, `case/esac`
+- Functions: `name() { … }` and `function name { … }`
+- Built-ins: `source`, `test`, `true/false`, `local/declare/readonly`, `return/break/continue`
+
+See `test/scripting.test.ts` for examples.
+
+## Job Control
+
+- Ctrl+Z suspends the foreground job (SIGTSTP), `bg` resumes in background, `fg` brings it back
+- Ctrl+C sends SIGINT to the foreground job
+- `kill -SIGNAL %n` sends signals to a job; `wait %n` awaits completion
 
 ## Development
 
@@ -147,7 +186,7 @@ bun test
 
 ## Changelog
 
-Please see our [releases](https://github.com/stackjs/krusty/releases) page for more information on what has changed recently.
+Please see our [releases](https://github.com/stacksjs/krusty/releases) page for more information on what has changed recently.
 
 ## Contributing
 
