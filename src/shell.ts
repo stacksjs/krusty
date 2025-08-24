@@ -41,6 +41,7 @@ export class KrustyShell implements Shell {
   // Last xtrace line printed (for testing/support tooling)
   public lastXtraceLine: string | undefined
   private lastExitCode: number = 0
+  private lastCommandDurationMs: number = 0
 
   private parser: CommandParser
   private promptRenderer: PromptRenderer
@@ -511,6 +512,7 @@ export class KrustyShell implements Shell {
 
         const result = aggregate || { exitCode: lastExit, stdout: '', stderr: '', duration: performance.now() - start }
         this.lastExitCode = result.exitCode
+        this.lastCommandDurationMs = result.duration || 0
         // Execute command:after hooks
         await this.hookManager.executeHooks('command:after', { command, result })
         return result
@@ -544,6 +546,7 @@ export class KrustyShell implements Shell {
       // Execute command chain (pipes/redirections)
       const result = await this.executeCommandChain(parsed, options)
       this.lastExitCode = result.exitCode
+      this.lastCommandDurationMs = result.duration || 0
 
       // Execute command:after hooks
       await this.hookManager.executeHooks('command:after', { command, result })
@@ -558,6 +561,8 @@ export class KrustyShell implements Shell {
         stderr: `krusty: ${errorMessage}\n`,
         duration: performance.now() - start,
       }
+      this.lastExitCode = result.exitCode
+      this.lastCommandDurationMs = result.duration || 0
 
       // Execute command:error hooks
       await this.hookManager.executeHooks('command:error', { command, error: errorMessage, result })
@@ -735,7 +740,9 @@ export class KrustyShell implements Shell {
 
     const systemInfo = await this.systemInfoProvider.getSystemInfo()
     const gitInfo = await this.gitInfoProvider.getGitInfo(this.cwd)
-    const prompt = this.promptRenderer.render(this.cwd, systemInfo, gitInfo, this.lastExitCode)
+    const prompt = this.promptRenderer.render(this.cwd, systemInfo, gitInfo, this.lastExitCode, this.lastCommandDurationMs)
+    // Clear duration so it only shows once after a command
+    this.lastCommandDurationMs = 0
 
     // Execute prompt:after hooks
     await this.hookManager.executeHooks('prompt:after', { prompt })

@@ -21,11 +21,17 @@ export class GitBranchModule extends BaseModule {
     if (!gitInfo?.isRepo || !gitInfo.branch)
       return null
 
-    const symbol = ''
+    // Read formatting from ModuleConfig
+    const cfg = context.config?.git_branch || {}
+    const symbol = cfg.symbol ?? ''
+    const format = cfg.format ?? 'on {symbol} {branch}'
     const branch = gitInfo.branch
-    const content = `${symbol} ${branch}`
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{branch}', branch)
 
-    return this.formatResult(content, { color: '#a855f7', bold: true })
+    // Defer styling to prompt/theme; no color here
+    return this.formatResult(content)
   }
 }
 
@@ -40,14 +46,17 @@ export class GitCommitModule extends BaseModule {
 
   async render(context: ModuleContext): Promise<ModuleResult | null> {
     try {
-      const { stdout } = await execAsync('git rev-parse --short HEAD', { cwd: context.cwd })
+      const cfg = context.config?.git_commit || {}
+      const len = (cfg.commit_hash_length as number) ?? 7
+      const { stdout } = await execAsync(`git rev-parse --short=${len} HEAD`, { cwd: context.cwd })
       const hash = stdout.trim()
 
       if (!hash)
         return null
 
-      const content = `(${hash})`
-      return this.formatResult(content, { color: '#10b981' })
+      const format = cfg.format ?? '({hash})'
+      const content = format.replace('{hash}', hash)
+      return this.formatResult(content)
     }
     catch {
       return null
@@ -72,36 +81,26 @@ export class GitStateModule extends BaseModule {
     // Get configuration from context
     const config = context.config?.git_state || {}
 
-    // Use custom symbols and colors from config if available
-    const stateMap: Record<string, { symbol: string, color: string, style: string }> = {
+    // Use custom symbols from config if available; no colors here
+    const stateMap: Record<string, { symbol: string }> = {
       REBASE: {
         symbol: config.rebase || '🔄 REBASING',
-        color: '#f59e0b',
-        style: 'bold yellow',
       },
       MERGE: {
         symbol: config.merge || '🔀 MERGING',
-        color: '#ef4444',
-        style: 'bold red',
       },
       CHERRY_PICK: {
         symbol: config.cherry_pick || '🍒 PICKING',
-        color: '#ec4899',
-        style: 'bold red',
       },
       REVERT: {
         symbol: config.revert || '↩️ REVERTING',
-        color: '#8b5cf6',
-        style: 'bold purple',
       },
       BISECT: {
         symbol: config.bisect || '🔍 BISECTING',
-        color: '#06b6d4',
-        style: 'bold blue',
       },
     }
 
-    const stateInfo = stateMap[state] || { symbol: state, color: '#6b7280', style: 'normal' }
+    const stateInfo = stateMap[state] || { symbol: state }
 
     // Try to get progress information if available
     let progressInfo = ''
@@ -119,7 +118,7 @@ export class GitStateModule extends BaseModule {
     }
 
     const content = `(${stateInfo.symbol}${progressInfo})`
-    return this.formatResult(content, { color: stateInfo.color, bold: stateInfo.style.includes('bold') })
+    return this.formatResult(content)
   }
 
   private hasGitState(cwd: string): boolean {
@@ -214,10 +213,9 @@ export class GitStatusModule extends BaseModule {
     if (parts.length === 0)
       return null
 
-    const content = `[${parts.join(' ')}]`
-    const color = gitInfo.isDirty ? '#ef4444' : '#10b981'
-
-    return this.formatResult(content, { color })
+    const format = config.format || '[{status}]'
+    const content = format.replace('{status}', parts.join(' '))
+    return this.formatResult(content)
   }
 }
 
@@ -251,14 +249,16 @@ export class GitMetricsModule extends BaseModule {
       if (added === 0 && deleted === 0)
         return null
 
-      const parts: string[] = []
+      const cfg = context.config?.git_metrics || {}
+      const format = cfg.format || '({metrics})'
+      const metricsParts: string[] = []
       if (added > 0)
-        parts.push(`+${added}`)
+        metricsParts.push(`+${added}`)
       if (deleted > 0)
-        parts.push(`-${deleted}`)
+        metricsParts.push(`-${deleted}`)
 
-      const content = `(${parts.join('/')})`
-      return this.formatResult(content, { color: '#6b7280' })
+      const content = format.replace('{metrics}', metricsParts.join('/'))
+      return this.formatResult(content)
     }
     catch {
       return null

@@ -45,6 +45,14 @@ export class AutoSuggestInput {
   private groupedActive = false
   private groupedForRender: Array<{ title: string, items: Array<string | { text: string }> }> | null = null
   private groupedIndexMap: Array<{ group: number, idx: number }> = []
+  // One-shot flags to influence suggestion behavior for special cases
+  private forceHistoryOnlyOnce = false
+  private suppressHistoryMergeOnce = false
+  private specialRestoreGroupedOnce = false
+  private inlineFromHistoryOnce: string | null = null
+  // Track acceptance and post-accept edits
+  private acceptedCompletion = false
+  private editedSinceAccept = false
 
   // Compute group first-index and lengths from current groupedIndexMap
   private getGroupedBoundaries(): { first: number[], lengths: number[] } {
@@ -79,10 +87,7 @@ export class AutoSuggestInput {
     // Helper to compute the visual grid layout for a group, mirroring renderGroupedSuggestionList
     const computeLayout = (groupIndex: number) => {
       const g = this.groupedForRender?.[groupIndex]
-      const labels: string[] = (g?.items || []).map((it: any) => typeof it === 'string' ? it : (it?.text ?? ''))
-        .filter((s: string) => !!s)
-        .slice()
-        .sort((a: string, b: string) => a.localeCompare(b))
+      const labels: string[] = (g?.items || []).map((it: any) => typeof it === 'string' ? it : (it?.text ?? '')).filter((s: string) => !!s).slice().sort((a: string, b: string) => a.localeCompare(b))
       const colsTotal = process.stdout.columns ?? 80
       // gap must match renderer
       const gap = 2
@@ -145,7 +150,7 @@ export class AutoSuggestInput {
       const rowCount = Math.ceil(len / columns)
 
       let newGroup = curGroup
-      let newRow = row + (direction === 'up' ? -1 : 1)
+      const newRow = row + (direction === 'up' ? -1 : 1)
 
       if (newRow < 0 || newRow >= rowCount) {
         // Switch groups when moving past top/bottom
@@ -411,6 +416,10 @@ export class AutoSuggestInput {
       this.selectedIndex = 0
       this.isShowingSuggestions = false
       this.isNavigatingSuggestions = false
+      // Reset acceptance/edit flags for new prompt
+      this.acceptedCompletion = false
+      this.editedSinceAccept = false
+      this.forceHistoryOnlyOnce = false
       // Reset history browsing state for a fresh prompt
       this.historyBrowseActive = false
       this.historyBrowseIndex = -1
@@ -423,7 +432,6 @@ export class AutoSuggestInput {
         this.promptAlreadyWritten = true
       }
 
-      // ... (rest of the code remains the same)
       // Mouse tracking support for suggestion clicks (xterm SGR mode)
       let mouseTrackingEnabled = false
       const handleMouse = (chunk: Buffer) => {
@@ -462,24 +470,21 @@ export class AutoSuggestInput {
             }
             if (picked >= 0) {
               this.selectedIndex = picked
-              const drilled = this.applySelectedCompletion()
-              if (drilled) {
-                this.updateSuggestions()
-                this.isShowingSuggestions = this.suggestions.length > 0
-                this.isNavigatingSuggestions = this.isShowingSuggestions
-                this.selectedIndex = 0
-              }
-              else {
-                this.isShowingSuggestions = false
-                this.isNavigatingSuggestions = false
-              }
+              const _drilled = this.applySelectedCompletion()
+              // Keep list open for both directory and non-directory items
               this.updateSuggestions()
+              this.isShowingSuggestions = this.suggestions.length > 0
+              this.isNavigatingSuggestions = this.isShowingSuggestions
+              this.selectedIndex = 0
+              if (this.groupedActive)
+                enableMouseTracking()
               this.updateDisplay(prompt)
             }
           }
         }
       }
-      const enableMouseTracking = () => {
+
+      function enableMouseTracking() {
         if (mouseTrackingEnabled)
           return
         mouseTrackingEnabled = true
@@ -488,7 +493,7 @@ export class AutoSuggestInput {
         stdout.write('\x1B[?1006h')
         stdin.on('data', handleMouse)
       }
-      const disableMouseTracking = () => {
+      function disableMouseTracking() {
         if (!mouseTrackingEnabled)
           return
         mouseTrackingEnabled = false
@@ -538,10 +543,15 @@ export class AutoSuggestInput {
                 this.updateDisplay(prompt)
               }
               else {
-                this.isShowingSuggestions = false
-                this.isNavigatingSuggestions = false
+                // New behavior: keep list open and refilter based on updated input
                 this.updateSuggestions()
-                disableMouseTracking()
+                this.isShowingSuggestions = this.suggestions.length > 0
+                this.isNavigatingSuggestions = this.isShowingSuggestions
+                this.selectedIndex = 0
+                // Enable mouse tracking only when grouped layout is active
+                if (this.groupedActive) {
+                  enableMouseTracking()
+                }
                 this.updateDisplay(prompt)
               }
               return
@@ -629,22 +639,38 @@ export class AutoSuggestInput {
               // Basic vi normal mode commands
               if (key.name === 'h') {
                 this.moveCursorLeft()
+                this.updateSuggestions()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateDisplay(prompt)
                 return
               }
               if (key.name === 'l') {
                 this.moveCursorRight()
+                this.updateSuggestions()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateDisplay(prompt)
                 return
               }
               // Vi vertical movement
               if (key.name === 'k') {
                 this.moveCursorUp()
+                this.updateSuggestions()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateDisplay(prompt)
                 return
               }
               if (key.name === 'j') {
                 this.moveCursorDown()
+                this.updateSuggestions()
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                disableMouseTracking()
                 this.updateDisplay(prompt)
                 return
               }
@@ -744,20 +770,64 @@ export class AutoSuggestInput {
               this.updateDisplay(prompt)
               return
             }
-
             // Otherwise, open the suggestions list (do not insert text yet)
+            // Prefer recent history matches for the current prefix when available.
+            // This avoids showing a large grouped menu when users are refining a command.
+            {
+              const prefixRaw = this.getCurrentLinePrefix()
+              const prefix = prefixRaw.trim().toLowerCase()
+              const isBunRunTab = /^bunx?\s+run\s+tab\b/.test(prefix)
+              const isBunRun = /^bunx?\s+run\b/.test(prefix)
+
+              if (isBunRunTab) {
+              // Special case: restore grouped UI, suppress history-only fallback and merging,
+              // and surface the most recent matching history command inline in dim text.
+                this.specialRestoreGroupedOnce = true
+                this.suppressHistoryMergeOnce = true
+                const histMatches = this.getHistorySuggestions(prefixRaw)
+                if (histMatches.length > 0) {
+                  this.inlineFromHistoryOnce = histMatches[0]
+                }
+                // Ensure a clean re-render when switching modes
+                this.hadSuggestionsLastRender = false
+              }
+              else if (isBunRun) {
+                // For plain "bun run" (without trailing "tab"), force grouped UI and do NOT
+                // hint the most recent history inline. Also bypass history-only fallback/merge.
+                this.specialRestoreGroupedOnce = true
+                this.suppressHistoryMergeOnce = true
+                this.inlineFromHistoryOnce = null
+                this.hadSuggestionsLastRender = false
+              }
+              else {
+                const histMatches = prefixRaw ? this.getHistorySuggestions(prefixRaw) : []
+                if (histMatches.length > 0) {
+                  this.forceHistoryOnlyOnce = true
+                  // Force a clean re-render of suggestions area when switching modes
+                  this.hadSuggestionsLastRender = false
+                }
+                // Fallback: if we previously accepted a completion and then edited, also prefer history
+                if (!this.forceHistoryOnlyOnce && this.acceptedCompletion && this.editedSinceAccept) {
+                  this.forceHistoryOnlyOnce = true
+                  this.hadSuggestionsLastRender = false
+                }
+              }
+            }
             this.updateSuggestions()
             if (this.suggestions.length > 0) {
               this.isShowingSuggestions = true
               this.isNavigatingSuggestions = true
               this.selectedIndex = 0
-              // Suppress inline overlay while list is open
-              this.currentSuggestion = ''
+              // Suppress inline overlay while list is open, except for special grouped restore
+              if (!this.specialRestoreGroupedOnce)
+                this.currentSuggestion = ''
               // Enable mouse tracking only for grouped layout; flat list clicks are unsupported
               if (this.groupedActive) {
                 enableMouseTracking()
               }
               this.updateDisplay(prompt)
+              // Clear the one-shot grouped restore after opening the UI
+              this.specialRestoreGroupedOnce = false
             }
             return
           }
@@ -905,17 +975,18 @@ export class AutoSuggestInput {
           // Handle Backspace (multi-line aware)
           if (key.name === 'backspace') {
             if (this.cursorPosition > 0) {
-              const wasOpen = this.isShowingSuggestions
               // Remove previous char; if it was a newline, we are joining lines
               this.currentInput = this.currentInput.slice(0, this.cursorPosition - 1)
                 + this.currentInput.slice(this.cursorPosition)
               this.cursorPosition--
               this.updateSuggestions()
-              // Keep list open if it was open and there are still suggestions
-              this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
-              this.isNavigatingSuggestions = this.isShowingSuggestions
-              if (!this.isShowingSuggestions)
-                disableMouseTracking()
+              // Editing should close the suggestions list to avoid stale entries
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              // Mark that an edit occurred after an acceptance
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
             }
             return
@@ -924,14 +995,15 @@ export class AutoSuggestInput {
           // Handle Delete (multi-line aware: deleting a newline joins lines)
           if (key.name === 'delete') {
             if (this.cursorPosition < this.currentInput.length) {
-              const wasOpen = this.isShowingSuggestions
               this.currentInput = this.currentInput.slice(0, this.cursorPosition)
                 + this.currentInput.slice(this.cursorPosition + 1)
               this.updateSuggestions()
-              this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
-              this.isNavigatingSuggestions = this.isShowingSuggestions
-              if (!this.isShowingSuggestions)
-                disableMouseTracking()
+              // Editing should close the suggestions list to avoid stale entries
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
             }
             return
@@ -944,6 +1016,12 @@ export class AutoSuggestInput {
               return
             }
             this.moveCursorLeft()
+            this.updateSuggestions()
+            this.isShowingSuggestions = false
+            this.isNavigatingSuggestions = false
+            if (this.acceptedCompletion)
+              this.editedSinceAccept = true
+            disableMouseTracking()
             this.updateDisplay(prompt)
             return
           }
@@ -955,6 +1033,12 @@ export class AutoSuggestInput {
             }
             if (this.cursorPosition < this.currentInput.length) {
               this.moveCursorRight()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
             }
             else if (this.currentSuggestion) {
@@ -970,11 +1054,23 @@ export class AutoSuggestInput {
             // Move to start/end
             if (key.ctrl && key.name === 'a') {
               this.moveToLineStart()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
             if (key.ctrl && key.name === 'e') {
               this.moveToLineEnd()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
@@ -998,11 +1094,23 @@ export class AutoSuggestInput {
             // Word motions
             if (key.meta && (key.name === 'b')) {
               this.moveWordLeft()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
             if (key.meta && (key.name === 'f')) {
               this.moveWordRight()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
@@ -1026,11 +1134,23 @@ export class AutoSuggestInput {
             // Home/End
             if (key.name === 'home') {
               this.moveToLineStart()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
             if (key.name === 'end') {
               this.moveToLineEnd()
+              this.updateSuggestions()
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              if (this.acceptedCompletion)
+                this.editedSinceAccept = true
+              disableMouseTracking()
               this.updateDisplay(prompt)
               return
             }
@@ -1055,6 +1175,8 @@ export class AutoSuggestInput {
             // Keep list open while typing if it was open and still has matches
             this.isShowingSuggestions = wasOpen && this.suggestions.length > 0
             this.isNavigatingSuggestions = this.isShowingSuggestions
+            if (this.acceptedCompletion)
+              this.editedSinceAccept = true
             if (!this.isShowingSuggestions)
               disableMouseTracking()
             this.updateDisplay(prompt)
@@ -1081,6 +1203,23 @@ export class AutoSuggestInput {
         this.groupedActive = false
         this.groupedForRender = null
         this.groupedIndexMap = []
+        return
+      }
+
+      // If forcing history-only this invocation (e.g., Tab after editing post-accept)
+      // Note: bypass if a special grouped-restore is requested this cycle.
+      if (this.forceHistoryOnlyOnce && !this.specialRestoreGroupedOnce) {
+        const prefix = this.getCurrentLinePrefix()
+        const max = Math.min(5, this.options.maxSuggestions ?? 10)
+        const hist = this.getHistorySuggestions(prefix).slice(0, max)
+        this.groupedActive = false
+        this.groupedForRender = null
+        this.groupedIndexMap = []
+        this.suggestions = hist
+        this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.suggestions.length - 1))
+        this.updateSuggestion()
+        // One-shot flag; only applies to this update
+        this.forceHistoryOnlyOnce = false
         return
       }
 
@@ -1199,7 +1338,7 @@ export class AutoSuggestInput {
 
         // Merge history suggestions into a trailing History group only if there is remaining room
         // This preserves all explicit group items intact and only fills up to max with history.
-        if (flat.length < max) {
+        if (flat.length < max && !this.suppressHistoryMergeOnce) {
           const prefix = this.getCurrentLinePrefix()
           const seen = new Set(flat)
           const histItems: string[] = []
@@ -1251,7 +1390,7 @@ export class AutoSuggestInput {
               break
           }
         }
-        if (merged.length < max) {
+        if (merged.length < max && !this.suppressHistoryMergeOnce) {
           const prefix = this.getCurrentLinePrefix()
           const hist = this.getHistorySuggestions(prefix)
           for (const h of hist) {
@@ -1289,6 +1428,8 @@ export class AutoSuggestInput {
         this.selectedIndex = 0
       }
       this.updateSuggestion()
+      // One-shot suppression of history merging is consumed here
+      this.suppressHistoryMergeOnce = false
     }
     catch {
       this.suggestions = []
@@ -1301,8 +1442,22 @@ export class AutoSuggestInput {
 
   private updateSuggestion() {
     if (this.suggestions.length > 0) {
-      const selected = this.getSelectedLabel() || ''
+      // Special-case: inline hint sourced from most recent history match (one-shot)
+      const selected = (this.inlineFromHistoryOnce ?? this.getSelectedLabel()) || ''
       const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
+
+      // Suppress inline overlay when user has only typed "bun run" (no third token yet)
+      // to prefer grouped completions UX over history hinting.
+      const prefixTrimmed = this.getCurrentLinePrefix().trim().toLowerCase()
+      if (/^bunx?\s+run\b/.test(prefixTrimmed)) {
+        const parts = prefixTrimmed.split(/\s+/).filter(Boolean)
+        if (parts.length === 2) {
+          this.currentSuggestion = ''
+          // Consume inline history override if any and stop here
+          this.inlineFromHistoryOnce = null
+          return
+        }
+      }
 
       // Handle different completion scenarios
       // Case 1: brand new input
@@ -1360,6 +1515,8 @@ export class AutoSuggestInput {
     else {
       this.currentSuggestion = ''
     }
+    // Consume inline history override after applying once
+    this.inlineFromHistoryOnce = null
   }
 
   private acceptSuggestion() {
@@ -1369,6 +1526,9 @@ export class AutoSuggestInput {
         + this.currentInput.slice(this.cursorPosition)
       this.cursorPosition += this.currentSuggestion.length
       this.currentSuggestion = ''
+      // Mark acceptance and reset edit-tracking
+      this.acceptedCompletion = true
+      this.editedSinceAccept = false
       this.updateSuggestions()
     }
   }
@@ -1395,7 +1555,6 @@ export class AutoSuggestInput {
     return this.suggestions[idx] || null
   }
 
-
   // Apply the currently selected completion item even when no inline suffix is visible.
   // If the cursor is at a token boundary (preceded by whitespace), insert the full selection.
   // Otherwise, replace the last token before the cursor with the full selection.
@@ -1409,20 +1568,27 @@ export class AutoSuggestInput {
     const after = this.currentInput.slice(this.cursorPosition)
 
     // New token: just insert selected at cursor
-    if (/\s$/.test(before) || before.length === 0) {
-      this.currentInput = before + selected + after
-      this.cursorPosition = before.length + selected.length
+    if (/\s$/.test(before) || before === '') {
+      // Avoid duplicating already-typed prefix (e.g., "bun run ")
+      const base = before
+      const toInsert = selected.startsWith(base) ? selected.slice(base.length) : selected
+      this.currentInput = before + toInsert + after
+      this.cursorPosition += toInsert.length
       this.currentSuggestion = ''
+      // Mark acceptance and reset edit-tracking
+      this.acceptedCompletion = true
+      this.editedSinceAccept = false
       return selectedIsDir
     }
-
-    // Replace the last token before the cursor
     const m = before.match(/(^|\s)(\S+)$/)
     if (m) {
       const lastTok = m[2] || ''
       const tokenStart = this.cursorPosition - lastTok.length
-      this.currentInput = this.currentInput.slice(0, tokenStart) + selected + after
-      this.cursorPosition = tokenStart + selected.length
+      const base = this.currentInput.slice(0, tokenStart)
+      // If the selection already includes the base, insert only the remainder
+      const toInsert = selected.startsWith(base) ? selected.slice(base.length) : selected
+      this.currentInput = base + toInsert + after
+      this.cursorPosition = tokenStart + toInsert.length
     }
     else {
       // Fallback: prepend selected at cursor
@@ -1430,6 +1596,9 @@ export class AutoSuggestInput {
       this.cursorPosition = selected.length
     }
     this.currentSuggestion = ''
+    // Mark acceptance and reset edit-tracking
+    this.acceptedCompletion = true
+    this.editedSinceAccept = false
     return selectedIsDir
   }
 
@@ -1669,6 +1838,8 @@ export class AutoSuggestInput {
         + this.currentInput.slice(this.cursorPosition)
       this.cursorPosition--
       this.updateSuggestions()
+      this.isShowingSuggestions = false
+      this.isNavigatingSuggestions = false
     }
   }
 
@@ -1676,6 +1847,27 @@ export class AutoSuggestInput {
   deleteOneForTesting(): void {
     this.deleteCharUnderCursor()
     this.updateSuggestions()
+  }
+
+  /** @internal */
+  leftOneForTesting(): void {
+    this.moveCursorLeft()
+    this.updateSuggestions()
+    this.isShowingSuggestions = false
+    this.isNavigatingSuggestions = false
+  }
+
+  /** @internal */
+  rightOneForTesting(): void {
+    if (this.cursorPosition < this.currentInput.length) {
+      this.moveCursorRight()
+      this.updateSuggestions()
+      this.isShowingSuggestions = false
+      this.isNavigatingSuggestions = false
+    }
+    else if (this.currentSuggestion) {
+      this.acceptSuggestion()
+    }
   }
 
   // History navigation helpers for tests

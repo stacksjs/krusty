@@ -88,32 +88,37 @@ const exampleConfig: KrustyConfig = {
   // Plugin configuration
   plugins: [
     {
-      name: 'git-plugin',
-      path: './examples/plugins/git-plugin.ts',
       enabled: true,
-      config: {
-        autoFetch: true,
-        showBranchInPrompt: true,
-        colorOutput: true,
-      },
-    },
-    {
-      name: 'docker-plugin',
-      path: '~/.krusty/plugins/docker-plugin.js',
-      enabled: true,
-      config: {
-        showContainerCount: true,
-        autoComplete: true,
-      },
-    },
-    {
-      name: 'aws-plugin',
-      path: '~/.krusty/plugins/aws-plugin.js',
-      enabled: false, // Disabled by default
-      config: {
-        showProfile: true,
-        showRegion: true,
-      },
+      list: [
+        {
+          name: 'git-plugin',
+          path: './examples/plugins/git-plugin.ts',
+          enabled: true,
+          config: {
+            autoFetch: true,
+            showBranchInPrompt: true,
+            colorOutput: true,
+          },
+        },
+        {
+          name: 'docker-plugin',
+          path: '~/.krusty/plugins/docker-plugin.js',
+          enabled: true,
+          config: {
+            showContainerCount: true,
+            autoComplete: true,
+          },
+        },
+        {
+          name: 'aws-plugin',
+          path: '~/.krusty/plugins/aws-plugin.js',
+          enabled: false, // Disabled by default
+          config: {
+            showProfile: true,
+            showRegion: true,
+          },
+        },
+      ],
     },
   ],
 
@@ -168,15 +173,22 @@ const exampleConfig: KrustyConfig = {
     git_commit: { enabled: false, format: '({hash})', commit_hash_length: 7 },
 
     // System modules
+    os: {
+      enabled: false,
+      format: 'on {symbol} {name}',
+      symbol: '💻',
+      symbols: { darwin: '', linux: '🐧', win32: '🪟' },
+    },
     directory: {
       enabled: true,
       format: '{path}',
       truncation_length: 3,
       truncate_to_repo: true,
       home_symbol: '~',
+      readonly_symbol: '🔒',
     },
-    username: { enabled: true, format: '{username}', show_always: false },
-    hostname: { enabled: true, format: '@{hostname}', ssh_only: true },
+    username: { enabled: true, format: '{username}', show_always: false, showOnLocal: false, root_format: '{username}' },
+    hostname: { enabled: true, format: '@{hostname}', ssh_only: true, showOnLocal: false },
     battery: {
       enabled: true,
       format: '{symbol} {percentage}%',
@@ -185,14 +197,19 @@ const exampleConfig: KrustyConfig = {
       discharging_symbol: '🔋',
       unknown_symbol: '🔋',
       empty_symbol: '🪫',
+      // New unified fields
+      symbol: '🔋',
+      symbol_charging: '🔌',
+      symbol_low: '🪫',
     },
     cmd_duration: {
       enabled: true,
       format: 'took {duration}',
       min_time: 1000, // Show for commands taking more than 1 second
+      min_ms: 1000,
       show_milliseconds: false,
     },
-    time: { enabled: false, format: '🕐 {time}' },
+    time: { enabled: false, format: '{symbol} {time}', symbol: '🕐', locale: undefined, options: { hour: '2-digit', minute: '2-digit' } },
     memory_usage: { enabled: false, format: '🐏 {ram}', threshold: 80 },
   },
 

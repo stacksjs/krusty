@@ -7,15 +7,21 @@ export class BunModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['bun.lockb', 'bun.lock', 'bunfig.toml'])
+    const cfg = (context.config as any)?.bun || {}
+    const files = cfg.detect_files ?? ['bun.lockb', 'bun.lock', 'bunfig.toml']
+    return ModuleUtils.hasFiles(context, files)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('bun --version')
-    const symbol = '🥟'
-    const content = version ? `${symbol} v${version}` : symbol
+    const cfg = (context.config as any)?.bun || {}
+    const symbol = cfg.symbol ?? '🥟'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = version
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${version}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#f472b6' })
+    return this.formatResult(content)
   }
 }
 
@@ -25,17 +31,23 @@ export class DenoModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['deno.json', 'deno.jsonc', 'deno.lock', 'mod.ts', 'mod.js', 'deps.ts', 'deps.js'])
-      || ModuleUtils.hasExtensions(context, ['.ts', '.js'])
+    const cfg = (context.config as any)?.deno || {}
+    const files = cfg.detect_files ?? ['deno.json', 'deno.jsonc', 'deno.lock', 'mod.ts', 'mod.js', 'deps.ts', 'deps.js']
+    const exts = cfg.detect_extensions ?? ['.ts', '.js']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const output = await ModuleUtils.getCommandOutput('deno -V')
-    const version = output ? ModuleUtils.parseVersion(output) : null
-    const symbol = '🦕'
-    const content = version ? `${symbol} v${version}` : symbol
+    const parsed = output ? ModuleUtils.parseVersion(output) : null
+    const cfg = (context.config as any)?.deno || {}
+    const symbol = cfg.symbol ?? '🦕'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsed
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsed}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#22c55e' })
+    return this.formatResult(content)
   }
 }
 
@@ -45,16 +57,22 @@ export class NodeModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['package.json', 'package-lock.json', 'yarn.lock', '.nvmrc', '.node-version'])
-      || ModuleUtils.hasExtensions(context, ['.js', '.mjs', '.cjs', '.ts'])
+    const cfg = (context.config as any)?.nodejs || {}
+    const files = cfg.detect_files ?? ['package.json', 'package-lock.json', 'yarn.lock', '.nvmrc', '.node-version']
+    const exts = cfg.detect_extensions ?? ['.js', '.mjs', '.cjs', '.ts']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('node --version')
-    const symbol = '⬢'
-    const content = version ? `${symbol} ${version}` : symbol
+    const cfg = (context.config as any)?.nodejs || {}
+    const symbol = cfg.symbol ?? '⬢'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = version
+      ? format.replace('{symbol}', symbol).replace('{version}', version)
+      : symbol
 
-    return this.formatResult(content, { color: '#22c55e' })
+    return this.formatResult(content)
   }
 }
 
@@ -64,22 +82,28 @@ export class PythonModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['requirements.txt', 'pyproject.toml', 'Pipfile', 'tox.ini', 'setup.py', '__init__.py'])
-      || ModuleUtils.hasExtensions(context, ['.py', '.ipynb'])
-      || ModuleUtils.hasDirectories(context, ['.venv', 'venv'])
+    const cfg = (context.config as any)?.python || {}
+    const files = cfg.detect_files ?? ['requirements.txt', 'pyproject.toml', 'Pipfile', 'tox.ini', 'setup.py', '__init__.py']
+    const exts = cfg.detect_extensions ?? ['.py', '.ipynb']
+    const dirs = cfg.detect_directories ?? ['.venv', 'venv']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts) || ModuleUtils.hasDirectories(context, dirs)
   }
 
   async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('python --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🐍'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.python || {}
+    const symbol = cfg.symbol ?? '🐍'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const base = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
     // Check for virtual environment
     const venv = context.environment.VIRTUAL_ENV || context.environment.CONDA_DEFAULT_ENV
     const venvName = venv ? ` (${venv.split('/').pop()})` : ''
 
-    return this.formatResult(content + venvName, { color: '#3776ab' })
+    return this.formatResult(base + venvName)
   }
 }
 
@@ -89,18 +113,24 @@ export class GoModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['go.mod', 'go.sum', 'glide.yaml', 'Gopkg.yml', 'Gopkg.lock', '.go-version'])
-      || ModuleUtils.hasExtensions(context, ['.go'])
-      || ModuleUtils.hasDirectories(context, ['Godeps'])
+    const cfg = (context.config as any)?.golang || {}
+    const files = cfg.detect_files ?? ['go.mod', 'go.sum', 'glide.yaml', 'Gopkg.yml', 'Gopkg.lock', '.go-version']
+    const exts = cfg.detect_extensions ?? ['.go']
+    const dirs = cfg.detect_directories ?? ['Godeps']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts) || ModuleUtils.hasDirectories(context, dirs)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('go version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🐹'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.golang || {}
+    const symbol = cfg.symbol ?? '🐹'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#00add8' })
+    return this.formatResult(content)
   }
 }
 
@@ -110,17 +140,23 @@ export class JavaModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['pom.xml', 'build.gradle', 'build.gradle.kts', 'build.sbt', '.java-version'])
-      || ModuleUtils.hasExtensions(context, ['.java', '.class', '.jar'])
+    const cfg = (context.config as any)?.java || {}
+    const files = cfg.detect_files ?? ['pom.xml', 'build.gradle', 'build.gradle.kts', 'build.sbt', '.java-version']
+    const exts = cfg.detect_extensions ?? ['.java', '.class', '.jar']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('java -version 2>&1')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '☕'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.java || {}
+    const symbol = cfg.symbol ?? '☕'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#ed8b00' })
+    return this.formatResult(content)
   }
 }
 
@@ -130,16 +166,22 @@ export class KotlinModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasExtensions(context, ['.kt', '.kts'])
+    const cfg = (context.config as any)?.kotlin || {}
+    const exts = cfg.detect_extensions ?? ['.kt', '.kts']
+    return ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('kotlin -version 2>&1')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🅺'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.kotlin || {}
+    const symbol = cfg.symbol ?? '🅺'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#7f52ff' })
+    return this.formatResult(content)
   }
 }
 
@@ -149,17 +191,23 @@ export class PhpModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['composer.json', 'composer.lock', '.php-version'])
-      || ModuleUtils.hasExtensions(context, ['.php'])
+    const cfg = (context.config as any)?.php || {}
+    const files = cfg.detect_files ?? ['composer.json', 'composer.lock', '.php-version']
+    const exts = cfg.detect_extensions ?? ['.php']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('php --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🐘'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.php || {}
+    const symbol = cfg.symbol ?? '🐘'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#777bb4' })
+    return this.formatResult(content)
   }
 }
 
@@ -169,17 +217,23 @@ export class RubyModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['Gemfile', 'Gemfile.lock', '.ruby-version', '.rvmrc'])
-      || ModuleUtils.hasExtensions(context, ['.rb'])
+    const cfg = (context.config as any)?.ruby || {}
+    const files = cfg.detect_files ?? ['Gemfile', 'Gemfile.lock', '.ruby-version', '.rvmrc']
+    const exts = cfg.detect_extensions ?? ['.rb']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('ruby --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '💎'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.ruby || {}
+    const symbol = cfg.symbol ?? '💎'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#cc342d' })
+    return this.formatResult(content)
   }
 }
 
@@ -189,17 +243,23 @@ export class SwiftModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['Package.swift'])
-      || ModuleUtils.hasExtensions(context, ['.swift'])
+    const cfg = (context.config as any)?.swift || {}
+    const files = cfg.detect_files ?? ['Package.swift']
+    const exts = cfg.detect_extensions ?? ['.swift']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('swift --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🐦'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.swift || {}
+    const symbol = cfg.symbol ?? '🐦'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#fa7343' })
+    return this.formatResult(content)
   }
 }
 
@@ -209,16 +269,22 @@ export class ZigModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['build.zig'])
-      || ModuleUtils.hasExtensions(context, ['.zig'])
+    const cfg = (context.config as any)?.zig || {}
+    const files = cfg.detect_files ?? ['build.zig']
+    const exts = cfg.detect_extensions ?? ['.zig']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('zig version')
-    const symbol = '⚡'
-    const content = version ? `${symbol} v${version}` : symbol
+    const cfg = (context.config as any)?.zig || {}
+    const symbol = cfg.symbol ?? '⚡'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = version
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${version}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#f7a41d' })
+    return this.formatResult(content)
   }
 }
 
@@ -228,18 +294,24 @@ export class LuaModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['.lua-version'])
-      || ModuleUtils.hasExtensions(context, ['.lua'])
-      || ModuleUtils.hasDirectories(context, ['lua'])
+    const cfg = (context.config as any)?.lua || {}
+    const files = cfg.detect_files ?? ['.lua-version']
+    const exts = cfg.detect_extensions ?? ['.lua']
+    const dirs = cfg.detect_directories ?? ['lua']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts) || ModuleUtils.hasDirectories(context, dirs)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('lua -v')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🌙'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.lua || {}
+    const symbol = cfg.symbol ?? '🌙'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#000080' })
+    return this.formatResult(content)
   }
 }
 
@@ -249,17 +321,23 @@ export class PerlModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['Makefile.PL', 'Build.PL', 'cpanfile', 'cpanfile.snapshot', 'META.json', 'META.yml'])
-      || ModuleUtils.hasExtensions(context, ['.pl', '.pm', '.pod'])
+    const cfg = (context.config as any)?.perl || {}
+    const files = cfg.detect_files ?? ['Makefile.PL', 'Build.PL', 'cpanfile', 'cpanfile.snapshot', 'META.json', 'META.yml']
+    const exts = cfg.detect_extensions ?? ['.pl', '.pm', '.pod']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('perl --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🐪'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.perl || {}
+    const symbol = cfg.symbol ?? '🐪'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#39457e' })
+    return this.formatResult(content)
   }
 }
 
@@ -269,18 +347,24 @@ export class RModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['DESCRIPTION', '.Rprofile'])
-      || ModuleUtils.hasExtensions(context, ['.R', '.Rd', '.Rmd', '.Rsx'])
-      || ModuleUtils.hasDirectories(context, ['.Rproj.user'])
+    const cfg = (context.config as any)?.rlang || {}
+    const files = cfg.detect_files ?? ['DESCRIPTION', '.Rprofile']
+    const exts = cfg.detect_extensions ?? ['.R', '.Rd', '.Rmd', '.Rsx']
+    const dirs = cfg.detect_directories ?? ['.Rproj.user']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts) || ModuleUtils.hasDirectories(context, dirs)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('R --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '📊'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.rlang || {}
+    const symbol = cfg.symbol ?? '📊'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#198ce7' })
+    return this.formatResult(content)
   }
 }
 
@@ -290,16 +374,22 @@ export class DotNetModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['global.json', 'project.json', 'Directory.Build.props', 'Directory.Build.targets', 'Packages.props'])
-      || ModuleUtils.hasExtensions(context, ['.csproj', '.fsproj', '.xproj', '.sln'])
+    const cfg = (context.config as any)?.dotnet || {}
+    const files = cfg.detect_files ?? ['global.json', 'project.json', 'Directory.Build.props', 'Directory.Build.targets', 'Packages.props']
+    const exts = cfg.detect_extensions ?? ['.csproj', '.fsproj', '.xproj', '.sln']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('dotnet --version')
-    const symbol = '.NET'
-    const content = version ? `${symbol} v${version}` : symbol
+    const cfg = (context.config as any)?.dotnet || {}
+    const symbol = cfg.symbol ?? '.NET'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = version
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${version}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#512bd4' })
+    return this.formatResult(content)
   }
 }
 
@@ -309,16 +399,22 @@ export class ErlangModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['rebar.config', 'erlang.mk'])
-      || ModuleUtils.hasExtensions(context, ['.erl', '.hrl'])
+    const cfg = (context.config as any)?.erlang || {}
+    const files = cfg.detect_files ?? ['rebar.config', 'erlang.mk']
+    const exts = cfg.detect_extensions ?? ['.erl', '.hrl']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
-    const version = await ModuleUtils.getCommandOutput('erl -noshell -eval "io:format(\\"~s\\", [erlang:system_info(otp_release)]), halt()."')
-    const symbol = 'E'
-    const content = version ? `${symbol} v${version}` : symbol
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    const version = await ModuleUtils.getCommandOutput('erl -noshell -eval "io:format(\"~s\", [erlang:system_info(otp_release)]), halt()."')
+    const cfg = (context.config as any)?.erlang || {}
+    const symbol = cfg.symbol ?? 'E'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = version
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${version}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#a90533' })
+    return this.formatResult(content)
   }
 }
 
@@ -328,17 +424,23 @@ export class CModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasExtensions(context, ['.c', '.h'])
+    const cfg = (context.config as any)?.c || {}
+    const exts = cfg.detect_extensions ?? ['.c', '.h']
+    return ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('gcc --version')
       || await ModuleUtils.getCommandOutput('clang --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = 'C'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.c || {}
+    const symbol = cfg.symbol ?? 'C'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#555555' })
+    return this.formatResult(content)
   }
 }
 
@@ -348,17 +450,23 @@ export class CppModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasExtensions(context, ['.cpp', '.cxx', '.cc', '.hpp', '.hxx', '.hh'])
+    const cfg = (context.config as any)?.cpp || {}
+    const exts = cfg.detect_extensions ?? ['.cpp', '.cxx', '.cc', '.hpp', '.hxx', '.hh']
+    return ModuleUtils.hasExtensions(context, exts)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('g++ --version')
       || await ModuleUtils.getCommandOutput('clang++ --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = 'C++'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.cpp || {}
+    const symbol = cfg.symbol ?? 'C++'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#f34b7d' })
+    return this.formatResult(content)
   }
 }
 
@@ -368,16 +476,22 @@ export class CMakeModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['CMakeLists.txt', 'CMakeCache.txt'])
+    const cfg = (context.config as any)?.cmake || {}
+    const files = cfg.detect_files ?? ['CMakeLists.txt', 'CMakeCache.txt']
+    return ModuleUtils.hasFiles(context, files)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('cmake --version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '△'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.cmake || {}
+    const symbol = cfg.symbol ?? '△'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#064f8c' })
+    return this.formatResult(content)
   }
 }
 
@@ -387,18 +501,24 @@ export class TerraformModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['.terraform-version'])
-      || ModuleUtils.hasExtensions(context, ['.tf', '.hcl'])
-      || ModuleUtils.hasDirectories(context, ['.terraform'])
+    const cfg = (context.config as any)?.terraform || {}
+    const files = cfg.detect_files ?? ['.terraform-version']
+    const exts = cfg.detect_extensions ?? ['.tf', '.hcl']
+    const dirs = cfg.detect_directories ?? ['.terraform']
+    return ModuleUtils.hasFiles(context, files) || ModuleUtils.hasExtensions(context, exts) || ModuleUtils.hasDirectories(context, dirs)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('terraform version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '💠'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.terraform || {}
+    const symbol = cfg.symbol ?? '💠'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#623ce4' })
+    return this.formatResult(content)
   }
 }
 
@@ -408,15 +528,21 @@ export class PulumiModule extends BaseModule {
   enabled = true
 
   detect(context: ModuleContext): boolean {
-    return ModuleUtils.hasFiles(context, ['Pulumi.yaml', 'Pulumi.yml'])
+    const cfg = (context.config as any)?.pulumi || {}
+    const files = cfg.detect_files ?? ['Pulumi.yaml', 'Pulumi.yml']
+    return ModuleUtils.hasFiles(context, files)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('pulumi version')
     const parsedVersion = version ? ModuleUtils.parseVersion(version) : null
-    const symbol = '🧊'
-    const content = parsedVersion ? `${symbol} v${parsedVersion}` : symbol
+    const cfg = (context.config as any)?.pulumi || {}
+    const symbol = cfg.symbol ?? '🧊'
+    const format = cfg.format ?? 'via {symbol} {version}'
+    const content = parsedVersion
+      ? format.replace('{symbol}', symbol).replace('{version}', `v${parsedVersion}`)
+      : symbol
 
-    return this.formatResult(content, { color: '#8a3391' })
+    return this.formatResult(content)
   }
 }

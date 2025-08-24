@@ -216,8 +216,14 @@ export function renderSuggestionList(
       return label
     })
 
-    // Save cursor, clear previous flat render block, then print the new block
+    // Save cursor, clear previous render blocks (both flat and grouped), then print the new block
     stdout.write(`\x1B[s`)
+    if (lastGroupedRenderHeight > 0) {
+      for (let i = 0; i < lastGroupedRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastGroupedRenderHeight}A`)
+      lastGroupedRenderHeight = 0
+    }
     if (lastFlatRenderHeight > 0) {
       for (let i = 0; i < lastFlatRenderHeight; i++)
         stdout.write(`\n\x1B[2K`)
@@ -235,6 +241,13 @@ export function renderSuggestionList(
   }
   else if (hadSuggestionsLastRender) {
     stdout.write(`\x1B[s`)
+    // Clear both blocks if any remnants exist
+    if (lastGroupedRenderHeight > 0) {
+      for (let i = 0; i < lastGroupedRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastGroupedRenderHeight}A`)
+      lastGroupedRenderHeight = 0
+    }
     if (lastFlatRenderHeight > 0) {
       for (let i = 0; i < lastFlatRenderHeight; i++)
         stdout.write(`\n\x1B[2K`)
@@ -411,13 +424,20 @@ export function renderGroupedSuggestionList(
     // Ensure content fits terminal width per line (ANSI-aware)
     const lines = out.split('\n').map((l) => truncateAnsiToWidth(l, cols))
 
-    // Clear the previous render block completely
+    // Clear the previous render blocks completely (both grouped and flat)
     stdout.write(`\x1B[s`)
     if (lastGroupedRenderHeight > 0) {
       for (let i = 0; i < lastGroupedRenderHeight; i++)
         stdout.write(`\n\x1B[2K`)
       // Move cursor back up
       stdout.write(`\x1B[${lastGroupedRenderHeight}A`)
+      lastGroupedRenderHeight = 0
+    }
+    if (lastFlatRenderHeight > 0) {
+      for (let i = 0; i < lastFlatRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastFlatRenderHeight}A`)
+      lastFlatRenderHeight = 0
     }
 
     // Write the new block
@@ -431,6 +451,13 @@ export function renderGroupedSuggestionList(
   }
   else if (hadSuggestionsLastRender) {
     stdout.write(`\x1B[s`)
+    // Clear both blocks if any remnants exist
+    if (lastFlatRenderHeight > 0) {
+      for (let i = 0; i < lastFlatRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastFlatRenderHeight}A`)
+      lastFlatRenderHeight = 0
+    }
     if (lastGroupedRenderHeight > 0) {
       for (let i = 0; i < lastGroupedRenderHeight; i++)
         stdout.write(`\n\x1B[2K`)

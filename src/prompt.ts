@@ -11,9 +11,9 @@ const execAsync = promisify(exec)
 export class PromptRenderer {
   constructor(private config: KrustyConfig) {}
 
-  async render(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string> {
+  async render(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number, lastDurationMs?: number): Promise<string> {
     const format = this.config.prompt?.format || '{user}@{host} {path}{git} {symbol} '
-    return this.renderFormat(format, cwd, systemInfo, gitInfo, exitCode)
+    return this.renderFormat(format, cwd, systemInfo, gitInfo, exitCode, lastDurationMs)
   }
 
   async renderRight(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string> {
@@ -23,7 +23,7 @@ export class PromptRenderer {
     return this.renderFormat(format, cwd, systemInfo, gitInfo, exitCode)
   }
 
-  private async renderFormat(format: string, cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number): Promise<string> {
+  private async renderFormat(format: string, cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number, lastDurationMs?: number): Promise<string> {
     let result = format
 
     // Replace placeholders
@@ -41,16 +41,19 @@ export class PromptRenderer {
     result = result.replace(/\{symbol\}/g, this.renderSymbol(exitCode))
     result = result.replace(/\{exitcode\}/g, this.renderExitCode(exitCode))
     result = result.replace(/\{time\}/g, this.renderTime())
+    result = result.replace(/\{duration\}/g, this.renderDuration(lastDurationMs))
 
     return result
   }
 
   private renderUser(systemInfo: SystemInfo): string {
-    return this.colorize(systemInfo.user, this.config.theme?.colors?.info || '#74B9FF')
+    // Starship-like: use primary cyan for user by default
+    return this.colorize(systemInfo.user, this.config.theme?.colors?.primary || '#00D9FF')
   }
 
   private renderHost(systemInfo: SystemInfo): string {
-    return this.colorize(systemInfo.hostname, this.config.theme?.colors?.secondary || '#FF6B9D')
+    // Starship-like: use primary cyan for host by default
+    return this.colorize(systemInfo.hostname, this.config.theme?.colors?.primary || '#00D9FF')
   }
 
   private renderPath(cwd: string): string {
@@ -73,7 +76,7 @@ export class PromptRenderer {
       }
     }
 
-    return this.colorize(displayPath, this.config.theme?.colors?.primary || '#00D9FF')
+    return this.boldColorize(displayPath, this.config.theme?.colors?.primary || '#00D9FF')
   }
 
   private async renderGit(gitInfo: GitInfo, _cwd: string): Promise<string> {
@@ -83,47 +86,66 @@ export class PromptRenderer {
     const segments: string[] = []
 
     // Add branch name with custom symbol if available
-    const branchSymbol = this.config.theme?.symbols?.git?.branch || '⎇'
+    const branchSymbol = this.config.theme?.symbols?.git?.branch || '🌱'
+    const customBranchColor = this.config.theme?.colors?.git?.branch
+    const branchBold = this.config.theme?.gitStatus?.branchBold ?? true
     if (gitInfo.branch) {
-      segments.push(this.colorize(`${branchSymbol} ${gitInfo.branch}`, '#a855f7'))
+      const branchOnly = gitInfo.branch
+      if (customBranchColor) {
+        // Color configured: colorize the branch name (bold optional), keep symbol unstyled
+        const styledBranch = branchBold
+          ? this.boldColorize(branchOnly, customBranchColor)
+          : this.colorize(branchOnly, customBranchColor)
+        segments.push(`${branchSymbol} ${styledBranch}`)
+      }
+      else {
+        // No color configured: optionally bold only the branch name
+        const styledBranch = branchBold
+          ? `\x1B[1m${branchOnly}\x1B[22m`
+          : branchOnly
+        segments.push(`${branchSymbol} ${styledBranch}`)
+      }
     }
 
-    // Add status indicators in a compact format
+    // Detailed status indicators in a compact format, using theme flags
+    const gitStatusCfg = this.config.theme?.gitStatus || {}
+    const sym = this.config.theme?.symbols?.git || {}
     const statusParts: string[] = []
 
-    // Staged changes in green
-    if (gitInfo.staged && gitInfo.staged > 0) {
-      statusParts.push(this.colorize(`●${gitInfo.staged}`, '#00FF88'))
+    // Ahead/Behind counts
+    if ((gitStatusCfg.showAheadBehind ?? true) && gitInfo.ahead && gitInfo.ahead > 0) {
+      const color = this.config.theme?.colors?.git?.ahead || '#50FA7B'
+      statusParts.push(this.colorize(`${sym.ahead ?? '⇡'}${gitInfo.ahead}`, color))
+    }
+    if ((gitStatusCfg.showAheadBehind ?? true) && gitInfo.behind && gitInfo.behind > 0) {
+      const color = this.config.theme?.colors?.git?.behind || '#FF5555'
+      statusParts.push(this.colorize(`${sym.behind ?? '⇣'}${gitInfo.behind}`, color))
     }
 
-    // Unstaged changes in yellow
-    if (gitInfo.unstaged && gitInfo.unstaged > 0) {
-      statusParts.push(this.colorize(`○${gitInfo.unstaged}`, '#FFD700'))
+    // Staged changes
+    if ((gitStatusCfg.showStaged ?? true) && gitInfo.staged && gitInfo.staged > 0) {
+      const color = this.config.theme?.colors?.git?.staged || '#00FF88'
+      statusParts.push(this.colorize(`${sym.staged ?? '●'}${gitInfo.staged}`, color))
     }
 
-    // Untracked files in red
-    if (gitInfo.untracked && gitInfo.untracked > 0) {
-      statusParts.push(this.colorize(`?${gitInfo.untracked}`, '#FF4757'))
+    // Unstaged changes
+    if ((gitStatusCfg.showUnstaged ?? true) && gitInfo.unstaged && gitInfo.unstaged > 0) {
+      const color = this.config.theme?.colors?.git?.unstaged || '#FFD700'
+      statusParts.push(this.colorize(`${sym.unstaged ?? '○'}${gitInfo.unstaged}`, color))
     }
 
-    // Add status indicators if any
+    // Untracked files
+    if ((gitStatusCfg.showUntracked ?? true) && gitInfo.untracked && gitInfo.untracked > 0) {
+      const color = this.config.theme?.colors?.git?.untracked || '#FF4757'
+      statusParts.push(this.colorize(`${sym.untracked ?? '?'}${gitInfo.untracked}`, color))
+    }
+
     if (statusParts.length > 0) {
       segments.push(`[${statusParts.join('')}]`)
     }
 
-    // Add ahead/behind information if available
-    if (gitInfo.ahead || gitInfo.behind) {
-      const aheadBehind = []
-      if (gitInfo.ahead)
-        aheadBehind.push(this.colorize(`⇡${gitInfo.ahead}`, '#00FF88'))
-      if (gitInfo.behind)
-        aheadBehind.push(this.colorize(`⇣${gitInfo.behind}`, '#FFD700'))
-      if (aheadBehind.length > 0) {
-        segments.push(`(${aheadBehind.join(' ')})`)
-      }
-    }
-
-    return segments.length > 0 ? ` ${segments.join(' ')}` : ''
+    // Always prefix with a space and the word 'on' to ensure spacing and wording
+    return segments.length > 0 ? ` on ${segments.join(' ')}` : ''
   }
 
   private renderSymbol(exitCode: number): string {
@@ -152,27 +174,51 @@ export class PromptRenderer {
 
   private renderModules(systemInfo: SystemInfo, _gitInfo: GitInfo): string {
     const modules = []
-
-    // Add bun version if available
-    if (systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
-      modules.push(this.colorize(`🐰 ${systemInfo.bunVersion}`, this.config.theme?.colors?.primary || '#00D9FF'))
-    }
-
-    // Detect project type - prioritize Bun over Node.js
-    if (this.hasFile('package.json')) {
-      const packageJson = this.readPackageJson()
-
-      // Check if it's a Bun project
-      if (this.isBunProject(packageJson)) {
-        // Don't show bun module again if we already showed the version above
-        if (!systemInfo.bunVersion || systemInfo.bunVersion === 'unknown') {
-          modules.push(this.colorize('🐰 bun', this.config.theme?.colors?.primary || '#00D9FF'))
-        }
+    const pushModule = (content: string, color: string) => {
+      if (content.startsWith('via ')) {
+        modules.push('via')
+        const rest = content.slice(4).trimStart()
+        modules.push(this.boldColorize(rest, color))
       }
       else {
-        // It's a Node.js project
-        modules.push(this.colorize('⬢ node', this.config.theme?.colors?.success || '#00FF88'))
+        modules.push(this.boldColorize(content, color))
       }
+    }
+
+    // Add package version first (if present) so it appears before runtime info
+    if (this.hasFile('package.json')) {
+      const packageJson = this.readPackageJson()
+      const pkgVersion = packageJson?.version
+      if (pkgVersion) {
+        const pkgColor = this.config.theme?.colors?.modules?.packageVersion || '#FFA500'
+        modules.push(this.boldColorize(`📦 v${pkgVersion}`, pkgColor))
+      }
+    }
+
+    // Runtime modules: prefer Bun when present and enabled; otherwise Node.js when enabled
+    const bunModuleCfg = this.config.modules?.bun
+    const nodeModuleCfg = this.config.modules?.nodejs
+
+    const bunEnabled = bunModuleCfg?.enabled !== false
+    const nodeEnabled = nodeModuleCfg?.enabled !== false
+
+    if (bunEnabled && systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
+      const symbol = bunModuleCfg?.symbol || '🥟'
+      const format = bunModuleCfg?.format || 'via {symbol} {version}'
+      const bunColor = this.config.theme?.colors?.modules?.bunVersion || '#FF6B6B'
+      const content = format
+        .replace('{symbol}', symbol)
+        .replace('{version}', `v${systemInfo.bunVersion}`)
+      pushModule(content, bunColor)
+    }
+    else if (nodeEnabled) {
+      const symbol = nodeModuleCfg?.symbol || '⬢'
+      const format = nodeModuleCfg?.format || 'via {symbol} {version}'
+      const content = format
+        .replace('{symbol}', symbol)
+        .replace('{version}', systemInfo.nodeVersion)
+      // Use a friendly default color for Node when not customized
+      pushModule(content, this.config.theme?.colors?.success || '#00FF88')
     }
 
     // Detect Python projects
@@ -242,9 +288,17 @@ export class PromptRenderer {
     if (!color)
       return text
 
-    // Convert hex color to ANSI
+    // Convert hex color to ANSI (with truecolor fallback to xterm-256)
     const ansiColor = this.hexToAnsi(color)
     return `\x1B[${ansiColor}m${text}\x1B[0m`
+  }
+
+  boldColorize(text: string, color: string): string {
+    // Emit a single combined SGR sequence: <color>;1
+    if (!color)
+      return `\x1B[1m${text}\x1B[0m`
+    const ansiColor = this.hexToAnsi(color)
+    return `\x1B[${ansiColor};1m${text}\x1B[0m`
   }
 
   formatSegment(segment: PromptSegment): string {
@@ -283,13 +337,68 @@ export class PromptRenderer {
     hex = hex.replace('#', '')
 
     // Convert to RGB
-    const r = Number.parseInt(hex.substr(0, 2), 16)
-    const g = Number.parseInt(hex.substr(2, 2), 16)
-    const b = Number.parseInt(hex.substr(4, 2), 16)
+    const r = Number.parseInt(hex.substring(0, 2), 16)
+    const g = Number.parseInt(hex.substring(2, 4), 16)
+    const b = Number.parseInt(hex.substring(4, 6), 16)
 
-    // Use 24-bit color (truecolor)
-    const prefix = background ? '48;2' : '38;2'
-    return `${prefix};${r};${g};${b}`
+    if (this.supportsTruecolor()) {
+      const prefix = background ? '48;2' : '38;2'
+      return `${prefix};${r};${g};${b}`
+    }
+
+    // Fallback to xterm-256 color space
+    const idx = this.rgbToXterm256(r, g, b)
+    const prefix = background ? '48;5' : '38;5'
+    return `${prefix};${idx}`
+  }
+
+  private supportsTruecolor(): boolean {
+    const env = process.env
+    if (!env) return false
+    const colorterm = (env.COLORTERM || '').toLowerCase()
+    if (colorterm.includes('truecolor') || colorterm.includes('24bit'))
+      return true
+    // Common terminals that support truecolor
+    const termProgram = (env.TERM_PROGRAM || '').toLowerCase()
+    if (termProgram.includes('iterm') || termProgram.includes('wezterm') || termProgram.includes('apple_terminal'))
+      return true
+    // VSCode integrated terminal supports truecolor
+    if ((env.TERM_PROGRAM || '') === 'vscode')
+      return true
+    return false
+  }
+
+  private rgbToXterm256(r: number, g: number, b: number): number {
+    // Grayscale ramp detection
+    if (r === g && g === b) {
+      if (r < 8) return 16
+      if (r > 248) return 231
+      return Math.round(((r - 8) / 247) * 24) + 232
+    }
+
+    // 6x6x6 color cube mapping (values 0..5)
+    const toCube = (v: number) => {
+      if (v < 48) return 0
+      if (v < 114) return 1
+      return Math.round((v - 35) / 40)
+    }
+    const rc = toCube(r)
+    const gc = toCube(g)
+    const bc = toCube(b)
+    return 16 + (36 * rc) + (6 * gc) + bc
+  }
+
+  private renderDuration(lastDurationMs?: number): string {
+    if (!lastDurationMs || lastDurationMs <= 0)
+      return ''
+    const totalSec = Math.floor(lastDurationMs / 1000)
+    const minutes = Math.floor(totalSec / 60)
+    const seconds = totalSec % 60
+    const parts: string[] = []
+    if (minutes > 0)
+      parts.push(`${minutes}m`)
+    parts.push(`${seconds}s`)
+    return `took ${parts.join('')}`
   }
 }
 

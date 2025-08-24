@@ -23,10 +23,12 @@ cli
   .action(async (args: string[], options: CliOptions) => {
     const cfg = await loadKrustyConfig({ path: options.config })
     const base = { ...defaultConfig, ...cfg }
-    // If arguments are provided, execute them as a command
-    if (args.length > 0) {
+    // Terminals may pass shell-style flags (e.g., -l). Ignore leading dash args for command execution
+    const nonFlagArgs = args.filter(a => !(a?.startsWith?.('-')))
+    // If non-flag arguments are provided, execute them as a command
+    if (nonFlagArgs.length > 0) {
       const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
-      const command = args.join(' ')
+      const command = nonFlagArgs.join(' ')
       const result = await shell.execute(command)
 
       if (!result.streamed) {
@@ -233,6 +235,98 @@ cli
         process.stderr.write('Failed to set Krusty as default shell. You may need to run with sudo.\n')
         process.exit(1)
       }
+    }
+  })
+
+// Setup command: install wrapper, optionally register and set as default shell
+cli
+  .command('setup', 'Setup krusty (install wrapper; optionally set as default shell)')
+  .option('--prefix <path>', 'Install prefix for the wrapper (defaults to /usr/local/bin or ~/.local/bin)')
+  .option('--no-chsh', 'Install wrapper only; do not change the login shell')
+  .example('krusty setup --prefix /usr/local/bin --no-chsh')
+  .action(async (options: { prefix?: string, noChsh?: boolean }) => {
+    const isWindows = process.platform === 'win32'
+    const shellPath = process.argv[1]
+
+    if (isWindows) {
+      process.stdout.write('Setup on Windows will configure a launcher; setting default shell depends on terminal.\n')
+      try {
+        const { writeFileSync } = await import('node:fs')
+        const { homedir } = await import('node:os')
+        const batPath = `${homedir()}/krusty_shell.bat`
+        writeFileSync(batPath, `@echo off\n"${process.execPath}" "${shellPath}" %*`)
+        process.stdout.write(`Installed Windows launcher at: ${batPath}\n`)
+        process.stdout.write('Configure your terminal profile to use this launcher.\n')
+      }
+      catch (err: any) {
+        process.stderr.write(`Failed to write launcher: ${err?.message ?? String(err)}\n`)
+        process.exit(1)
+      }
+      return
+    }
+
+    process.stdout.write('Setting up krusty on this system...\n')
+    try {
+      const { writeFileSync, chmodSync, mkdirSync } = await import('node:fs')
+      const { execSync } = await import('node:child_process')
+      const { join } = await import('node:path')
+      const { homedir } = await import('node:os')
+
+      // Determine install prefix
+      let prefix = options.prefix
+      const candidates = ['/usr/local/bin', '/opt/homebrew/bin']
+      if (!prefix) {
+        prefix = candidates.find((p) => {
+          try {
+            execSync(`[ -d "${p}" ] && [ -w "${p}" ] && echo ok`)
+            return true
+          }
+          catch {
+            return false
+          }
+        }) || join(homedir(), '.local', 'bin')
+      }
+
+      // Ensure directory exists
+      try {
+        mkdirSync(prefix, { recursive: true })
+      }
+      catch {}
+
+      const wrapperPath = join(prefix, 'krusty')
+      const wrapperScript = `#!/bin/sh\nSHELL="${wrapperPath}"\nexport SHELL\nexec "${process.execPath}" "${shellPath}" "$@"\n`
+      writeFileSync(wrapperPath, wrapperScript)
+      chmodSync(wrapperPath, 0o755)
+      process.stdout.write(`Installed wrapper: ${wrapperPath}\n`)
+
+      // Register as a valid login shell
+      try {
+        execSync(`grep -qF '${wrapperPath}' /etc/shells || echo '${wrapperPath}' | sudo tee -a /etc/shells > /dev/null`, { stdio: 'inherit' })
+      }
+      catch {
+        process.stdout.write('\nNote: Could not add to /etc/shells automatically. Run this manually (may require sudo):\n')
+        process.stdout.write(`  echo '${wrapperPath}' | sudo tee -a /etc/shells\n`)
+      }
+
+      // Change the user's login shell unless --no-chsh was provided
+      const doChsh = options.noChsh !== true
+      if (doChsh) {
+        try {
+          execSync(`chsh -s ${wrapperPath} ${process.env.USER}`, { stdio: 'inherit' })
+          process.stdout.write('\nSuccess! krusty set as your default shell. Log out and back in to take effect.\n')
+        }
+        catch {
+          process.stdout.write('\nNote: Could not change login shell automatically. Run manually:\n')
+          process.stdout.write(`  chsh -s ${wrapperPath} ${process.env.USER}\n`)
+        }
+      }
+      else {
+        process.stdout.write('Wrapper installed. Skipping login shell change due to --no-chsh.\n')
+      }
+    }
+    catch (err: any) {
+      process.stderr.write(`setup error: ${err?.message ?? String(err)}\n`)
+      process.exit(1)
     }
   })
 

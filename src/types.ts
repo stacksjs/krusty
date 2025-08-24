@@ -154,6 +154,8 @@ export interface ThemeGitStatusConfig {
   showUntracked?: boolean
   showAheadBehind?: boolean
   format?: string
+  /** If true (default), render the branch name in bold */
+  branchBold?: boolean
 }
 
 export interface ThemePromptConfig {
@@ -181,6 +183,13 @@ export interface ThemeColors {
   error?: string
   info?: string
   git?: ThemeGitColors
+  /** Colors for specific prompt modules */
+  modules?: {
+    /** Color for the Bun runtime version segment */
+    bunVersion?: string
+    /** Color for the package.json version segment */
+    packageVersion?: string
+  }
 }
 
 export interface ThemeGitSymbols {
@@ -493,6 +502,7 @@ export interface ModuleConfig {
     symbol?: string
     detect_files?: string[]
     detect_extensions?: string[]
+    detect_directories?: string[]
   }
   python?: {
     enabled?: boolean
@@ -500,6 +510,7 @@ export interface ModuleConfig {
     symbol?: string
     detect_files?: string[]
     detect_extensions?: string[]
+    detect_directories?: string[]
   }
   java?: {
     enabled?: boolean
@@ -549,6 +560,7 @@ export interface ModuleConfig {
     symbol?: string
     detect_files?: string[]
     detect_extensions?: string[]
+    detect_directories?: string[]
   }
   perl?: {
     enabled?: boolean
@@ -563,6 +575,7 @@ export interface ModuleConfig {
     symbol?: string
     detect_files?: string[]
     detect_extensions?: string[]
+    detect_directories?: string[]
   }
   dotnet?: {
     enabled?: boolean
@@ -605,6 +618,7 @@ export interface ModuleConfig {
     symbol?: string
     detect_files?: string[]
     detect_extensions?: string[]
+    detect_directories?: string[]
   }
   pulumi?: {
     enabled?: boolean
@@ -672,11 +686,15 @@ export interface ModuleConfig {
     enabled?: boolean
     format?: string
     symbol?: string
+    /** Optional per-platform symbol overrides, e.g. { darwin: "", linux: "🐧", win32: "🪟" } */
+    symbols?: Record<string, string>
   }
   hostname?: {
     enabled?: boolean
     format?: string
     ssh_only?: boolean
+    /** If true, show on local sessions too (new option). Defaults false for parity with ssh_only */
+    showOnLocal?: boolean
   }
   directory?: {
     enabled?: boolean
@@ -684,11 +702,17 @@ export interface ModuleConfig {
     truncation_length?: number
     truncate_to_repo?: boolean
     home_symbol?: string
+    /** Symbol to display when directory is read-only */
+    readonly_symbol?: string
   }
   username?: {
     enabled?: boolean
     format?: string
     show_always?: boolean
+    /** New option to always show on local shells when true */
+    showOnLocal?: boolean
+    /** Optional distinct format when running as root */
+    root_format?: string
   }
   shell?: {
     enabled?: boolean
@@ -702,12 +726,19 @@ export interface ModuleConfig {
     discharging_symbol?: string
     unknown_symbol?: string
     empty_symbol?: string
+    /** New unified/default symbol */
+    symbol?: string
+    /** New optional specific symbols */
+    symbol_charging?: string
+    symbol_low?: string
   }
   cmd_duration?: {
     enabled?: boolean
     format?: string
     min_time?: number
     show_milliseconds?: boolean
+    /** New option identical purpose to min_time but in ms; either may be used */
+    min_ms?: number
   }
   memory_usage?: {
     enabled?: boolean
@@ -718,6 +749,12 @@ export interface ModuleConfig {
   time?: {
     enabled?: boolean
     format?: string
+    /** Optional leading symbol (e.g. clock) rendered via format placeholders */
+    symbol?: string
+    /** Optional locale string for time formatting (e.g. 'en-US' or 'de-DE') */
+    locale?: string
+    /** Intl.DateTimeFormat options object (kept loose for portability) */
+    options?: Record<string, any>
   }
   nix_shell?: {
     enabled?: boolean

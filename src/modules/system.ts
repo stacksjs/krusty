@@ -14,7 +14,7 @@ export class OsModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const platformName = platform()
     const symbols: Record<string, string> = {
       darwin: '🍎',
@@ -28,10 +28,15 @@ export class OsModule extends BaseModule {
       android: '🤖',
     }
 
-    const symbol = symbols[platformName] || '💻'
-    const content = `${symbol} ${this.getPrettyName(platformName)}`
+    const cfg = (context.config as any)?.os || {}
+    const symbolOverride = cfg.symbols?.[platformName]
+    const symbol = symbolOverride ?? symbols[platformName] ?? (cfg.symbol ?? '💻')
+    const format = cfg.format ?? '{symbol} {name}'
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{name}', this.getPrettyName(platformName))
 
-    return this.formatResult(content, { color: '#6b7280' })
+    return this.formatResult(content)
   }
 
   private getPrettyName(platform: string): string {
@@ -60,16 +65,20 @@ export class HostnameModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const host = hostname()
-    const isSSH = !!(_context.environment.SSH_CONNECTION || _context.environment.SSH_CLIENT)
+    const isSSH = !!(context.environment.SSH_CONNECTION || context.environment.SSH_CLIENT)
 
-    // Only show hostname if in SSH session by default
-    if (!isSSH)
+    const cfg = (context.config as any)?.hostname || {}
+    const showOnLocal = cfg.showOnLocal ?? !(cfg.ssh_only ?? true)
+    if (!isSSH && !showOnLocal)
       return null
 
-    const content = `@${host}`
-    return this.formatResult(content, { color: '#10b981', bold: true })
+    const format = cfg.format ?? '@{host}'
+    const content = format
+      .replace('{host}', host)
+      .replace('{hostname}', host)
+    return this.formatResult(content)
   }
 }
 
@@ -82,8 +91,8 @@ export class DirectoryModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
-    let path = _context.cwd
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    let path = context.cwd
     const home = homedir()
 
     // Replace home directory with ~
@@ -100,13 +109,17 @@ export class DirectoryModule extends BaseModule {
       }
     }
 
-    const isReadonly = this.isReadonlyDirectory(_context.cwd)
-    const symbol = isReadonly ? '🔒' : ''
+    const cfg = (context.config as any)?.directory || {}
+    const isReadonly = this.isReadonlyDirectory(context.cwd)
+    const lock = cfg.readonly_symbol ?? '🔒'
+    const symbol = isReadonly ? lock : ''
 
-    const content = `${symbol}${path}`
-    const color = _context.gitInfo?.isRepo ? '#a855f7' : '#3b82f6'
+    const format = cfg.format ?? '{symbol}{path}'
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{path}', path)
 
-    return this.formatResult(content, { color, bold: true })
+    return this.formatResult(content)
   }
 
   private isReadonlyDirectory(path: string): boolean {
@@ -134,19 +147,21 @@ export class UsernameModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const user = userInfo().username
-    const isSSH = !!(_context.environment.SSH_CONNECTION || _context.environment.SSH_CLIENT)
+    const isSSH = !!(context.environment.SSH_CONNECTION || context.environment.SSH_CLIENT)
     const isRoot = process.getuid?.() === 0
 
-    // Only show username if in SSH session or root by default
-    if (!isSSH && !isRoot)
+    const cfg = (context.config as any)?.username || {}
+    const showOnLocal = cfg.showOnLocal ?? (cfg.show_always ?? false)
+    if (!isSSH && !isRoot && !showOnLocal)
       return null
 
-    const content = user
-    const color = isRoot ? '#ef4444' : '#10b981'
-
-    return this.formatResult(content, { color, bold: true })
+    const format = (isRoot ? (cfg.root_format ?? '{user}') : (cfg.format ?? '{user}'))
+    const content = format
+      .replace('{user}', user)
+      .replace('{username}', user)
+    return this.formatResult(content)
   }
 }
 
@@ -159,8 +174,8 @@ export class ShellModule extends BaseModule {
     return !!_context.environment.SHELL
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
-    const shell = _context.environment.SHELL
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    const shell = context.environment.SHELL
     if (!shell)
       return null
 
@@ -180,9 +195,13 @@ export class ShellModule extends BaseModule {
     }
 
     const indicator = indicators[shellName] || shellName
-    const content = indicator
+    const cfg = (context.config as any)?.shell || {}
+    const format = cfg.format ?? '{shell}'
+    const content = format
+      .replace('{shell}', indicator)
+      .replace('{indicator}', indicator)
 
-    return this.formatResult(content, { color: '#6b7280' })
+    return this.formatResult(content)
   }
 }
 
@@ -195,23 +214,25 @@ export class BatteryModule extends BaseModule {
     return this.hasBattery()
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const batteryInfo = await this.getBatteryInfo()
     if (!batteryInfo)
       return null
 
     const { percentage, isCharging, isLow } = batteryInfo
 
-    let symbol = '🔋'
-    if (isCharging)
-      symbol = '🔌'
-    else if (isLow)
-      symbol = '🪫'
+    const cfg = (context.config as any)?.battery || {}
+    const sCharging = cfg.symbol_charging ?? cfg.charging_symbol ?? '🔌'
+    const sLow = cfg.symbol_low ?? cfg.empty_symbol ?? '🪫'
+    const sNormal = cfg.symbol ?? cfg.discharging_symbol ?? cfg.full_symbol ?? '🔋'
+    const symbol = isCharging ? sCharging : isLow ? sLow : sNormal
 
-    const content = `${symbol} ${percentage}%`
-    const color = isLow ? '#ef4444' : isCharging ? '#10b981' : '#6b7280'
+    const format = cfg.format ?? '{symbol} {percentage}%'
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{percentage}', String(percentage))
 
-    return this.formatResult(content, { color })
+    return this.formatResult(content)
   }
 
   private hasBattery(): boolean {
@@ -255,16 +276,19 @@ export class CmdDurationModule extends BaseModule {
     return !!(_context.environment.CMD_DURATION_MS || _context.environment.STARSHIP_DURATION)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
-    const durationMs = Number.parseInt(_context.environment.CMD_DURATION_MS || _context.environment.STARSHIP_DURATION || '0', 10)
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    const durationMs = Number.parseInt(context.environment.CMD_DURATION_MS || context.environment.STARSHIP_DURATION || '0', 10)
 
-    if (durationMs < 2000)
-      return null // Only show for commands > 2s
+    const cfg = (context.config as any)?.cmd_duration || {}
+    const minMs = cfg.min_ms ?? cfg.min_time ?? 2000
+    if (durationMs < minMs)
+      return null // Only show for commands longer than threshold
 
     const duration = this.formatDuration(durationMs)
-    const content = `took ${duration}`
+    const format = cfg.format ?? 'took {duration}'
+    const content = format.replace('{duration}', duration)
 
-    return this.formatResult(content, { color: '#f59e0b' })
+    return this.formatResult(content)
   }
 
   private formatDuration(ms: number): string {
@@ -287,21 +311,29 @@ export class MemoryUsageModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const memInfo = this.getMemoryInfo()
     if (!memInfo)
       return null
 
     const { used, total, percentage } = memInfo
 
-    // Only show if usage is above threshold (default 75%)
-    if (percentage < 75)
+    const cfg = (context.config as any)?.memory_usage || {}
+    const threshold = cfg.threshold ?? 75
+    if (percentage < threshold)
       return null
 
-    const content = `🐏 ${this.formatBytes(used)}/${this.formatBytes(total)} (${percentage}%)`
-    const color = percentage > 90 ? '#ef4444' : percentage > 80 ? '#f59e0b' : '#10b981'
+    const symbol = cfg.symbol ?? '🐏'
+    const format = cfg.format ?? '{symbol} {used}/{total} ({percentage}%)'
+    const ram = `${this.formatBytes(used)}/${this.formatBytes(total)} (${percentage}%)`
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{used}', this.formatBytes(used))
+      .replace('{total}', this.formatBytes(total))
+      .replace('{percentage}', String(percentage))
+      .replace('{ram}', ram)
 
-    return this.formatResult(content, { color })
+    return this.formatResult(content)
   }
 
   private getMemoryInfo(): { used: number, total: number, percentage: number } | null {
@@ -343,17 +375,19 @@ export class TimeModule extends BaseModule {
     return true // Always available
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
     const now = new Date()
-    const timeString = now.toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
+    const cfg = (context.config as any)?.time || {}
+    const locale = cfg.locale || 'en-US'
+    const options = cfg.options || { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }
+    const timeString = now.toLocaleTimeString(locale, options)
 
-    const content = `🕐 ${timeString}`
-    return this.formatResult(content, { color: '#6b7280' })
+    const symbol = cfg.symbol ?? '🕐'
+    const format = cfg.format ?? '{symbol} {time}'
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{time}', timeString)
+    return this.formatResult(content)
   }
 }
 
@@ -366,26 +400,31 @@ export class NixShellModule extends BaseModule {
     return !!(_context.environment.IN_NIX_SHELL || _context.environment.NIX_SHELL_PACKAGES)
   }
 
-  async render(_context: ModuleContext): Promise<ModuleResult | null> {
-    const inNixShell = _context.environment.IN_NIX_SHELL
-    const packages = _context.environment.NIX_SHELL_PACKAGES
+  async render(context: ModuleContext): Promise<ModuleResult | null> {
+    const inNixShell = context.environment.IN_NIX_SHELL
+    const packages = context.environment.NIX_SHELL_PACKAGES
 
     if (!inNixShell && !packages)
       return null
 
-    const symbol = '❄️'
-    let content = symbol
+    const cfg = (context.config as any)?.nix_shell || {}
+    const symbol = cfg.symbol ?? '❄️'
+    const format = cfg.format ?? '{symbol} {state}'
+    const pureMsg = cfg.pure_msg ?? 'pure'
+    const impureMsg = cfg.impure_msg ?? 'impure'
+    const unknownMsg = cfg.unknown_msg ?? 'shell'
+    let state = ''
+    if (inNixShell === 'pure')
+      state = pureMsg
+    else if (inNixShell === 'impure')
+      state = impureMsg
+    else if (packages)
+      state = unknownMsg
 
-    if (inNixShell === 'pure') {
-      content += ' pure'
-    }
-    else if (inNixShell === 'impure') {
-      content += ' impure'
-    }
-    else if (packages) {
-      content += ' shell'
-    }
+    const content = format
+      .replace('{symbol}', symbol)
+      .replace('{state}', state)
 
-    return this.formatResult(content, { color: '#5277c3' })
+    return this.formatResult(content)
   }
 }

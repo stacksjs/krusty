@@ -24,9 +24,9 @@ export const defaultConfig: KrustyConfig = {
   },
   prompt: {
     // Default prompt focuses on path, git status, and runtime module info (e.g. bun)
-    // Example: "~/Code/krusty ⎇ main [●1○1?1] via 🐰 1.2.21 ❯"
+    // Example: "~/Code/krusty on 🌱 main [●1○1] 📦 v0.1.0 via 🐰 v1.2.21 took 5m12s ❯"
     // Note: we keep this single-line for robust cursor handling
-    format: '\u001B[1m{path}\u001B[0m\u001B[1m{git}\u001B[0m \u001B[1m{modules}\u001B[0m \u001B[1m{symbol}\u001B[0m ',
+    format: '{path} on {git} {modules} {duration} {symbol} ',
     showGit: true,
     showTime: false,
     // Hide user/host by default to match the expected style
@@ -127,6 +127,7 @@ export const defaultConfig: KrustyConfig = {
       showUntracked: true,
       showAheadBehind: true,
       format: '({branch}{ahead}{behind}{staged}{unstaged}{untracked})',
+      branchBold: true,
     },
     // Prompt configuration
     prompt: {
@@ -145,13 +146,18 @@ export const defaultConfig: KrustyConfig = {
       info: '#74B9FF',
       // Git status colors
       git: {
-        branch: '#F8F8F2',
+        branch: '#A277FF',
         ahead: '#50FA7B',
         behind: '#FF5555',
         staged: '#50FA7B',
         unstaged: '#FFB86C',
         untracked: '#FF79C6',
         conflict: '#FF5555',
+      },
+      // Module-specific colors
+      modules: {
+        bunVersion: '#FF6B6B',
+        packageVersion: '#FFA500',
       },
     },
     // Font configuration
@@ -221,16 +227,24 @@ export const defaultConfig: KrustyConfig = {
     git_metrics: { enabled: true, format: '({metrics})' },
 
     // System modules
-    os: { enabled: false, format: 'on {symbol} {name}' }, // Disabled by default
-    hostname: { enabled: true, format: '@{hostname}', ssh_only: true },
+    os: {
+      enabled: false, // Disabled by default
+      format: 'on {symbol} {name}',
+      symbol: '💻',
+      // Per-platform overrides
+      // Keys match process.platform values: 'darwin', 'linux', 'win32', etc.
+      symbols: { darwin: '', linux: '🐧', win32: '🪟' },
+    },
+    hostname: { enabled: true, format: '@{hostname}', ssh_only: true, showOnLocal: false },
     directory: {
       enabled: true,
       format: '{path}',
       truncation_length: 3,
       truncate_to_repo: true,
       home_symbol: '~',
+      readonly_symbol: '🔒',
     },
-    username: { enabled: true, format: '{username}', show_always: false },
+    username: { enabled: true, format: '{username}', show_always: false, showOnLocal: false, root_format: '{username}' },
     shell: { enabled: false, format: '{indicator}' }, // Disabled by default
     battery: {
       enabled: true,
@@ -240,11 +254,16 @@ export const defaultConfig: KrustyConfig = {
       discharging_symbol: '🔋',
       unknown_symbol: '🔋',
       empty_symbol: '🪫',
+      // New fields (used by refactored module but keep legacy above)
+      symbol: '🔋',
+      symbol_charging: '🔌',
+      symbol_low: '🪫',
     },
     cmd_duration: {
       enabled: true,
       format: 'took {duration}',
       min_time: 2000,
+      min_ms: 2000,
       show_milliseconds: false,
     },
     memory_usage: {
@@ -253,7 +272,7 @@ export const defaultConfig: KrustyConfig = {
       threshold: 75,
       symbol: '🐏',
     },
-    time: { enabled: false, format: '🕐 {time}' }, // Disabled by default
+    time: { enabled: false, format: '{symbol} {time}', symbol: '🕐', options: { hour: '2-digit', minute: '2-digit' } }, // Disabled by default
     nix_shell: {
       enabled: true,
       format: 'via {symbol} {state}',
