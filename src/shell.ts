@@ -828,20 +828,8 @@ export class KrustyShell implements Shell {
           }
         }
 
-        // Optionally append plugin flat completions as their own group to avoid interfering with core groups
-        if (pluginCompletions.length > 0) {
-          const norm = normalizeTitle('plugins')
-          const existing = groupMap.get(norm)
-          if (!existing) {
-            groupMap.set(norm, { title: 'plugins', items: Array.from(new Set(pluginCompletions)) })
-          }
-          else {
-            const seen = new Set(existing.items.map(getText))
-            for (const s of pluginCompletions) {
-              if (!seen.has(s)) { seen.add(s); existing.items.push(s) }
-            }
-          }
-        }
+        // Do not append a separate 'plugins' group in grouped mode.
+        // Plugin completions will still be merged in flat mode below.
 
         const merged = Array.from(groupMap.values())
 

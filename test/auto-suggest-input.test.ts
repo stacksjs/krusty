@@ -129,7 +129,7 @@ describe('AutoSuggestInput', () => {
       expect(mockOutput).toContain('b')
     })
 
-    it('renders bracketed suggestions when list is open (not suppressed)', () => {
+    it('renders suggestions when list is open (no brackets)', () => {
       const prompt = '~/test ❯ '
 
       // Open suggestions list manually
@@ -144,8 +144,9 @@ describe('AutoSuggestInput', () => {
       mockOutput = ''
       autoSuggestInput['updateDisplay'](prompt)
 
-      // Suggestions list prints with selected item in brackets
-      expect(mockOutput).toContain('[bun run]')
+      // Suggestions list prints selected item without brackets
+      expect(mockOutput).toContain('bun run')
+      expect(mockOutput).not.toContain('[bun run]')
     })
   })
 

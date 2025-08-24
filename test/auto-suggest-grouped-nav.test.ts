@@ -62,23 +62,26 @@ describe('Grouped suggestion navigation', () => {
     // B starts after A allocation; find label via rendering to ensure index mapped
     mockOutput = ''
     ;(inp as any).updateDisplayForTesting('❯ ')
-    expect(mockOutput).toContain('B:')
-    // Selected item should be b2 (row 1 in group B)
-    expect(mockOutput).toContain('[b2]')
+    expect(mockOutput).toContain('B:'.toUpperCase())
+    // Selected item should be b2 (row 1 in group B) without brackets
+    expect(mockOutput).toContain('b2')
+    expect(mockOutput).not.toContain('[b2]')
 
     // Up back to A preserving row (row 1 -> a2)
     expect((inp as any)['navigateGrouped']('up')).toBe(true)
     mockOutput = ''
     ;(inp as any).updateDisplayForTesting('❯ ')
-    expect(mockOutput).toContain('A:')
-    expect(mockOutput).toContain('[a2]')
+    expect(mockOutput).toContain('A:'.toUpperCase())
+    expect(mockOutput).toContain('a2')
+    expect(mockOutput).not.toContain('[a2]')
 
     // Down to C (row 1 clamped to last available -> c1 row 0)
     expect((inp as any)['navigateGrouped']('down')).toBe(true) // to B
     expect((inp as any)['navigateGrouped']('down')).toBe(true) // to C
     mockOutput = ''
     ;(inp as any).updateDisplayForTesting('❯ ')
-    expect(mockOutput).toContain('C:')
-    expect(mockOutput).toContain('[c1]')
+    expect(mockOutput).toContain('C:'.toUpperCase())
+    expect(mockOutput).toContain('c1')
+    expect(mockOutput).not.toContain('[c1]')
   })
 })

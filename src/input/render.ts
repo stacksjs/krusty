@@ -202,9 +202,8 @@ export function renderSuggestionList(
   if (suggestions.length > 0) {
     const reset = '\x1B[0m'
     const selColor = options.suggestionColor ?? '\x1B[36m'
-    const dim = options.highlightColor ?? '\x1B[90m'
     const items = suggestions.slice(0, options.maxSuggestions ?? 10)
-      .map((s, i) => i === selectedIndex ? `${selColor}[${s}]${reset}` : `${dim}${s}${reset}`)
+      .map((s, i) => i === selectedIndex ? `${selColor}${s}${reset}` : `${s}`)
       .join('  ')
     const cols = process.stdout.columns ?? 80
     const toPrint = truncateAnsiToWidth(items, cols)
@@ -298,7 +297,6 @@ export function renderGroupedSuggestionList(
 
   if (flat.length > 0) {
     const reset = '\x1B[0m'
-    const dim = options.highlightColor ?? '\x1B[90m'
     const selectedBg = '\x1B[47m' // white background
     const selectedFg = '\x1B[30m' // black text
 
@@ -319,11 +317,11 @@ export function renderGroupedSuggestionList(
       if (labels.length <= 0)
         continue
 
-      // Header: for bun run groups use dim + italic UPPERCASE without colon; otherwise preserve original casing with colon
-      const isBunRunGroup = g.title.toLowerCase() === 'scripts' || g.title.toLowerCase() === 'binaries' || g.title.toLowerCase() === 'files'
-      const header = isBunRunGroup
-        ? `\n\x1B[2K${dim}\x1B[3m${g.title.toUpperCase()}\x1B[23m${reset}`
-        : `\n\x1B[2K${dim}${g.title}:${reset}`
+      // Header: UPPERCASE, styled italic and dim, with trailing colon
+      const italic = '\x1B[3m'
+      const dim = '\x1B[2m'
+      const reset = '\x1B[0m'
+      const header = `\n\x1B[2K${dim}${italic}${g.title.toUpperCase()}:${reset}`
 
       // If adding the header would exceed available rows, mark truncated
       if (rowsAvail > 0 && producedLines + 1 > rowsAvail) { truncated = true; break }
@@ -347,15 +345,16 @@ export function renderGroupedSuggestionList(
             break
           const label = labels[idx]
           const isSelected = seen === selectedIndex
-          const shown = (isSelected && !isBunRunGroup) ? `[${label}]` : label
+          // Do not bracket selected; keep plain label
+          const shown = label
           const padLen = Math.max(0, colWidth - displayWidth(shown))
           const cellContent = `${shown}${' '.repeat(padLen)}`
           if (isSelected) {
             line += `${selectedFg}${selectedBg}${cellContent}${reset}`
           }
           else {
-            // For bun run groups, do not dim; for others, keep dim to satisfy tests
-            line += isBunRunGroup ? `${cellContent}` : `${dim}${cellContent}${reset}`
+            // Non-selected items should not be dimmed
+            line += `${cellContent}`
           }
           // gap between columns
           if (c < columns - 1)
@@ -370,7 +369,7 @@ export function renderGroupedSuggestionList(
     // If truncated due to lack of vertical space, append an indicator line
     if (truncated && canMeasureRows) {
       if (rowsAvail === 0 || producedLines < rowsAvail) {
-        out += `\n\x1B[2K${dim}... more\x1B[0m`
+        out += `\n\x1B[2K... more`
         producedLines += 1
       }
     }

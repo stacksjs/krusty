@@ -76,27 +76,95 @@ export class AutoSuggestInput {
     const len = groupLengths[curGroup] ?? 1
     const offset = this.selectedIndex - first
 
-    // Horizontal navigation moves within the same group (items laid out inline)
+    // Helper to compute the visual grid layout for a group, mirroring renderGroupedSuggestionList
+    const computeLayout = (groupIndex: number) => {
+      const g = this.groupedForRender?.[groupIndex]
+      const labels: string[] = (g?.items || []).map((it: any) => typeof it === 'string' ? it : (it?.text ?? ''))
+        .filter((s: string) => !!s)
+        .slice()
+        .sort((a: string, b: string) => a.localeCompare(b))
+      const colsTotal = process.stdout.columns ?? 80
+      // gap must match renderer
+      const gap = 2
+      // column width based on max label display width within this group
+      let maxLen = 0
+      for (const s of labels)
+        maxLen = Math.max(maxLen, displayWidth(s))
+      const colWidth = Math.max(1, maxLen + 1)
+      const columns = Math.max(1, Math.floor((colsTotal) / (colWidth + gap)))
+      const rows = Math.max(1, Math.ceil(labels.length / columns))
+      return { labels, columns, rows }
+    }
+
+    // Horizontal navigation moves within the same group (items laid out row-major)
     if (direction === 'left' || direction === 'right') {
       if (len <= 0)
         return false
-      const dir = direction === 'left' ? -1 : 1
-      const newOffset = (offset + dir + len) % len
+      const { columns } = computeLayout(curGroup)
+      const row = Math.floor(offset / columns)
+      const col = offset % columns
+      let newRow = row
+      let newCol = direction === 'left' ? col - 1 : col + 1
+      // Wrap within group row-major order
+      if (newCol < 0) {
+        newRow -= 1
+        if (newRow < 0)
+          newRow = Math.ceil(len / columns) - 1
+        newCol = columns - 1
+      }
+      const rowCount = Math.ceil(len / columns)
+      if (newCol >= columns) {
+        newCol = 0
+        newRow += 1
+        if (newRow >= rowCount)
+          newRow = 0
+      }
+      // Clamp into existing items (last row may be shorter)
+      const start = newRow * columns
+      const end = Math.min(start + columns, len)
+      const clampedCol = Math.min(newCol, Math.max(0, end - start - 1))
+      const newOffset = start + clampedCol
       this.selectedIndex = first + newOffset
       return true
     }
-    // Vertical navigation switches between groups, preserving the row offset when possible
+    // Vertical navigation moves between rows inside the same group; only when crossing
+    // top/bottom does it switch groups, preserving the column when possible.
     if (direction === 'up' || direction === 'down') {
-      const totalGroups = Math.max(groupFirstIndex.length, ...this.groupedIndexMap.map(m => m.group + 1))
-      const dir = direction === 'up' ? -1 : 1
-      const targetGroup = (curGroup + dir + totalGroups) % totalGroups
-      const targetFirst = groupFirstIndex[targetGroup]
-      const targetLen = groupLengths[targetGroup] ?? 0
-      if (typeof targetFirst === 'number' && targetLen > 0) {
-        const newOffset = Math.min(Math.max(0, offset), targetLen - 1)
-        this.selectedIndex = targetFirst + newOffset
-        return true
+      const { columns } = computeLayout(curGroup)
+      const row = Math.floor(offset / columns)
+      const col = offset % columns
+      const rowCount = Math.ceil(len / columns)
+
+      let newGroup = curGroup
+      let newRow = row + (direction === 'up' ? -1 : 1)
+
+      if (newRow < 0 || newRow >= rowCount) {
+        // Switch groups when moving past top/bottom
+        const totalGroups = Math.max(groupFirstIndex.length, ...this.groupedIndexMap.map(m => m.group + 1))
+        newGroup = (curGroup + (direction === 'up' ? -1 : 1) + totalGroups) % totalGroups
+        const targetFirst = groupFirstIndex[newGroup]
+        const targetLen = groupLengths[newGroup] ?? 0
+        if (typeof targetFirst === 'number' && targetLen > 0) {
+          const { columns: tgtCols } = computeLayout(newGroup)
+          const tgtRowCount = Math.ceil(targetLen / tgtCols)
+          // If coming from top, go to last row; from bottom, go to first row
+          const tRow = direction === 'up' ? (tgtRowCount - 1) : 0
+          const start = tRow * tgtCols
+          const end = Math.min(start + tgtCols, targetLen)
+          const clampedCol = Math.min(col, Math.max(0, end - start - 1))
+          this.selectedIndex = (targetFirst as number) + start + clampedCol
+          return true
+        }
+        return false
       }
+
+      // Stay within current group, move to same column in target row
+      const start = newRow * columns
+      const end = Math.min(start + columns, len)
+      const clampedCol = Math.min(col, Math.max(0, end - start - 1))
+      const newOffset = start + clampedCol
+      this.selectedIndex = first + newOffset
+      return true
     }
     return false
   }
@@ -1078,10 +1146,16 @@ export class AutoSuggestInput {
           }
         }
 
-        // Use merged groups for rendering/flattening
+        // Use merged groups; preserve original item order for flat suggestions
+        // but sort items alphabetically within each group for rendering so the
+        // selectedIndex mapping matches renderGroupedSuggestionList's layout.
         const normalizedGroups = mergedByTitle
 
-        // Build flattened list and index map including ALL items from each group (no max cap)
+        // Build flattened list (original order) and index map in RENDER order.
+        // The map entries correspond to the per-group sorted order so that
+        // getSelectedLabel() can resolve the correct visually highlighted item
+        // when the list is open, while the flat list preserves original order
+        // for inline suffix correctness when the list is closed.
         const flat: string[] = []
         const map: Array<{ group: number, idx: number }> = []
         const renderGroups: Array<{ title: string, items: Array<string | { text: string }> }> = []
@@ -1089,13 +1163,25 @@ export class AutoSuggestInput {
           const g = normalizedGroups[gi]
           if (!g.items || g.items.length === 0)
             continue
-          const rgItems: Array<string | { text: string }> = []
+
+          // 1) Always push to flat in original order from shell
           for (let ii = 0; ii < g.items.length; ii++) {
             const it = g.items[ii]
             const label = typeof it === 'string' ? it : it.text
             flat.push(label)
-            map.push({ group: gi, idx: ii })
-            rgItems.push(it)
+          }
+
+          // 2) Prepare sorted items for rendering and build grouped index map in the
+          // same per-group order used by the renderer
+          const sorted = g.items
+            .map((it, idx) => ({ it, idx, label: typeof it === 'string' ? it : it.text }))
+            .sort((a, b) => a.label.localeCompare(b.label))
+
+          const rgItems: Array<string | { text: string }> = []
+          for (let si = 0; si < sorted.length; si++) {
+            const s = sorted[si]
+            rgItems.push(s.it)
+            map.push({ group: gi, idx: si })
           }
           renderGroups.push({ title: g.title, items: rgItems })
         }
@@ -1104,10 +1190,11 @@ export class AutoSuggestInput {
         // This preserves all explicit group items intact and only fills up to max with history.
         if (flat.length < max) {
           const prefix = this.getCurrentLinePrefix()
-          const hist = this.getHistorySuggestions(prefix)
           const seen = new Set(flat)
           const histItems: string[] = []
-          for (const h of hist) {
+          // Gather and sort history suggestions alphabetically to mirror renderer ordering
+          const histSorted = this.getHistorySuggestions(prefix).slice().sort((a, b) => a.localeCompare(b))
+          for (const h of histSorted) {
             if (flat.length >= max)
               break
             if (seen.has(h))
@@ -1203,7 +1290,7 @@ export class AutoSuggestInput {
 
   private updateSuggestion() {
     if (this.suggestions.length > 0) {
-      const selected = this.suggestions[this.selectedIndex]
+      const selected = this.getSelectedLabel() || ''
       const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
 
       // Handle different completion scenarios
@@ -1250,13 +1337,34 @@ export class AutoSuggestInput {
     }
   }
 
+  // Returns the label for the currently highlighted item.
+  // If grouped mode is active and the list is visible, use the render groups + index map
+  // to avoid mismatch with the visual highlight. When the list is closed, use the flat
+  // suggestions array (for inline suffix correctness).
+  private getSelectedLabel(): string | null {
+    if (!this.suggestions || this.suggestions.length === 0)
+      return null
+    const idx = this.selectedIndex
+    if (idx < 0 || idx >= this.suggestions.length)
+      return null
+    if (this.isShowingSuggestions && this.groupedActive && this.groupedForRender && this.groupedIndexMap.length === this.suggestions.length) {
+      const map = this.groupedIndexMap[idx]
+      const group = this.groupedForRender[map.group]
+      const item = group?.items?.[map.idx]
+      if (typeof item === 'string')
+        return item
+      if (item && typeof (item as any).text === 'string')
+        return (item as any).text
+    }
+    return this.suggestions[idx] || null
+  }
+
+
   // Apply the currently selected completion item even when no inline suffix is visible.
   // If the cursor is at a token boundary (preceded by whitespace), insert the full selection.
   // Otherwise, replace the last token before the cursor with the full selection.
   private applySelectedCompletion(): boolean {
-    if (!this.suggestions || this.suggestions.length === 0)
-      return false
-    const selected = this.suggestions[this.selectedIndex] || ''
+    const selected = this.getSelectedLabel() || ''
     if (!selected)
       return false
     const selectedIsDir = selected.endsWith('/')

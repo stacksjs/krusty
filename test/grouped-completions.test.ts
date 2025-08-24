@@ -1,5 +1,5 @@
 /* eslint-disable dot-notation */
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { AutoSuggestInput } from '../src/input/auto-suggest'
 
 // Shared stdout mocking like in auto-suggest-input.test.ts
@@ -31,7 +31,7 @@ describe('Grouped completions', () => {
 
   it('renders grouped suggestion list with headers and selection', () => {
     const shell = {
-      getCompletions: mock(() => groupsOf(
+      getCompletions: mock(() => groupsOf<string | { text: string }>(
         { title: 'Commands', items: ['git', 'grep'] },
         { title: 'Files', items: [{ text: 'README.md' }, { text: 'package.json' }] },
       )),
@@ -49,7 +49,7 @@ describe('Grouped completions', () => {
 
     // updateSuggestions should have set groupedActive=true and normalized groups
     // but to be robust, mirror renderer expectations explicitly
-    const groupedForRender = groupsOf(
+    const groupedForRender = groupsOf<string | { text: string }>(
       { title: 'Commands', items: ['git', 'grep'] },
       { title: 'Files', items: ['README.md', 'package.json'] },
     )
@@ -59,11 +59,12 @@ describe('Grouped completions', () => {
     mockOutput = ''
     ;(inp as any).updateDisplayForTesting('~/t ❯ ')
 
-    expect(mockOutput).toContain('Commands:')
-    expect(mockOutput).toContain('Files:')
-    // Selected item should be bracketed
-    expect(mockOutput).toContain('[git]')
-    // Non-selected appear dimmed (contain the label at least)
+    expect(mockOutput).toContain('COMMANDS:')
+    expect(mockOutput).toContain('FILES:')
+    // Selected item is not bracketed, ensure plain label appears
+    expect(mockOutput).toContain('git')
+    expect(mockOutput).not.toContain('[git]')
+    // Non-selected appear in normal text
     expect(mockOutput).toContain('grep')
   })
 
@@ -136,7 +137,7 @@ describe('Grouped completions', () => {
     mockOutput = ''
     ;(inp as any).updateDisplayForTesting('~/t ❯ ')
 
-    expect(mockOutput).toContain('History:')
+    expect(mockOutput).toContain('HISTORY:')
     // Should contain both history items (deduped)
     expect(mockOutput).toContain('git status')
     expect(mockOutput).toContain('git commit')

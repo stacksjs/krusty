@@ -45,7 +45,9 @@ describe('Flat completions backward-compatibility', () => {
 
     // Should not contain any header-like text (simple heuristic)
     expect(mockOutput).not.toContain('Commands:')
-    expect(mockOutput).toContain('[git]')
+    // Selected item is no longer bracketed; ensure plain label appears
+    expect(mockOutput).toContain('git')
+    expect(mockOutput).not.toContain('[git]')
     expect(mockOutput).toContain('grep')
   })
 
