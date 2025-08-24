@@ -155,7 +155,7 @@ export class PromptRenderer {
 
     // Add bun version if available
     if (systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
-      modules.push(this.colorize(`🧅 ${systemInfo.bunVersion}`, this.config.theme?.colors?.primary || '#00D9FF'))
+      modules.push(this.colorize(`🐰 ${systemInfo.bunVersion}`, this.config.theme?.colors?.primary || '#00D9FF'))
     }
 
     // Detect project type - prioritize Bun over Node.js
@@ -166,7 +166,7 @@ export class PromptRenderer {
       if (this.isBunProject(packageJson)) {
         // Don't show bun module again if we already showed the version above
         if (!systemInfo.bunVersion || systemInfo.bunVersion === 'unknown') {
-          modules.push(this.colorize('🧅 bun', this.config.theme?.colors?.primary || '#00D9FF'))
+          modules.push(this.colorize('🐰 bun', this.config.theme?.colors?.primary || '#00D9FF'))
         }
       }
       else {

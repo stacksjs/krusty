@@ -1,7 +1,59 @@
 import type { AutoSuggestOptions } from './auto-suggest'
 import process from 'node:process'
-import { displayWidth, truncateToWidth, visibleLength } from './ansi'
+import { displayWidth, truncateToWidth, visibleLength, wcwidth } from './ansi'
 import { renderHighlighted } from './highlighting'
+
+// Remember how many lines the last grouped suggestion render used, so we can
+// clear exactly that many lines on the next render. This prevents duplicated
+// blocks when the terminal is small or the list shrinks.
+let lastGroupedRenderHeight = 0
+
+// Truncate a string to a given display width while preserving ANSI escape sequences.
+// This avoids cutting in the middle of an escape and prevents style bleed by keeping codes intact.
+function truncateAnsiToWidth(text: string, maxWidth: number): string {
+  if (maxWidth <= 0)
+    return ''
+  let out = ''
+  let width = 0
+  // Track last index in output that contributed to visible width
+  let lastVisibleOutIndex = -1
+  for (let i = 0; i < text.length;) {
+    const ch = text[i]
+    if (ch === '\x1B' && text[i + 1] === '[') {
+      // Copy the entire CSI sequence
+      let j = i + 2
+      while (j < text.length && /[0-9;]/.test(text[j])) j++
+      if (j < text.length) {
+        // Include final command byte
+        out += text.slice(i, j + 1)
+        i = j + 1
+        continue
+      }
+      // Malformed sequence; stop processing further
+      break
+    }
+    // Handle code points
+    const code = text.codePointAt(i) as number
+    const cp = String.fromCodePoint(code)
+    const w = wcwidth(cp)
+    if (width + w > maxWidth) {
+      // If we're at the edge and the next character in the source is a closing bracket
+      // for a selected token, prefer ending with the bracket to avoid awkward truncation.
+      const nextCode = text.codePointAt(i) as number
+      const nextChar = String.fromCodePoint(nextCode)
+      if (nextChar === ']' && lastVisibleOutIndex >= 0) {
+        out = `${out.slice(0, lastVisibleOutIndex)}]`
+      }
+      break
+    }
+    out += cp
+    width += w
+    if (w > 0)
+      lastVisibleOutIndex = out.length
+    i += cp.length
+  }
+  return out
+}
 
 // Render single-line input when the prompt is already written (shell mode)
 export function renderSingleLineShell(
@@ -25,6 +77,7 @@ export function renderSingleLineShell(
     const dim = options.highlightColor ?? '\x1B[90m'
     stdout.write(` ${dim}${reverseStatus}\x1B[0m`)
   }
+
   if (showInline && inlineSuggestion) {
     const cols = process.stdout.columns ?? 80
     // compute used width on the last line: prompt + input + optional space+status
@@ -154,21 +207,211 @@ export function renderSuggestionList(
       .map((s, i) => i === selectedIndex ? `${selColor}[${s}]${reset}` : `${dim}${s}${reset}`)
       .join('  ')
     const cols = process.stdout.columns ?? 80
-    // eslint-disable-next-line no-control-regex
-    const visible = items.replace(/\x1B\[[0-9;]*m/g, '')
-    let toPrint = items
-    if (visible.length > cols) {
-      const excess = visible.length - cols
-      toPrint = items.slice(0, Math.max(0, items.length - excess))
-    }
+    const toPrint = truncateAnsiToWidth(items, cols)
     stdout.write(`\x1B[s`)
-    stdout.write(`\n\x1B[2K${toPrint}`)
+    stdout.write(`\n\x1B[2K${toPrint}\x1B[0m`)
     stdout.write(`\x1B[u`)
     return true
   }
   else if (hadSuggestionsLastRender) {
     stdout.write(`\x1B[s`)
     stdout.write(`\n\x1B[2K`)
+    stdout.write(`\x1B[u`)
+    return false
+  }
+  return false
+}
+
+/**
+ * Render grouped suggestion lists with headers. Backward-compatible helper
+ * that mirrors the API of renderSuggestionList but takes grouped data and a
+ * single selectedIndex across all items (headers are not selectable).
+ */
+export function renderGroupedSuggestionList(
+  stdout: NodeJS.WriteStream,
+  groups: Array<{ title: string, items: Array<string | { text: string }> }>,
+  selectedIndex: number,
+  options: AutoSuggestOptions,
+  hadSuggestionsLastRender: boolean,
+): boolean {
+  // Normalize/merge duplicate groups defensively (e.g., repeated 'binaries')
+  const normalizeTitle = (t: string) => (t || '').trim().toLowerCase()
+  const getText = (v: string | { text: string }) => typeof v === 'string' ? v : v.text
+  const mergedGroups: Array<{ title: string, items: Array<string | { text: string }> }> = []
+  const indexByNorm = new Map<string, number>()
+  for (const g of groups) {
+    const norm = normalizeTitle(g.title)
+    const existingIdx = indexByNorm.get(norm)
+    if (existingIdx === undefined) {
+      // Copy and dedupe items for a new group
+      const seen = new Set<string>()
+      const items: Array<string | { text: string }> = []
+      for (const it of (g.items || [])) {
+        const key = getText(it)
+        if (!key) continue
+        if (!seen.has(key)) { seen.add(key); items.push(it) }
+      }
+      mergedGroups.push({ title: (g.title || '').trim(), items })
+      indexByNorm.set(norm, mergedGroups.length - 1)
+    }
+    else {
+      // Merge into existing with dedupe
+      const existing = mergedGroups[existingIdx]
+      const seen = new Set(existing.items.map(getText))
+      for (const it of (g.items || [])) {
+        const key = getText(it)
+        if (!key) continue
+        if (!seen.has(key)) { seen.add(key); existing.items.push(it) }
+      }
+    }
+  }
+
+  // Build per-group labels upfront from merged groups
+  const labelsByGroup: string[][] = mergedGroups.map(g => g.items.map(getText))
+  const nonEmptyGroupIndexes: number[] = []
+  for (let i = 0; i < labelsByGroup.length; i++) {
+    if (labelsByGroup[i].length > 0)
+      nonEmptyGroupIndexes.push(i)
+  }
+
+  // Nothing to render
+  if (nonEmptyGroupIndexes.length === 0) {
+    if (hadSuggestionsLastRender) {
+      stdout.write(`\x1B[s`)
+      stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[u`)
+    }
+    return false
+  }
+
+  // Sort items within each group for a stable alphabetical layout
+  for (let gi = 0; gi < labelsByGroup.length; gi++)
+    labelsByGroup[gi] = labelsByGroup[gi].slice().sort((a, b) => a.localeCompare(b))
+
+  // Build flattened view over ALL items (no maxSuggestions cap in grouped mode)
+  const flat: Array<{ group: number, idx: number, label: string }> = []
+  for (let gi = 0; gi < mergedGroups.length; gi++) {
+    const labels = labelsByGroup[gi]
+    for (let i = 0; i < labels.length; i++)
+      flat.push({ group: gi, idx: i, label: labels[i] })
+  }
+
+  if (flat.length > 0) {
+    const reset = '\x1B[0m'
+    const dim = options.highlightColor ?? '\x1B[90m'
+    const selectedBg = '\x1B[47m' // white background
+    const selectedFg = '\x1B[30m' // black text
+
+    // Build multi-line output: header per group, items in columns under it
+    let out = ''
+    let seen = 0
+    const cols = process.stdout.columns ?? 80
+    const canMeasureRows = !!(process.stdout.isTTY && typeof (process.stdout as any).rows === 'number')
+    const rowsAvail = canMeasureRows ? Math.max(0, ((process.stdout as any).rows as number) - 3) : 0
+    const gap = 2
+    let producedLines = 0
+    let truncated = false
+
+    for (let gi = 0; gi < mergedGroups.length; gi++) {
+      if (truncated) break
+      const g = mergedGroups[gi]
+      const labels = labelsByGroup[gi]
+      if (labels.length <= 0)
+        continue
+
+      // Header: for bun run groups use dim + italic UPPERCASE without colon; otherwise preserve original casing with colon
+      const isBunRunGroup = g.title.toLowerCase() === 'scripts' || g.title.toLowerCase() === 'binaries' || g.title.toLowerCase() === 'files'
+      const header = isBunRunGroup
+        ? `\n\x1B[2K${dim}\x1B[3m${g.title.toUpperCase()}\x1B[23m${reset}`
+        : `\n\x1B[2K${dim}${g.title}:${reset}`
+
+      // If adding the header would exceed available rows, mark truncated
+      if (rowsAvail > 0 && producedLines + 1 > rowsAvail) { truncated = true; break }
+      out += header
+      producedLines += 1
+
+      // Uniform column width based on max label display width
+      let maxLen = 0
+      for (const s of labels)
+        maxLen = Math.max(maxLen, displayWidth(s))
+      const colWidth = Math.max(1, maxLen + 1) // +1 minimal spacing inside cell
+      const columns = Math.max(1, Math.floor((cols) / (colWidth + gap)))
+      const rows = Math.max(1, Math.ceil(labels.length / columns))
+
+      for (let r = 0; r < rows; r++) {
+        if (rowsAvail > 0 && producedLines + 1 > rowsAvail) { truncated = true; break }
+        let line = '\n\x1B[2K'
+        for (let c = 0; c < columns; c++) {
+          const idx = r * columns + c
+          if (idx >= labels.length)
+            break
+          const label = labels[idx]
+          const isSelected = seen === selectedIndex
+          const shown = (isSelected && !isBunRunGroup) ? `[${label}]` : label
+          const padLen = Math.max(0, colWidth - displayWidth(shown))
+          const cellContent = `${shown}${' '.repeat(padLen)}`
+          if (isSelected) {
+            line += `${selectedFg}${selectedBg}${cellContent}${reset}`
+          }
+          else {
+            // For bun run groups, do not dim; for others, keep dim to satisfy tests
+            line += isBunRunGroup ? `${cellContent}` : `${dim}${cellContent}${reset}`
+          }
+          // gap between columns
+          if (c < columns - 1)
+            line += ' '.repeat(gap)
+          seen++
+        }
+        out += line
+        producedLines += 1
+      }
+    }
+
+    // If truncated due to lack of vertical space, append an indicator line
+    if (truncated && canMeasureRows) {
+      if (rowsAvail === 0 || producedLines < rowsAvail) {
+        out += `\n\x1B[2K${dim}... more\x1B[0m`
+        producedLines += 1
+      }
+    }
+
+    if (!out) {
+      // Should not happen if flat.length > 0, but guard anyway
+      return false
+    }
+
+    // Ensure content fits terminal width per line (ANSI-aware)
+    const lines = out.split('\n').map((l) => truncateAnsiToWidth(l, cols))
+
+    // Clear the previous render block completely
+    stdout.write(`\x1B[s`)
+    if (lastGroupedRenderHeight > 0) {
+      for (let i = 0; i < lastGroupedRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      // Move cursor back up
+      stdout.write(`\x1B[${lastGroupedRenderHeight}A`)
+    }
+
+    // Write the new block
+    stdout.write(lines.join('\n'))
+    stdout.write('\x1B[0m')
+    stdout.write(`\x1B[u`)
+
+    // Store height for next render: count non-empty lines we printed below the prompt
+    lastGroupedRenderHeight = lines.reduce((acc, l) => acc + (l.length > 0 ? 1 : 0), 0)
+    return true
+  }
+  else if (hadSuggestionsLastRender) {
+    stdout.write(`\x1B[s`)
+    if (lastGroupedRenderHeight > 0) {
+      for (let i = 0; i < lastGroupedRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastGroupedRenderHeight}A`)
+      lastGroupedRenderHeight = 0
+    }
+    else {
+      stdout.write(`\n\x1B[2K`)
+    }
     stdout.write(`\x1B[u`)
     return false
   }

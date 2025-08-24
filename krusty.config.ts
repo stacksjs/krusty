@@ -200,7 +200,7 @@ export default {
   // Module configuration - development environment focused
   modules: {
     // Language modules - prioritize what you use most
-    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🧅' },
+    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🐰' },
     deno: { enabled: true, format: 'via {symbol} {version}', symbol: '🦕' },
     nodejs: { enabled: true, format: 'via {symbol} {version}', symbol: '⬢' },
     python: { enabled: true, format: 'via {symbol} {version}', symbol: '🐍' },

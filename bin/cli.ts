@@ -81,6 +81,32 @@ cli
     }
   })
 
+// Print completions (debug utility)
+cli
+  .command('complete <input>', 'Print JSON of completions for given input (optional [cursor])')
+  .option('--cursor <n>', 'Cursor position within input (defaults to input length)')
+  .option('--verbose', 'Enable verbose logging')
+  .option('--config <config>', 'Path to config file')
+  .action(async (inputText: string, options: CliOptions & { cursor?: string }) => {
+    try {
+      const cfg = await loadKrustyConfig({ path: options.config })
+      const base = { ...defaultConfig, ...cfg }
+      const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
+      // Ensure plugins are loaded so plugin completions are available
+      await shell.loadPlugins()
+      const cursor = (options.cursor != null && options.cursor !== '')
+        ? Math.max(0, Math.min(inputText.length, Number.parseInt(String(options.cursor), 10) || 0))
+        : inputText.length
+      const completions = shell.getCompletions(inputText, cursor)
+      process.stdout.write(`${JSON.stringify(completions, null, 2)}\n`)
+      process.exit(0)
+    }
+    catch (err: any) {
+      process.stderr.write(`complete error: ${err?.message ?? String(err)}\n`)
+      process.exit(1)
+    }
+  })
+
 // Explicit shell command
 cli
   .command('shell', 'Start the interactive shell')

@@ -1,12 +1,12 @@
 import type { Buffer } from 'node:buffer'
-import type { Shell } from '../types'
+import type { CompletionGroup, CompletionItem, Shell } from '../types'
 import process from 'node:process'
 import { emitKeypressEvents } from 'node:readline'
 import { sharedHistory } from '../history'
 import { HistoryNavigator } from '../history/history-navigator'
 import { displayWidth, truncateToWidth, visibleLength } from './ansi'
 import { getLines as utilGetLines, indexToLineCol as utilIndexToLineCol, lineColToIndex as utilLineColToIndex } from './cursor-utils'
-import { renderMultiLineIsolated, renderSingleLineIsolated, renderSingleLineShell, renderSuggestionList } from './render'
+import { renderGroupedSuggestionList, renderMultiLineIsolated, renderSingleLineIsolated, renderSingleLineShell, renderSuggestionList } from './render'
 
 export interface AutoSuggestOptions {
   maxSuggestions?: number
@@ -41,6 +41,65 @@ export class AutoSuggestInput {
   private selectedIndex = 0
   private isShowingSuggestions = false
   private isNavigatingSuggestions = false
+  // Grouped completion state (when active)
+  private groupedActive = false
+  private groupedForRender: Array<{ title: string, items: Array<string | { text: string }> }> | null = null
+  private groupedIndexMap: Array<{ group: number, idx: number }> = []
+  
+  // Compute group first-index and lengths from current groupedIndexMap
+  private getGroupedBoundaries(): { first: number[]; lengths: number[] } {
+    const groupFirstIndex: number[] = []
+    const groupLengths: number[] = []
+    for (let i = 0; i < this.groupedIndexMap.length; i++) {
+      const g = this.groupedIndexMap[i].group
+      if (groupFirstIndex[g] === undefined) {
+        groupFirstIndex[g] = i
+        groupLengths[g] = 1
+      }
+      else {
+        groupLengths[g]++
+      }
+    }
+    return { first: groupFirstIndex, lengths: groupLengths }
+  }
+
+  // Navigate within grouped suggestions. Returns true if handled.
+  private navigateGrouped(direction: 'up' | 'down' | 'left' | 'right'): boolean {
+    if (!this.groupedActive || this.groupedIndexMap.length === 0)
+      return false
+    const curMap = this.groupedIndexMap[this.selectedIndex]
+    if (!curMap)
+      return false
+    const curGroup = curMap.group
+    const { first: groupFirstIndex, lengths: groupLengths } = this.getGroupedBoundaries()
+    const first = groupFirstIndex[curGroup] ?? 0
+    const len = groupLengths[curGroup] ?? 1
+    const offset = this.selectedIndex - first
+
+    // Horizontal navigation moves within the same group (items laid out inline)
+    if (direction === 'left' || direction === 'right') {
+      if (len <= 0)
+        return false
+      const dir = direction === 'left' ? -1 : 1
+      const newOffset = (offset + dir + len) % len
+      this.selectedIndex = first + newOffset
+      return true
+    }
+    // Vertical navigation switches between groups, preserving the row offset when possible
+    if (direction === 'up' || direction === 'down') {
+      const totalGroups = Math.max(groupFirstIndex.length, ...this.groupedIndexMap.map(m => m.group + 1))
+      const dir = direction === 'up' ? -1 : 1
+      const targetGroup = (curGroup + dir + totalGroups) % totalGroups
+      const targetFirst = groupFirstIndex[targetGroup]
+      const targetLen = groupLengths[targetGroup] ?? 0
+      if (typeof targetFirst === 'number' && targetLen > 0) {
+        const newOffset = Math.min(Math.max(0, offset), targetLen - 1)
+        this.selectedIndex = targetFirst + newOffset
+        return true
+      }
+    }
+    return false
+  }
   // Vi mode state (only used when keymap === 'vi')
   private viMode: 'insert' | 'normal' = 'insert'
   // Reverse search state
@@ -598,7 +657,9 @@ export class AutoSuggestInput {
               this.selectedIndex = 0
               // Suppress inline overlay while list is open
               this.currentSuggestion = ''
-              enableMouseTracking()
+              if (!this.groupedActive) {
+                enableMouseTracking()
+              }
               this.updateDisplay(prompt)
             }
             return
@@ -606,6 +667,18 @@ export class AutoSuggestInput {
 
           // Arrow navigation for suggestions list when open
           if (this.isShowingSuggestions && this.suggestions.length > 0) {
+            // Group-aware navigation: Left/Right switch groups, Up/Down move within the group
+            if (this.groupedActive && this.groupedIndexMap.length > 0) {
+              if (key.name === 'up' || key.name === 'down' || key.name === 'left' || key.name === 'right') {
+                const handled = this.navigateGrouped(key.name as any)
+                if (handled) {
+                  this.updateDisplay(prompt)
+                  return
+                }
+              }
+            }
+
+            // Flat (non-grouped) navigation defaults
             if (key.name === 'down') {
               this.selectedIndex = (this.selectedIndex + 1) % this.suggestions.length
               this.updateDisplay(prompt)
@@ -664,7 +737,9 @@ export class AutoSuggestInput {
                     this.isShowingSuggestions = true
                     this.isNavigatingSuggestions = true
                     this.selectedIndex = 0
-                    enableMouseTracking()
+                    if (!this.groupedActive) {
+                      enableMouseTracking()
+                    }
                   }
                   else {
                     this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
@@ -691,7 +766,9 @@ export class AutoSuggestInput {
                   this.isShowingSuggestions = true
                   this.isNavigatingSuggestions = true
                   this.selectedIndex = this.suggestions.length - 1
-                  enableMouseTracking()
+                  if (!this.groupedActive) {
+                    enableMouseTracking()
+                  }
                 }
                 else {
                   this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
@@ -764,12 +841,20 @@ export class AutoSuggestInput {
 
           // Handle Left/Right arrow keys
           if (key.name === 'left') {
+            // When navigating grouped suggestions, Left switches group (handled above)
+            if (this.isShowingSuggestions && this.groupedActive) {
+              return
+            }
             this.moveCursorLeft()
             this.updateDisplay(prompt)
             return
           }
 
           if (key.name === 'right') {
+            // When navigating grouped suggestions, Right switches group (handled above)
+            if (this.isShowingSuggestions && this.groupedActive) {
+              return
+            }
             if (this.cursorPosition < this.currentInput.length) {
               this.moveCursorRight()
               this.updateDisplay(prompt)
@@ -895,6 +980,9 @@ export class AutoSuggestInput {
         this.currentSuggestion = ''
         this.isShowingSuggestions = false
         this.isNavigatingSuggestions = false
+        this.groupedActive = false
+        this.groupedForRender = null
+        this.groupedIndexMap = []
         return
       }
 
@@ -904,45 +992,166 @@ export class AutoSuggestInput {
       const prevSelected = prevSuggestions[prevSelectedIndex]
 
       // Get suggestions from shell (includes plugin completions)
-      const rawNext = this.shell.getCompletions(this.currentInput, this.cursorPosition) || []
-      let next = rawNext
+      const rawNextAny: any = this.shell.getCompletions(this.currentInput, this.cursorPosition) || []
+
+      // Narrowing helpers
+      const isCompletionItem = (v: any): v is CompletionItem => v && typeof v === 'object' && typeof v.text === 'string'
+      const isGroupArray = (v: any): v is CompletionGroup<string | CompletionItem>[] => Array.isArray(v) && v.every(g => g && typeof g.title === 'string' && Array.isArray(g.items))
+
+      // Reset grouped state each update
+      this.groupedActive = false
+      this.groupedForRender = null
+      this.groupedIndexMap = []
+
+      let next: string[] = []
+      let groups: Array<{ title: string, items: Array<string | { text: string }> }> | null = null
+      if (isGroupArray(rawNextAny)) {
+        // Normalize groups to strings or {text}
+        groups = rawNextAny.map(g => ({
+          title: g.title,
+          items: g.items.map(it => typeof it === 'string' ? it : { text: it.text }),
+          // description is intentionally ignored in compact list; could be used later
+        }))
+      }
 
       // Filter by current token prefix to support live filtering as the user types
       const before = this.currentInput.slice(0, this.cursorPosition)
       const token = (before.match(/(^|\s)(\S*)$/)?.[2] ?? '').trim()
-      if (token.length > 0) {
+      const max = this.options.maxSuggestions ?? 10
+
+      if (groups) {
+        // Apply filtering within groups
         const lower = token.toLowerCase()
-        const filtered = next.filter(s => s.toLowerCase().startsWith(lower))
-        // If strict prefix filtering removes all items, keep the raw list to allow
-        // typo-correction suggestions (e.g., suggest 'git' when typing 'gut').
-        next = filtered.length > 0 ? filtered : rawNext
+        const filteredGroups = token.length > 0
+          ? groups.map(g => ({
+              title: g.title,
+              items: g.items.filter((it) => {
+                const label = typeof it === 'string' ? it : it.text
+                return label.toLowerCase().startsWith(lower)
+              }),
+            }))
+          : groups
+        // If filter empties all, keep original groups for typo correction behavior
+        const anyItems = filteredGroups.some(g => g.items.length > 0)
+        const baseGroups = anyItems ? filteredGroups : groups
+
+        // Merge duplicate groups by normalized title (e.g., multiple 'binaries' groups from core + plugins)
+        const mergedByTitle: Array<{ title: string, items: Array<string | { text: string }> }> = []
+        const titleIndex = new Map<string, number>()
+        for (const g of baseGroups) {
+          const displayTitle = (g.title ?? '').trim()
+          const key = displayTitle.toLowerCase()
+          if (!g.items || g.items.length === 0)
+            continue
+          let idx = titleIndex.get(key)
+          if (idx === undefined) {
+            idx = mergedByTitle.push({ title: displayTitle, items: [] }) - 1
+            titleIndex.set(key, idx)
+          }
+          const target = mergedByTitle[idx]
+          const seen = new Set<string>(target.items.map(it => (typeof it === 'string' ? it : it.text)))
+          for (const it of g.items) {
+            const label = typeof it === 'string' ? it : it.text
+            if (!seen.has(label)) {
+              target.items.push(it)
+              seen.add(label)
+            }
+          }
+        }
+
+        // Use merged groups for rendering/flattening
+        const normalizedGroups = mergedByTitle
+
+        // Build flattened list and index map including ALL items from each group (no max cap)
+        const flat: string[] = []
+        const map: Array<{ group: number, idx: number }> = []
+        const renderGroups: Array<{ title: string, items: Array<string | { text: string }> }> = []
+        for (let gi = 0; gi < normalizedGroups.length; gi++) {
+          const g = normalizedGroups[gi]
+          if (!g.items || g.items.length === 0)
+            continue
+          const rgItems: Array<string | { text: string }> = []
+          for (let ii = 0; ii < g.items.length; ii++) {
+            const it = g.items[ii]
+            const label = typeof it === 'string' ? it : it.text
+            flat.push(label)
+            map.push({ group: gi, idx: ii })
+            rgItems.push(it)
+          }
+          renderGroups.push({ title: g.title, items: rgItems })
+        }
+
+        // Merge history suggestions into a trailing History group only if there is remaining room
+        // This preserves all explicit group items intact and only fills up to max with history.
+        if (flat.length < max) {
+          const prefix = this.getCurrentLinePrefix()
+          const hist = this.getHistorySuggestions(prefix)
+          const seen = new Set(flat)
+          const histItems: string[] = []
+          for (const h of hist) {
+            if (flat.length >= max)
+              break
+            if (seen.has(h))
+              continue
+            flat.push(h)
+            map.push({ group: renderGroups.length, idx: histItems.length })
+            histItems.push(h)
+            seen.add(h)
+          }
+          if (histItems.length > 0) {
+            renderGroups.push({ title: 'History', items: histItems })
+          }
+        }
+
+        this.groupedActive = renderGroups.length > 0
+        this.groupedForRender = renderGroups.length > 0 ? renderGroups : null
+        this.groupedIndexMap = map
+        next = flat
+      }
+      else {
+        const rawNext = Array.isArray(rawNextAny)
+          ? rawNextAny.map((v: any) => isCompletionItem(v) ? v.text : String(v))
+          : []
+        next = rawNext
+        if (token.length > 0) {
+          const lower = token.toLowerCase()
+          const filtered = next.filter(s => s.toLowerCase().startsWith(lower))
+          // If strict prefix filtering removes all items, keep the raw list to allow
+          // typo-correction suggestions (e.g., suggest 'git' when typing 'gut').
+          next = filtered.length > 0 ? filtered : rawNext
+        }
       }
 
       // Merge with history suggestions, deduped, preserving order and limit
-      const max = this.options.maxSuggestions ?? 10
-      const merged: string[] = []
-      const seen = new Set<string>()
-      for (const s of next) {
-        if (!seen.has(s)) {
-          merged.push(s)
-          seen.add(s)
-          if (merged.length >= max)
-            break
-        }
-      }
-      if (merged.length < max) {
-        const prefix = this.getCurrentLinePrefix()
-        const hist = this.getHistorySuggestions(prefix)
-        for (const h of hist) {
-          if (!seen.has(h)) {
-            merged.push(h)
-            seen.add(h)
+      if (!this.groupedActive) {
+        const merged: string[] = []
+        const seen = new Set<string>()
+        for (const s of next) {
+          if (!seen.has(s)) {
+            merged.push(s)
+            seen.add(s)
             if (merged.length >= max)
               break
           }
         }
+        if (merged.length < max) {
+          const prefix = this.getCurrentLinePrefix()
+          const hist = this.getHistorySuggestions(prefix)
+          for (const h of hist) {
+            if (!seen.has(h)) {
+              merged.push(h)
+              seen.add(h)
+              if (merged.length >= max)
+                break
+            }
+          }
+        }
+        this.suggestions = merged
       }
-      this.suggestions = merged
+      else {
+        // When grouped, suggestions already flattened and history merged
+        this.suggestions = next
+      }
 
       // Try to preserve previously selected item/index if still present
       if (this.suggestions.length > 0) {
@@ -967,6 +1176,9 @@ export class AutoSuggestInput {
     catch {
       this.suggestions = []
       this.currentSuggestion = ''
+      this.groupedActive = false
+      this.groupedForRender = null
+      this.groupedIndexMap = []
     }
   }
 
@@ -1131,7 +1343,13 @@ export class AutoSuggestInput {
 
     // If suggestions list is open, render a compact one-line list and restore cursor
     if (this.isShowingSuggestions) {
-      const shown = renderSuggestionList(stdout, this.suggestions, this.selectedIndex, this.options, this.hadSuggestionsLastRender)
+      let shown = false
+      if (this.groupedActive && this.groupedForRender && this.groupedForRender.length > 0) {
+        shown = renderGroupedSuggestionList(stdout, this.groupedForRender, this.selectedIndex, this.options, this.hadSuggestionsLastRender)
+      }
+      else {
+        shown = renderSuggestionList(stdout, this.suggestions, this.selectedIndex, this.options, this.hadSuggestionsLastRender)
+      }
       this.hadSuggestionsLastRender = shown
     }
 

@@ -1,4 +1,4 @@
-import type { CompletionItem, Shell } from '../types'
+import type { CompletionGroup, CompletionItem, CompletionResults, Shell } from '../types'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -11,6 +11,35 @@ export class CompletionProvider {
   private lastCacheUpdate = 0
 
   constructor(private shell: Shell) {}
+
+  /**
+   * Find the nearest directory (from cwd walking up) that contains a package.json
+   */
+  private findNearestPackageDir(cwd: string): string | null {
+    try {
+      let dir = cwd
+      if (!dir || typeof dir !== 'string')
+        return null
+      while (true) {
+        const pkgPath = resolve(dir, 'package.json')
+        if (existsSync(pkgPath))
+          return dir
+        const parent = dirname(dir)
+        if (!parent || parent === dir)
+          break
+        dir = parent
+      }
+    }
+    catch {}
+    // Fallback to project root if it contains a package.json
+    try {
+      const root = this.getProjectRoot()
+      if (existsSync(resolve(root, 'package.json')))
+        return root
+    }
+    catch {}
+    return null
+  }
 
   /**
    * Get command completions for a given prefix
@@ -39,9 +68,8 @@ export class CompletionProvider {
       }
     }
 
-    // Apply maxSuggestions limit here to ensure builtins are prioritized
-    const maxSuggestions = this.shell.config.completion?.maxSuggestions || 10
-    return result.slice(0, maxSuggestions)
+    // Do not apply maxSuggestions here; allow plugins to merge first and let the shell enforce limits
+    return result
   }
 
   /**
@@ -86,6 +114,96 @@ export class CompletionProvider {
       this.commandCache.set(cacheKey, list)
       this.lastCacheUpdate = now
       return list
+    }
+    catch {
+      return []
+    }
+  }
+
+  /**
+   * Read nearest package.json and return bin names (object keys or package name if bin is string)
+   */
+  private getPackageJsonBinNames(cwd: string): string[] {
+    const tryRead = (pkgDir: string): string[] => {
+      try {
+        const pkgPath = resolve(pkgDir, 'package.json')
+        const raw = readFileSync(pkgPath, 'utf8')
+        const json = JSON.parse(raw)
+        const bin = (json as any).bin
+        if (!bin)
+          return []
+        if (typeof bin === 'string') {
+          const name = typeof (json as any).name === 'string' && (json as any).name ? (json as any).name : undefined
+          return name ? [name] : []
+        }
+        if (typeof bin === 'object' && bin)
+          return Object.keys(bin)
+        return []
+      }
+      catch {
+        return []
+      }
+    }
+
+    try {
+      let dir = cwd
+      if (!dir || typeof dir !== 'string')
+        return []
+      while (true) {
+        const names = tryRead(dir)
+        if (names.length)
+          return names
+        const parent = dirname(dir)
+        if (!parent || parent === dir)
+          break
+        dir = parent
+      }
+    }
+    catch {}
+
+    try {
+      return tryRead(this.getProjectRoot())
+    }
+    catch {
+      return []
+    }
+  }
+
+  /**
+   * Read nearest package.json and return files array entries (strings only)
+   */
+  private getPackageJsonFiles(cwd: string): string[] {
+    const tryRead = (pkgDir: string): string[] => {
+      try {
+        const pkgPath = resolve(pkgDir, 'package.json')
+        const raw = readFileSync(pkgPath, 'utf8')
+        const json = JSON.parse(raw)
+        const files = Array.isArray((json as any).files) ? (json as any).files.filter((v: any) => typeof v === 'string') : []
+        return files
+      }
+      catch {
+        return []
+      }
+    }
+
+    try {
+      let dir = cwd
+      if (!dir || typeof dir !== 'string')
+        return []
+      while (true) {
+        const list = tryRead(dir)
+        if (list.length)
+          return list
+        const parent = dirname(dir)
+        if (!parent || parent === dir)
+          break
+        dir = parent
+      }
+    }
+    catch {}
+
+    try {
+      return tryRead(this.getProjectRoot())
     }
     catch {
       return []
@@ -158,6 +276,71 @@ export class CompletionProvider {
           out.push(`${e.name}/`)
       }
       return out
+    }
+    catch {
+      return []
+    }
+  }
+
+  /**
+   * List locally installed binaries in node_modules/.bin relative to current cwd and project root
+   */
+  private getLocalNodeBinCommands(): string[] {
+    try {
+      const names = new Set<string>()
+      const seenDirs = new Set<string>()
+
+      // Walk up from cwd to root, collecting node_modules/.bin
+      try {
+        let dir = this.shell.cwd
+        if (dir && typeof dir === 'string') {
+          while (true) {
+            const binDir = resolve(dir, 'node_modules/.bin')
+            if (!seenDirs.has(binDir)) {
+              seenDirs.add(binDir)
+              try {
+                const entries = readdirSync(binDir, { withFileTypes: true })
+                for (const e of entries) {
+                  if (e.isDirectory()) continue
+                  const n = e.name
+                  if (!n || n.startsWith('.')) continue
+                  names.add(n)
+                }
+              }
+              catch {
+                // ignore
+              }
+            }
+            const parent = dirname(dir)
+            if (!parent || parent === dir)
+              break
+            dir = parent
+          }
+        }
+      }
+      catch {
+        // ignore
+      }
+
+      // Also include project root node_modules/.bin for repo-root scripts
+      try {
+        const repoBin = resolve(this.getProjectRoot(), 'node_modules/.bin')
+        if (!seenDirs.has(repoBin)) {
+          seenDirs.add(repoBin)
+          const entries = readdirSync(repoBin, { withFileTypes: true })
+          for (const e of entries) {
+            if (e.isDirectory()) continue
+            const n = e.name
+            if (!n || n.startsWith('.')) continue
+            names.add(n)
+          }
+        }
+      }
+      catch {
+        // ignore
+      }
+
+      return Array.from(names)
     }
     catch {
       return []
@@ -424,10 +607,13 @@ export class CompletionProvider {
       default:
         return []
     }
+
+    // Fallback
+    return []
   }
 
   // Bun CLI completions inspired by official Bun shell completion scripts
-  private getBunArgCompletions(tokens: string[], last: string): string[] {
+  private getBunArgCompletions(tokens: string[], last: string): CompletionResults {
     // tokens[0] === 'bun'
     const subcommands = [
       'run',
@@ -508,74 +694,89 @@ export class CompletionProvider {
     // Subcommand-specific flags and fallbacks
     switch (sub) {
       case 'run': {
-        const flags = [
-          '--bun',
-          '-b',
-          '--cwd',
-          '--config',
-          '-c',
-          '--env-file',
-          '--extension-order',
-          '--jsx-factory',
-          '--jsx-fragment',
-          '--jsx-import-source',
-          '--jsx-runtime',
-          '--preload',
-          '-r',
-          '--main-fields',
-          '--no-summary',
-          '--version',
-          '-v',
-          '--revision',
-          '--tsconfig-override',
-          '--define',
-          '-d',
-          '--external',
-          '-e',
-          '--loader',
-          '-l',
-          '--packages',
-          '--origin',
-          '-u',
-          '--port',
-          '-p',
-          '--smol',
-          '--minify',
-          '--minify-syntax',
-          '--minify-whitespace',
-          '--minify-identifiers',
-          '--no-macros',
-          '--target',
-          '--inspect',
-          '--inspect-wait',
-          '--inspect-brk',
-          '--hot',
-          '--watch',
-          '--no-install',
-          '--install',
-          '-i',
-          '--prefer-offline',
-          '--prefer-latest',
-          '--silent',
-          '--dump-environment-variables',
-          '--dump-limits',
-        ]
-        if (last.startsWith('-'))
+        // If completing flags for `bun run -...`, return flag list flat
+        if (last.startsWith('-')) {
+          const flags = [
+            '--watch',
+            '--hot',
+            '--smol',
+            '--bun',
+            '--inspect',
+            '--inspect-wait',
+            '--inspect-brk',
+            '--loader',
+            '-l',
+            '--jsx-runtime',
+            '--backend',
+            '--target',
+            '--sourcemap',
+            '--format',
+            '--define',
+            '-d',
+            '--external',
+            '-e',
+          ]
           return flags.filter(f => f.startsWith(last))
+        }
 
-        // Suggest package.json scripts and files
-        const cwdFlagIdx = tokens.findIndex(t => t === '--cwd')
-        const cwdValueRaw = cwdFlagIdx !== -1 ? tokens[cwdFlagIdx + 1] : undefined
-        const unquote = (s?: string) => s?.replace(/^['"]|['"]$/g, '')
-        const effectiveCwd = unquote(cwdValueRaw) || this.shell.cwd
-        const scripts = this.getPackageJsonScripts(effectiveCwd)
-        const scriptMatches = scripts.filter(s => s.startsWith(last) || last === '')
-        // Prioritize scripts; only include files when user typed a path-like prefix
-        const looksLikePath = /[/.]/.test(last)
-        if (scriptMatches.length && !looksLikePath)
-          return scriptMatches
-        const files = this.getFileCompletions(last)
-        return [...scriptMatches, ...files]
+        // Otherwise, return grouped results: scripts, binaries, files
+        const scripts = this.getPackageJsonScripts(this.shell.cwd)
+        const caseSensitive = this.shell.config.completion?.caseSensitive ?? false
+        const match = (s: string) => (last === '')
+          || (caseSensitive ? s.startsWith(last) : s.toLowerCase().startsWith(last.toLowerCase()))
+        let scriptMatches = scripts.filter(match)
+        // For empty prefix, prioritize common scripts first, then alphabetical
+        if (last === '') {
+          const preferred = ['dev', 'start', 'build', 'test', 'lint']
+          const prefSet = new Set(preferred)
+          const pref = scriptMatches.filter(s => prefSet.has(s))
+          const rest = scriptMatches.filter(s => !prefSet.has(s)).sort((a, b) => a.localeCompare(b))
+          scriptMatches = [...pref, ...rest]
+        }
+
+        // Binaries: include package.json bin names and local node binaries from node_modules/.bin
+        const pkgBins = this.getPackageJsonBinNames(this.shell.cwd)
+        const localBins = this.getLocalNodeBinCommands()
+        const binSet = new Set<string>([...pkgBins, ...localBins])
+        // Apply prefix filtering with case-sensitivity and remove any that duplicate script names
+        const scriptSet = new Set<string>(scripts)
+        const binMatches = Array.from(binSet)
+          .filter(n => match(n))
+          .filter(n => !scriptSet.has(n))
+          .sort((a, b) => a.localeCompare(b))
+
+        // Files: show when empty prefix (list CWD) or when prefix is path-like; hide for non-empty non-path
+        const isPathLike = last.includes('/')
+          || last.startsWith('./')
+          || last.startsWith('../')
+          || last.startsWith('/')
+          || last.startsWith('~')
+        let files: string[] = []
+        if (isPathLike) {
+          files = this.getFileCompletions(last)
+        }
+        else if (last === '') {
+          try {
+            const entries = readdirSync(this.shell.cwd, { withFileTypes: true })
+            files = entries
+              .filter(e => !e.name.startsWith('.'))
+              .map(e => (e.isDirectory() ? `${e.name}/` : e.name))
+              .sort((a, b) => a.localeCompare(b))
+          }
+          catch {
+            files = []
+          }
+        }
+
+        const groups: CompletionGroup[] = []
+        if (scriptMatches.length)
+          groups.push({ title: 'scripts', items: scriptMatches })
+        if (binMatches.length)
+          groups.push({ title: 'binaries', items: binMatches })
+        if (files.length)
+          groups.push({ title: 'files', items: files })
+
+        return groups.length ? groups : []
       }
       case 'build': {
         const flags = [
@@ -805,27 +1006,46 @@ export class CompletionProvider {
       }
     }
 
-    // 1) Try effective cwd
-    let scripts = tryRead(cwd)
-    if (scripts.length)
-      return scripts
-
-    // 2) Fall back to project root using helper for consistency
-    const projectRoot = this.getProjectRoot()
-    scripts = tryRead(projectRoot)
-    if (scripts.length)
-      return scripts
-
+    // Walk up from cwd to filesystem root and return the first package.json scripts found
+    try {
+      let dir = cwd
+      // Protect against empty cwd
+      if (!dir || typeof dir !== 'string')
+        return []
+      while (true) {
+        const scripts = tryRead(dir)
+        if (scripts.length)
+          return scripts
+        const parent = dirname(dir)
+        if (!parent || parent === dir)
+          break
+        dir = parent
+      }
+    }
+    catch {
+      // ignore
+    }
+    // Fallback: try the project root (repo root) as a last resort for tests and monorepos
+    try {
+      const fallback = this.getProjectRoot()
+      const scripts = tryRead(fallback)
+      if (scripts.length)
+        return scripts
+    }
+    catch {
+      // ignore
+    }
     return []
   }
 
   /**
    * Public API used by the shell to get completions at a cursor position
    */
-  public getCompletions(input: string, cursor: number): string[] {
+  public getCompletions(input: string, cursor: number): CompletionResults {
     try {
-      if (!this.shell.config.completion?.enabled)
-        return []
+      // Default to enabled unless explicitly set to false
+      if (this.shell.config.completion?.enabled === false)
+        return [] as string[]
       const before = input.slice(0, Math.max(0, cursor))
       const tokens = this.tokenize(before)
       if (tokens.length === 0)
@@ -846,7 +1066,7 @@ export class CompletionProvider {
       // Special-case: provide rich completions for popular external tools
       if (cmd === 'bun') {
         const bunComps = this.getBunArgCompletions(tokens, last)
-        if (bunComps.length)
+        if (Array.isArray(bunComps) && bunComps.length)
           return bunComps
       }
 
@@ -854,7 +1074,7 @@ export class CompletionProvider {
       return this.getFileCompletions(last)
     }
     catch {
-      return []
+      return [] as string[]
     }
   }
 
@@ -882,7 +1102,16 @@ export class CompletionProvider {
       const seen = new Set<string>()
 
       for (const candidate of candidates) {
-        const attempt = { dir: dirname(candidate), base: basename(candidate), rawBaseDir: dirname(rawPrefix) }
+        // Determine which directory to list and the base filename prefix:
+        // - If rawPrefix ends with '/', list entries inside that directory (base='').
+        // - If rawPrefix is empty, list entries in cwd (base='').
+        // - Otherwise, list entries in dirname(candidate) and match basename(candidate).
+        const listInside = rawPrefix.endsWith('/') || rawPrefix === ''
+        const attempt = {
+          dir: listInside ? candidate : dirname(candidate),
+          base: listInside ? '' : basename(candidate),
+          rawBaseDir: dirname(rawPrefix),
+        }
         let files
         try {
           files = readdirSync(attempt.dir, { withFileTypes: true })
@@ -1014,8 +1243,16 @@ export class CompletionProvider {
 
   // Get detailed completion items (for future use with rich completions)
   getDetailedCompletions(input: string, cursor: number): CompletionItem[] {
-    const completions = this.getCompletions(input, cursor)
-    return completions.map(text => ({
+    const results = this.getCompletions(input, cursor)
+    const isGroupArray = (v: any): v is CompletionGroup[] => Array.isArray(v) && v.every(g => g && typeof g.title === 'string' && Array.isArray(g.items))
+    let flat: string[]
+    if (isGroupArray(results)) {
+      flat = results.flatMap(g => g.items).map(v => (typeof v === 'string' ? v : (v as CompletionItem).text)).filter((s): s is string => typeof s === 'string')
+    }
+    else {
+      flat = (results as any[]).map(v => (typeof v === 'string' ? v : (v as CompletionItem).text)).filter((s): s is string => typeof s === 'string')
+    }
+    return flat.map(text => ({
       text,
       type: this.getCompletionType(text),
       description: this.getCompletionDescription(text),

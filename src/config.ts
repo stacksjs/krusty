@@ -24,9 +24,9 @@ export const defaultConfig: KrustyConfig = {
   },
   prompt: {
     // Default prompt focuses on path, git status, and runtime module info (e.g. bun)
-    // Example: "~/Code/krusty ⎇ main [●1○1?1] via 🧅 1.2.21 ❯"
+    // Example: "~/Code/krusty ⎇ main [●1○1?1] via 🐰 1.2.21 ❯"
     // Note: we keep this single-line for robust cursor handling
-    format: '{path}{git} {modules} {symbol} ',
+    format: '\u001B[1m{path}\u001B[0m\u001B[1m{git}\u001B[0m \u001B[1m{modules}\u001B[0m \u001B[1m{symbol}\u001B[0m ',
     showGit: true,
     showTime: false,
     // Hide user/host by default to match the expected style

@@ -764,14 +764,14 @@ export class KrustyShell implements Shell {
     return this.historyManager.search(query)
   }
 
-  getCompletions(input: string, cursor: number): string[] {
+  getCompletions(input: string, cursor: number): import('./types').CompletionResults {
     try {
       // Execute completion:before hooks
       this.hookManager.executeHooks('completion:before', { input, cursor })
         .catch(err => this.log.error('completion:before hook error:', err))
 
-      // Get completions from the completion provider (keeping existing logic for now)
-      let completions: string[] = []
+      // Get completions from the completion provider
+      let completions: any = []
 
       try {
         completions = this.completionProvider.getCompletions(input, cursor)
@@ -780,21 +780,93 @@ export class KrustyShell implements Shell {
         this.log.error('Error in completion provider:', error)
       }
 
-      // Add plugin completions if available
+      // Detect grouped results: array of objects with title and items
+      const isGroupArray = (v: any): v is Array<{ title: string, items: any[] }> =>
+        Array.isArray(v) && v.every(g => g && typeof g.title === 'string' && Array.isArray(g.items))
+
+      // Always collect plugin completions (flat strings)
+      let pluginCompletions: string[] = []
       if (this.pluginManager?.getPluginCompletions) {
         try {
-          const pluginCompletions = this.pluginManager.getPluginCompletions(input, cursor) || []
-          completions = [...new Set([...completions, ...pluginCompletions])] // Remove duplicates
+          pluginCompletions = this.pluginManager.getPluginCompletions(input, cursor) || []
         }
         catch (error) {
           this.log.error('Error getting plugin completions:', error)
         }
       }
 
+      if (isGroupArray(completions)) {
+        // Normalize and merge grouped results by title; dedupe items within each group.
+        const normalizeTitle = (t: string) => (t || '').trim().toLowerCase()
+        const getText = (v: any): string =>
+          (v && typeof v === 'object' && typeof v.text === 'string') ? v.text : String(v)
+
+        const groupMap = new Map<string, { title: string, items: any[] }>()
+        for (const g of completions) {
+          const norm = normalizeTitle(g.title)
+          const existing = groupMap.get(norm)
+          const incomingItems = Array.isArray(g.items) ? g.items : []
+          if (!existing) {
+            // Start a new group; copy and dedupe items
+            const seen = new Set<string>()
+            const items: any[] = []
+            for (const it of incomingItems) {
+              const key = getText(it)
+              if (!key) continue
+              if (!seen.has(key)) { seen.add(key); items.push(it) }
+            }
+            groupMap.set(norm, { title: (g.title || '').trim(), items })
+          }
+          else {
+            // Merge into existing with dedupe by text
+            const seen = new Set(existing.items.map(getText))
+            for (const it of incomingItems) {
+              const key = getText(it)
+              if (!key) continue
+              if (!seen.has(key)) { seen.add(key); existing.items.push(it) }
+            }
+          }
+        }
+
+        // Optionally append plugin flat completions as their own group to avoid interfering with core groups
+        if (pluginCompletions.length > 0) {
+          const norm = normalizeTitle('plugins')
+          const existing = groupMap.get(norm)
+          if (!existing) {
+            groupMap.set(norm, { title: 'plugins', items: Array.from(new Set(pluginCompletions)) })
+          }
+          else {
+            const seen = new Set(existing.items.map(getText))
+            for (const s of pluginCompletions) {
+              if (!seen.has(s)) { seen.add(s); existing.items.push(s) }
+            }
+          }
+        }
+
+        const merged = Array.from(groupMap.values())
+
+        if (this.config.verbose) {
+          try {
+            const titles = merged.map(g => g.title).join(', ')
+            this.log.debug?.(`completion groups merged: [${titles}]`)
+          }
+          catch {}
+        }
+
+        this.hookManager.executeHooks('completion:after', { input, cursor, completions: merged })
+          .catch(err => this.log.error('completion:after hook error:', err))
+        return merged
+      }
+
+      // Merge flat plugin completions into flat core list
+      if (pluginCompletions.length > 0) {
+        completions = [...new Set([...(Array.isArray(completions) ? completions : []), ...pluginCompletions])]
+      }
+
       // Filter out empty strings and sort alphabetically (case-insensitive)
       const allSorted = completions
-        .filter(c => c && c.trim().length > 0)
-        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .filter((c: string) => c && c.trim().length > 0)
+        .sort((a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
       // Enforce max suggestions limit
       const max = this.config.completion?.maxSuggestions ?? 10
@@ -809,14 +881,31 @@ export class KrustyShell implements Shell {
           ? s.startsWith(prefix)
           : s.toLowerCase().startsWith(prefix.toLowerCase())
 
-        // Check if we have at least one builtin that matches
-        const hasMatchingBuiltin = Array.from(this.builtins.keys()).some(startsWith)
-        if (!hasMatchingBuiltin) {
-          // Add the first matching builtin if none exist
-          const firstBuiltin = Array.from(this.builtins.keys()).find(startsWith)
-          if (firstBuiltin && !allSorted.includes(firstBuiltin)) {
-            completions = [firstBuiltin, ...allSorted].slice(0, max)
+        const matchingBuiltins = Array.from(this.builtins.keys()).filter(startsWith)
+        if (matchingBuiltins.length) {
+          // Merge all matching builtins into the list
+          let merged = [...completions]
+          for (const b of matchingBuiltins) {
+            if (!merged.includes(b)) merged.push(b)
           }
+          // Clean and sort alphabetically
+          merged = merged
+            .filter((c: string) => c && c.trim().length > 0)
+            .sort((a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+          // If over max, include all matching builtins first, then fill remaining with others
+          if (merged.length > max) {
+            const builtinSet = new Set(matchingBuiltins)
+            const builtinItems = merged.filter(i => builtinSet.has(i))
+            const otherItems = merged.filter(i => !builtinSet.has(i))
+            const remaining = Math.max(0, max - builtinItems.length)
+            merged = builtinItems.concat(otherItems.slice(0, remaining))
+          }
+
+          // Always return results sorted alphabetically (case-insensitive)
+          merged = merged.sort((a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+          completions = merged
         }
       }
 

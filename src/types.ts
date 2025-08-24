@@ -316,8 +316,8 @@ export interface Shell {
   addToHistory: (command: string) => void
   searchHistory: (query: string) => string[]
 
-  // Completion methods
-  getCompletions: (input: string, cursor: number) => string[]
+  // Completion methods (supports grouped results)
+  getCompletions: (input: string, cursor: number) => CompletionResults
 
   // Job management methods
   jobs: Array<{
@@ -390,6 +390,33 @@ export interface CompletionItem {
   description?: string
   type: 'command' | 'file' | 'directory' | 'alias' | 'builtin' | 'variable'
 }
+
+/**
+ * Grouped completion support (backward-compatible)
+ *
+ * These types allow providers/managers to optionally return grouped
+ * suggestion sets alongside the existing flat string[] API. No existing
+ * interfaces are changed; integration code can detect these shapes at
+ * runtime and render accordingly.
+ */
+export interface CompletionGroup<Item = string | CompletionItem> {
+  /** Group title to display as a header, e.g. "Builtins" */
+  title: string
+  /** Items belonging to this group */
+  items: Item[]
+  /** Optional hint/description for the group header */
+  description?: string
+}
+
+/**
+ * Union of all supported completion result shapes. Existing code that
+ * expects string[] continues to work. New grouped results can be used
+ * by updated consumers that check for array-of-groups.
+ */
+export type CompletionResults =
+  | string[]
+  | CompletionItem[]
+  | CompletionGroup<string | CompletionItem>[]
 
 // Module system types
 export interface ModuleContext {

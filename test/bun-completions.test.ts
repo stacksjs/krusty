@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
 
+// Helper to safely treat CompletionResults as string[] when we expect flat results
+function flatStrings(out: any): string[] {
+  if (Array.isArray(out) && out.length && typeof out[0] === 'object' && 'title' in out[0])
+    return []
+  return out as string[]
+}
+
 describe('Bun CLI completions', () => {
   let shell: KrustyShell
 
@@ -70,10 +77,19 @@ describe('Bun CLI completions', () => {
 
   it('suggests package.json scripts for bun run', () => {
     const input = 'bun run '
-    const out = shell.getCompletions(input, input.length)
-    // Uses this repo's package.json scripts
-    expect(out).toContain('build')
-    expect(out).toContain('test')
+    const out: any = shell.getCompletions(input, input.length)
+    // Accept grouped or flat results
+    if (Array.isArray(out) && out.length && typeof out[0] === 'object' && 'title' in out[0]) {
+      const scriptsGroup = out.find((g: any) => g && g.title === 'scripts')
+      expect(scriptsGroup).toBeTruthy()
+      expect(scriptsGroup.items).toContain('build')
+      expect(scriptsGroup.items).toContain('test')
+    }
+    else {
+      // Back-compat: flat results
+      expect(out).toContain('build')
+      expect(out).toContain('test')
+    }
   })
 
   it('suggests loader values for --loader', () => {

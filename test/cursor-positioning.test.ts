@@ -50,7 +50,7 @@ describe('Cursor Positioning Tests', () => {
     }
 
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
-    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🧅 1.2.21❯ '
+    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🐰 1.2.21❯ '
 
     console.log('=== Testing cursor positioning ===')
     console.log(`Prompt length: ${prompt.length}`)
@@ -121,7 +121,7 @@ describe('Cursor Positioning Tests', () => {
     }
 
     const autoSuggestInput = new AutoSuggestInput(mockShell as any)
-    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🧅 1.2.21❯ '
+    const prompt = '~/Code/krusty ⎇ main [●1○12?11] via 🐰 1.2.21❯ '
 
     console.log('=== Testing updateDisplay positioning ===')
     console.log(`Prompt: ${JSON.stringify(prompt)}`)
