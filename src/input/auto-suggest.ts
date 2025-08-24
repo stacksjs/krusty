@@ -100,6 +100,15 @@ export class AutoSuggestInput {
     if (direction === 'left' || direction === 'right') {
       if (len <= 0)
         return false
+      // Simple wrap at boundaries to avoid getting stuck on short last rows
+      if (direction === 'right' && offset === len - 1) {
+        this.selectedIndex = first
+        return true
+      }
+      if (direction === 'left' && offset === 0) {
+        this.selectedIndex = first + len - 1
+        return true
+      }
       const { columns } = computeLayout(curGroup)
       const row = Math.floor(offset / columns)
       const col = offset % columns
