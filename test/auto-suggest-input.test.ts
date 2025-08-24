@@ -148,6 +148,35 @@ describe('AutoSuggestInput', () => {
       expect(mockOutput).toContain('bun run')
       expect(mockOutput).not.toContain('[bun run]')
     })
+
+    it('renders flat suggestions vertically (no space-separated dump)', () => {
+      const prompt = '~/test ❯ '
+
+      // Open flat suggestions list manually (non-grouped)
+      autoSuggestInput['currentInput'] = 'bun '
+      autoSuggestInput['cursorPosition'] = 4
+      autoSuggestInput['suggestions'] = ['run', 'build', 'test']
+      autoSuggestInput['selectedIndex'] = 1
+      autoSuggestInput['isShowingSuggestions'] = true
+      autoSuggestInput['reverseSearchActive'] = false
+      autoSuggestInput['historyBrowseActive'] = false
+      // Ensure grouped mode not active
+      autoSuggestInput['groupedActive'] = false
+
+      mockOutput = ''
+      autoSuggestInput['updateDisplay'](prompt)
+
+      // Expect each suggestion on its own line below the prompt, not a single inline row
+      const occurrencesRun = (mockOutput.match(/\n\x1B\[2K.*run/g) || []).length
+      const occurrencesBuild = (mockOutput.match(/\n\x1B\[2K.*build/g) || []).length
+      const occurrencesTest = (mockOutput.match(/\n\x1B\[2K.*test/g) || []).length
+      expect(occurrencesRun).toBe(1)
+      expect(occurrencesBuild).toBe(1)
+      expect(occurrencesTest).toBe(1)
+
+      // Should not contain space-joined dump like "run  build  test"
+      expect(mockOutput).not.toContain('run  build  test')
+    })
   })
 
   describe('history navigation integration', () => {

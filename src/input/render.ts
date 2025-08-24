@@ -7,6 +7,8 @@ import { renderHighlighted } from './highlighting'
 // clear exactly that many lines on the next render. This prevents duplicated
 // blocks when the terminal is small or the list shrinks.
 let lastGroupedRenderHeight = 0
+// Track how many lines the last flat suggestion render used
+let lastFlatRenderHeight = 0
 
 // Truncate a string to a given display width while preserving ANSI escape sequences.
 // This avoids cutting in the middle of an escape and prevents style bleed by keeping codes intact.
@@ -201,20 +203,47 @@ export function renderSuggestionList(
 ): boolean {
   if (suggestions.length > 0) {
     const reset = '\x1B[0m'
-    const selColor = options.suggestionColor ?? '\x1B[36m'
-    const items = suggestions.slice(0, options.maxSuggestions ?? 10)
-      .map((s, i) => i === selectedIndex ? `${selColor}${s}${reset}` : `${s}`)
-      .join('  ')
+    // Selected item style: inverted colors for clarity (match grouped style)
+    const selectedBg = '\x1B[47m' // white background
+    const selectedFg = '\x1B[30m' // black text
     const cols = process.stdout.columns ?? 80
-    const toPrint = truncateAnsiToWidth(items, cols)
+
+    const items = suggestions.slice(0, options.maxSuggestions ?? 10)
+    const lines = items.map((s, i) => {
+      const label = truncateAnsiToWidth(s, cols)
+      if (i === selectedIndex)
+        return `${selectedFg}${selectedBg}${label}${reset}`
+      return label
+    })
+
+    // Save cursor, clear previous flat render block, then print the new block
     stdout.write(`\x1B[s`)
-    stdout.write(`\n\x1B[2K${toPrint}\x1B[0m`)
+    if (lastFlatRenderHeight > 0) {
+      for (let i = 0; i < lastFlatRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastFlatRenderHeight}A`)
+    }
+
+    // Write new block below current line, one suggestion per line
+    for (const line of lines)
+      stdout.write(`\n\x1B[2K${line}`)
+    stdout.write(`\x1B[0m`)
     stdout.write(`\x1B[u`)
+
+    lastFlatRenderHeight = lines.length
     return true
   }
   else if (hadSuggestionsLastRender) {
     stdout.write(`\x1B[s`)
-    stdout.write(`\n\x1B[2K`)
+    if (lastFlatRenderHeight > 0) {
+      for (let i = 0; i < lastFlatRenderHeight; i++)
+        stdout.write(`\n\x1B[2K`)
+      stdout.write(`\x1B[${lastFlatRenderHeight}A`)
+      lastFlatRenderHeight = 0
+    }
+    else {
+      stdout.write(`\n\x1B[2K`)
+    }
     stdout.write(`\x1B[u`)
     return false
   }

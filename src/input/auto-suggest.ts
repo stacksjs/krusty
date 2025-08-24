@@ -753,7 +753,8 @@ export class AutoSuggestInput {
               this.selectedIndex = 0
               // Suppress inline overlay while list is open
               this.currentSuggestion = ''
-              if (!this.groupedActive) {
+              // Enable mouse tracking only for grouped layout; flat list clicks are unsupported
+              if (this.groupedActive) {
                 enableMouseTracking()
               }
               this.updateDisplay(prompt)
@@ -833,7 +834,8 @@ export class AutoSuggestInput {
                     this.isShowingSuggestions = true
                     this.isNavigatingSuggestions = true
                     this.selectedIndex = 0
-                    if (!this.groupedActive) {
+                    // Only enable mouse for grouped layout (flat list uses vertical lines, no click map)
+                    if (this.groupedActive) {
                       enableMouseTracking()
                     }
                   }
@@ -1310,22 +1312,47 @@ export class AutoSuggestInput {
       }
       // Case 2: starting a new token (cursor preceded by whitespace)
       else if (/\s$/.test(inputBeforeCursor)) {
-        // Show the full selected completion for the new token
-        this.currentSuggestion = selected
+        // Prefer the suffix relative to the full already-typed input.
+        // This avoids echoing previously typed tokens (e.g., "bun run" suggesting "bun run").
+        if (selected.toLowerCase().startsWith(inputBeforeCursor.toLowerCase())) {
+          this.currentSuggestion = selected.slice(inputBeforeCursor.length)
+        }
+        else {
+          // If the completion doesn't build on the full prefix, show it fully
+          this.currentSuggestion = selected
+        }
       }
       else {
-        // Case 3: we're in the middle of a token - complete the suffix if it matches
+        // Case 3: we're in the middle of a token - prefer suffix relative to the
+        // full input before cursor when prior tokens match the start of the selection.
         const tokens = inputBeforeCursor.trim().split(/\s+/)
         const lastToken = tokens[tokens.length - 1] || ''
+        const beforeLastIdx = inputBeforeCursor.lastIndexOf(lastToken)
+        const basePrefix = beforeLastIdx >= 0 ? inputBeforeCursor.slice(0, beforeLastIdx) : ''
 
-        // Only show suggestion if it starts with the current token
-        if (selected.toLowerCase().startsWith(lastToken.toLowerCase())) {
+        const selLower = selected.toLowerCase()
+        const baseLower = basePrefix.toLowerCase()
+
+        if (basePrefix && selLower.startsWith(baseLower)) {
+          // Selected builds upon the already-typed earlier tokens. Try to complete the current token.
+          const remainingFromBase = selected.slice(basePrefix.length)
+          const remainingLower = remainingFromBase.toLowerCase()
+          // remainingFromBase begins with the selected's current token. If lastToken is a prefix of it,
+          // use the fine-grained suffix from the entire input (avoids echoing prior tokens).
+          if (remainingLower.startsWith(lastToken.toLowerCase())) {
+            this.currentSuggestion = selected.slice(inputBeforeCursor.length)
+          }
+          else {
+            // If it doesn't align at token level, fall back to showing full selected as a correction hint.
+            this.currentSuggestion = selected
+          }
+        }
+        else if (selLower.startsWith(lastToken.toLowerCase())) {
+          // No multi-token alignment, but current token is a prefix of selection
           this.currentSuggestion = selected.slice(lastToken.length)
         }
         else {
-          // For typo-corrections (e.g., 'gti' -> 'git'), still show a suggestion
-          // to indicate the correction. We render the full selection so the user
-          // can accept it via Tab/Enter when list is open.
+          // Typo-correction hint: show full selection
           this.currentSuggestion = selected
         }
       }
