@@ -45,9 +45,9 @@ export class AutoSuggestInput {
   private groupedActive = false
   private groupedForRender: Array<{ title: string, items: Array<string | { text: string }> }> | null = null
   private groupedIndexMap: Array<{ group: number, idx: number }> = []
-  
+
   // Compute group first-index and lengths from current groupedIndexMap
-  private getGroupedBoundaries(): { first: number[]; lengths: number[] } {
+  private getGroupedBoundaries(): { first: number[], lengths: number[] } {
     const groupFirstIndex: number[] = []
     const groupLengths: number[] = []
     for (let i = 0; i < this.groupedIndexMap.length; i++) {
@@ -100,6 +100,7 @@ export class AutoSuggestInput {
     }
     return false
   }
+
   // Vi mode state (only used when keymap === 'vi')
   private viMode: 'insert' | 'normal' = 'insert'
   // Reverse search state
@@ -384,9 +385,17 @@ export class AutoSuggestInput {
             }
             if (picked >= 0) {
               this.selectedIndex = picked
-              this.applySelectedCompletion()
-              this.isShowingSuggestions = false
-              this.isNavigatingSuggestions = false
+              const drilled = this.applySelectedCompletion()
+              if (drilled) {
+                this.updateSuggestions()
+                this.isShowingSuggestions = this.suggestions.length > 0
+                this.isNavigatingSuggestions = this.isShowingSuggestions
+                this.selectedIndex = 0
+              }
+              else {
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+              }
               this.updateSuggestions()
               this.updateDisplay(prompt)
             }
@@ -442,12 +451,22 @@ export class AutoSuggestInput {
           if (key.name === 'return') {
             // If suggestions list is open, accept the selected item instead of executing
             if (this.isShowingSuggestions && this.suggestions.length > 0) {
-              this.applySelectedCompletion()
-              this.isShowingSuggestions = false
-              this.isNavigatingSuggestions = false
-              this.updateSuggestions()
-              disableMouseTracking()
-              this.updateDisplay(prompt)
+              const drilled = this.applySelectedCompletion()
+              // If we selected a directory (ends with '/'), keep list open and show its contents
+              if (drilled) {
+                this.updateSuggestions()
+                this.isShowingSuggestions = this.suggestions.length > 0
+                this.isNavigatingSuggestions = this.isShowingSuggestions
+                this.selectedIndex = 0
+                this.updateDisplay(prompt)
+              }
+              else {
+                this.isShowingSuggestions = false
+                this.isNavigatingSuggestions = false
+                this.updateSuggestions()
+                disableMouseTracking()
+                this.updateDisplay(prompt)
+              }
               return
             }
             // If reverse search active, accept current match
@@ -1234,12 +1253,13 @@ export class AutoSuggestInput {
   // Apply the currently selected completion item even when no inline suffix is visible.
   // If the cursor is at a token boundary (preceded by whitespace), insert the full selection.
   // Otherwise, replace the last token before the cursor with the full selection.
-  private applySelectedCompletion() {
+  private applySelectedCompletion(): boolean {
     if (!this.suggestions || this.suggestions.length === 0)
-      return
+      return false
     const selected = this.suggestions[this.selectedIndex] || ''
     if (!selected)
-      return
+      return false
+    const selectedIsDir = selected.endsWith('/')
 
     const before = this.currentInput.slice(0, this.cursorPosition)
     const after = this.currentInput.slice(this.cursorPosition)
@@ -1249,7 +1269,7 @@ export class AutoSuggestInput {
       this.currentInput = before + selected + after
       this.cursorPosition = before.length + selected.length
       this.currentSuggestion = ''
-      return
+      return selectedIsDir
     }
 
     // Replace the last token before the cursor
@@ -1266,6 +1286,7 @@ export class AutoSuggestInput {
       this.cursorPosition = selected.length
     }
     this.currentSuggestion = ''
+    return selectedIsDir
   }
 
   private lastDisplayedInput = ''
