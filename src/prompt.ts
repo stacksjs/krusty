@@ -145,8 +145,8 @@ export class PromptRenderer {
       segments.push(`${this.dim('[')}${inside}${this.dim(']')}`)
     }
 
-    // Always prefix with a space and the word 'on' to ensure spacing and wording
-    return segments.length > 0 ? ` on ${segments.join(' ')}` : ''
+    // Return only the git segments; wording like 'on' should be handled in the format string
+    return segments.length > 0 ? `${segments.join(' ')}` : ''
   }
 
   private renderSymbol(exitCode: number): string {
