@@ -404,7 +404,7 @@ export class PromptRenderer {
       parts.push(`${minutes}m`)
     parts.push(`${seconds}s`)
     const numeric = parts.join('')
-    const numColored = this.colorize(numeric, this.config.theme?.colors?.warning || '#FFD700')
+    const numColored = this.boldColorize(numeric, this.config.theme?.colors?.warning || '#FFD700')
     return `took ${numColored}`
   }
 }
