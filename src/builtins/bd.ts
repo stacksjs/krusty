@@ -15,10 +15,8 @@ export const bdCommand: BuiltinCommand = {
 
       const scriptCheck = await shell.executeCommand('sh', ['-c', 'test -f package.json && jq -e .scripts.dev package.json >/dev/null 2>&1'])
       if (scriptCheck.exitCode === 0) {
-        const cmd = ['bun', 'run', 'dev']
-        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('bun', ['run', 'dev'])
-        return { exitCode: res.exitCode, stdout: echo + (res.stdout || ''), stderr: res.exitCode === 0 ? '' : (res.stderr || 'bd: dev failed\n'), duration: performance.now() - start }
+        return { exitCode: res.exitCode, stdout: res.stdout || '', stderr: res.exitCode === 0 ? '' : (res.stderr || 'bd: dev failed\n'), duration: performance.now() - start }
       }
 
       return { exitCode: 1, stdout: '', stderr: 'bd: no dev script found\n', duration: performance.now() - start }

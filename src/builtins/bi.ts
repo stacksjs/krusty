@@ -13,12 +13,10 @@ export const biCommand: BuiltinCommand = {
       if (hasBun.exitCode !== 0)
         return { exitCode: 1, stdout: '', stderr: 'bi: bun not found\n', duration: performance.now() - start }
 
-      const cmd = ['bun', 'install', ...args]
-      const echo = `$ ${cmd.join(' ')}\n`
       const res = await shell.executeCommand('bun', ['install', ...args])
       if (res.exitCode === 0)
-        return { exitCode: 0, stdout: echo + (res.stdout || ''), stderr: '', duration: performance.now() - start }
-      return { exitCode: res.exitCode || 1, stdout: echo + (res.stdout || ''), stderr: res.stderr || 'bi: install failed\n', duration: performance.now() - start }
+        return { exitCode: 0, stdout: res.stdout || '', stderr: '', duration: performance.now() - start }
+      return { exitCode: res.exitCode || 1, stdout: res.stdout || '', stderr: res.stderr || 'bi: install failed\n', duration: performance.now() - start }
     }
     finally {
       shell.config.streamOutput = prev

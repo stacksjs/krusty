@@ -141,7 +141,8 @@ export class PromptRenderer {
     }
 
     if (statusParts.length > 0) {
-      segments.push(`[${statusParts.join('')}]`)
+      const inside = statusParts.join('')
+      segments.push(`${this.dim('[')}${inside}${this.dim(']')}`)
     }
 
     // Always prefix with a space and the word 'on' to ensure spacing and wording
@@ -299,6 +300,10 @@ export class PromptRenderer {
       return `\x1B[1m${text}\x1B[0m`
     const ansiColor = this.hexToAnsi(color)
     return `\x1B[${ansiColor};1m${text}\x1B[0m`
+  }
+
+  private dim(text: string): string {
+    return `\x1B[2m${text}\x1B[22m`
   }
 
   formatSegment(segment: PromptSegment): string {

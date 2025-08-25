@@ -12,12 +12,10 @@ export const blCommand: BuiltinCommand = {
       // Check for package.json lint script first
       const hasLintScript = await shell.executeCommand('sh', ['-c', 'test -f package.json && jq -e .scripts.lint package.json >/dev/null 2>&1'])
       if (hasLintScript.exitCode === 0) {
-        const cmd = ['bun', 'run', 'lint', ...args]
-        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('bun', ['run', 'lint', ...args])
         return {
           exitCode: res.exitCode,
-          stdout: echo + (res.stdout || ''),
+          stdout: res.stdout || '',
           stderr: res.stderr,
           duration: performance.now() - start,
         }
@@ -26,12 +24,10 @@ export const blCommand: BuiltinCommand = {
       // Check for pickier
       const hasPickier = await shell.executeCommand('sh', ['-c', 'command -v pickier >/dev/null 2>&1'])
       if (hasPickier.exitCode === 0) {
-        const cmd = ['pickier', '.', ...args]
-        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('pickier', ['.', ...args])
         return {
           exitCode: res.exitCode,
-          stdout: echo + (res.stdout || ''),
+          stdout: res.stdout || '',
           stderr: res.stderr,
           duration: performance.now() - start,
         }
@@ -40,12 +36,10 @@ export const blCommand: BuiltinCommand = {
       // Fallback to eslint if available
       const hasEslint = await shell.executeCommand('sh', ['-c', 'command -v eslint >/dev/null 2>&1'])
       if (hasEslint.exitCode === 0) {
-        const cmd = ['eslint', '.', ...args]
-        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('eslint', ['.', ...args])
         return {
           exitCode: res.exitCode,
-          stdout: echo + (res.stdout || ''),
+          stdout: res.stdout || '',
           stderr: res.stderr,
           duration: performance.now() - start,
         }

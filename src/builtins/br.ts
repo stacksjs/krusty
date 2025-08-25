@@ -17,12 +17,10 @@ export const brCommand: BuiltinCommand = {
       const script = args[0] || 'start'
       const scriptArgs = args[0] ? args.slice(1) : []
 
-      const cmd = ['bun', 'run', script, ...scriptArgs]
-      const echo = `$ ${cmd.join(' ')}\n`
       const res = await shell.executeCommand('bun', ['run', script, ...scriptArgs])
       if (res.exitCode === 0)
-        return { exitCode: 0, stdout: echo + (res.stdout || ''), stderr: '', duration: performance.now() - start }
-      return { exitCode: res.exitCode || 1, stdout: echo + (res.stdout || ''), stderr: res.stderr || `br: script '${script}' failed\n`, duration: performance.now() - start }
+        return { exitCode: 0, stdout: res.stdout || '', stderr: '', duration: performance.now() - start }
+      return { exitCode: res.exitCode || 1, stdout: res.stdout || '', stderr: res.stderr || `br: script '${script}' failed\n`, duration: performance.now() - start }
     }
     finally {
       shell.config.streamOutput = prev
