@@ -567,6 +567,10 @@ export class AutoSuggestInput {
             }
             const expanded = this.expandHistory(this.currentInput)
             const result = expanded.trim()
+            // Before executing, explicitly clear any inline suggestions and re-render
+            // to avoid leaving a stale hint on the line (e.g., after completing a dir).
+            this.suppressSuggestions()
+            this.updateDisplay(prompt)
             cleanup()
             stdout.write('\n')
             resolve(result || null)
