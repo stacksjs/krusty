@@ -242,6 +242,48 @@ describe('AutoSuggestInput', () => {
       ;(inp as any).setInputForTesting('ca', undefined)
       expect((inp as any)['historyBrowseActive']).toBe(false)
     })
+
+    it('Up on empty prompt recalls last command; Down clears back to empty', () => {
+      const shell = {
+        ...mockShell,
+        history: ['echo 1', 'ls -la'],
+      } as any
+      const inp = new AutoSuggestInput(shell)
+
+      // Empty prompt
+      ;(inp as any).setInputForTesting('', undefined)
+      expect((inp as any).getCurrentInputForTesting()).toBe('')
+      expect((inp as any)['historyBrowseActive']).toBe(false)
+
+      // Up should recall most recent command
+      ;(inp as any).historyUpForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('ls -la')
+      expect((inp as any)['historyBrowseActive']).toBe(true)
+
+      // Down should clear back to empty and exit browsing
+      ;(inp as any).historyDownForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('')
+      expect((inp as any)['historyBrowseActive']).toBe(false)
+    })
+
+    it('Down on empty prompt when not browsing keeps empty and does not open suggestions', () => {
+      const shell = {
+        ...mockShell,
+        getCompletions: mock(() => ['one', 'two']),
+        history: ['foo', 'bar'],
+      } as any
+      const inp = new AutoSuggestInput(shell)
+
+      // Ensure empty input and not browsing
+      ;(inp as any).setInputForTesting('', undefined)
+      expect((inp as any)['historyBrowseActive']).toBe(false)
+
+      // Trigger a Down navigation (no-op that should keep empty)
+      ;(inp as any).historyDownForTesting()
+      expect((inp as any).getCurrentInputForTesting()).toBe('')
+      // Should not have opened suggestions as a side-effect
+      expect((inp as any)['isShowingSuggestions']).toBe(false)
+    })
   })
 
   describe('character input simulation', () => {

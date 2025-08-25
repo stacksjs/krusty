@@ -170,7 +170,11 @@ export const readCommand: BuiltinCommand = {
         const readLine = () => new Promise<string>((resolve) => {
           const onData = (char: string) => {
             if (char === '\n' || char === '\r' || char === '\u0004') {
-              process.stdin.setRawMode(false)
+              try {
+                if (typeof (process.stdin as any).setRawMode === 'function' && (process.stdin as any).isTTY)
+                  (process.stdin as any).setRawMode(false)
+              }
+              catch {}
               process.stdin.off('data', onData)
               rl.close()
               resolve(input)
@@ -188,8 +192,11 @@ export const readCommand: BuiltinCommand = {
             // Add character to input
             input += char
           }
-
-          process.stdin.setRawMode(true)
+          try {
+            if (typeof (process.stdin as any).setRawMode === 'function' && (process.stdin as any).isTTY)
+              (process.stdin as any).setRawMode(true)
+          }
+          catch {}
           process.stdin.on('data', onData)
         })
 
