@@ -3,9 +3,16 @@
 exports[`snapshot: help and type help (no args) output 1`] = `
 "Built-in commands:
 alias        Define or display aliases
+b            Run build via bun run build
+bb           Run build script via bun run build
+bd           Run dev via bun run dev
+bf           Format code using pickier (or prettier)
 bg           Resume suspended jobs in the background
+bi           Install dependencies via bun install
+bl           Lint code using pickier (or eslint)
 bookmark     Manage directory bookmarks and navigate quickly
 bm           Manage directory bookmarks and navigate quickly
+br           Run script via bun run (default: start)
 mark         Manage directory bookmarks and navigate quickly
 jump         Manage directory bookmarks and navigate quickly
 builtin      Run a shell builtin explicitly

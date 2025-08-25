@@ -234,6 +234,95 @@ export class KrustyShell implements Shell {
     this.loadHistory()
   }
 
+  /**
+   * Build styled echo for package.json script runs (bun/npm/pnpm/yarn)
+   * Expands nested script references recursively with cycle protection.
+   */
+  private async buildPackageRunEcho(command: any): Promise<string | null> {
+    try {
+      const name = (command?.name || '').toLowerCase()
+      const args: string[] = Array.isArray(command?.args) ? command.args : []
+
+      // Detect package manager script invocation and extract script name
+      let scriptName: string | null = null
+      if (name === 'bun' && args[0] === 'run' && args[1]) {
+        scriptName = args[1]
+      }
+      else if (name === 'npm' && (args[0] === 'run' || args[0] === 'run-script') && args[1]) {
+        scriptName = args[1]
+      }
+      else if (name === 'pnpm' && args[0] === 'run' && args[1]) {
+        scriptName = args[1]
+      }
+      else if (name === 'yarn') {
+        // yarn <script> OR yarn run <script>
+        if (args[0] === 'run' && args[1])
+          scriptName = args[1]
+        else if (args[0])
+          scriptName = args[0]
+      }
+
+      if (!scriptName)
+        return null
+
+      // Read package.json scripts from current working directory
+      const pkgPath = resolve(this.cwd, 'package.json')
+      if (!existsSync(pkgPath))
+        return null
+      let scripts: Record<string, string> | undefined
+      try {
+        const { readFileSync } = await import('node:fs')
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { scripts?: Record<string, string> }
+        scripts = pkg.scripts || {}
+      }
+      catch {
+        return null
+      }
+      if (!scripts || !scripts[scriptName])
+        return null
+
+      // Styling consistent with bb builtin
+      const purple = '\x1B[38;2;199;146;234m'
+      const dim = '\x1B[2m'
+      const reset = '\x1B[0m'
+      const styleEcho = (line: string) => `${purple}$${reset} ${dim}${line}${reset}`
+
+      // First line: echo the invoked command as typed/raw
+      const asTyped = (command?.raw && typeof command.raw === 'string')
+        ? command.raw
+        : [command.name, ...(command.args || [])].join(' ')
+
+      const lines: string[] = [styleEcho(asTyped)]
+
+      // Recursive nested expansion following occurrences of *run <script>
+      const visited = new Set<string>()
+      const maxDepth = 5
+      const runRegex = /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?([\w:\-]+)/g
+      const expand = (scr: string, depth: number) => {
+        if (!scripts || !scripts[scr] || visited.has(scr) || depth > maxDepth)
+          return
+        visited.add(scr)
+        const body = scripts[scr]
+        lines.push(styleEcho(body))
+        // Find nested script references
+        let m: RegExpExecArray | null
+        runRegex.lastIndex = 0
+        // eslint-disable-next-line no-cond-assign
+        while ((m = runRegex.exec(body)) !== null) {
+          const nextScr = m[1]
+          if (nextScr && scripts[nextScr])
+            expand(nextScr, depth + 1)
+        }
+      }
+      expand(scriptName, 1)
+
+      return `${lines.join('\n')}\n`
+    }
+    catch {
+      return null
+    }
+  }
+
   private loadHistory(): void {
     try {
       this.history = this.historyManager.getHistory()
@@ -849,7 +938,10 @@ export class KrustyShell implements Shell {
               const key = getText(it)
               if (!key)
                 continue
-              if (!seen.has(key)) { seen.add(key); items.push(it) }
+              if (!seen.has(key)) {
+                seen.add(key)
+                items.push(it)
+              }
             }
             groupMap.set(norm, { title: (g.title || '').trim(), items })
           }
@@ -860,7 +952,10 @@ export class KrustyShell implements Shell {
               const key = getText(it)
               if (!key)
                 continue
-              if (!seen.has(key)) { seen.add(key); existing.items.push(it) }
+              if (!seen.has(key)) {
+                seen.add(key)
+                existing.items.push(it)
+              }
             }
           }
         }
@@ -1896,6 +1991,10 @@ export class KrustyShell implements Shell {
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
 
+    // Build echo prefix for package manager script runs (bun/npm/pnpm/yarn)
+    // This returns styled lines (or null) to prepend to stdout
+    const echoPrefix = await this.buildPackageRunEcho(command)
+
     // If this command needs an interactive TTY, run it attached to the terminal.
     // We avoid this path if there are redirections or backgrounding.
     if (this.needsInteractiveTTY(command, redirections)) {
@@ -1906,6 +2005,15 @@ export class KrustyShell implements Shell {
           stdinAny.setRawMode(false)
       }
       catch {}
+
+      // If we have an echo prefix and we're attaching the child to our TTY,
+      // write it immediately before spawning to ensure correct ordering.
+      if (echoPrefix) {
+        try {
+          process.stdout.write(echoPrefix)
+        }
+        catch {}
+      }
 
       // Prepare arguments for external command
       const externalArgs = (command.args || []).map((arg: string) => this.processAliasArgument(arg))
@@ -1988,7 +2096,7 @@ export class KrustyShell implements Shell {
       return false
     })
 
-    return this.setupStreamingProcess(child, start, command, undefined, !!skipStdoutCapture, jobId)
+    return this.setupStreamingProcess(child, start, command, undefined, !!skipStdoutCapture, jobId, echoPrefix || undefined)
   }
 
   /**
@@ -2144,17 +2252,15 @@ export class KrustyShell implements Shell {
     return this.setupStreamingProcess(child, start, command, input, false, jobId)
   }
 
-  /**
-   * Helper method to set up streaming for a child process
-   * This ensures consistent handling of output streams across all command executions
-   */
+  // Set up streaming/buffering for a spawned child process
   private async setupStreamingProcess(
     child: ChildProcess,
     start: number,
     command: any,
     input?: string,
-    skipStdoutCapture = false,
+    skipStdoutCapture: boolean = false,
     jobId?: number,
+    echoPrefix?: string,
   ): Promise<CommandResult> {
     return new Promise((resolve) => {
       let stdout = ''
@@ -2163,169 +2269,166 @@ export class KrustyShell implements Shell {
       // Stream output in real-time by default, unless explicitly disabled or running in background
       const shouldStream = !command.background && this.config.streamOutput !== false
 
-      // Apply optional execution timeout
-      const timeoutMs = this.config.execution?.defaultTimeoutMs ?? 0
-      const killSignal = (this.config.execution?.killSignal as NodeJS.Signals) || 'SIGTERM'
-      let timeoutHandle: NodeJS.Timeout | null = null
-      let killedForTimeout = false
-      if (!command.background && timeoutMs > 0) {
-        timeoutHandle = setTimeout(() => {
-          try {
-            killedForTimeout = true
-            child.kill(killSignal)
-            // Force kill after grace period if still alive
-            setTimeout(() => {
-              try {
-                child.kill('SIGKILL')
-              }
-              catch {}
-            }, 5000)
-          }
-          catch {}
-        }, timeoutMs)
+      // Timeout handling setup (foreground only)
+      const timeoutMs = this.config.execution?.defaultTimeoutMs
+      const killSignal = (this.config.execution?.killSignal || 'SIGTERM') as NodeJS.Signals
+      let timeoutTimer: NodeJS.Timeout | null = null
+      let timedOut = false
+      let settled = false
+
+      // If we're streaming to terminal and stdout is not redirected/closed, print echo lines now
+      if (shouldStream && !skipStdoutCapture && echoPrefix) {
+        try {
+          process.stdout.write(echoPrefix)
+        }
+        catch {}
       }
 
-      // Handle stdout (skip if redirected to file)
-      if (!skipStdoutCapture) {
-        child.stdout?.on('data', (data) => {
-          const dataStr = data.toString()
-          stdout += dataStr
-
-          // Stream output to console in real-time
-          if (shouldStream) {
-            process.stdout.write(dataStr)
+      // Hook up stdout
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          const s = data.toString()
+          stdout += s
+          if (shouldStream && !skipStdoutCapture) {
+            try {
+              process.stdout.write(s)
+            }
+            catch {}
           }
         })
       }
 
-      // Handle stderr
-      child.stderr?.on('data', (data) => {
-        const dataStr = data.toString()
-        stderr += dataStr
+      // Hook up stderr
+      if (child.stderr) {
+        child.stderr.on('data', (data) => {
+          const s = data.toString()
+          stderr += s
+          if (shouldStream) {
+            try {
+              process.stderr.write(s)
+            }
+            catch {}
+          }
+        })
+      }
 
-        // Stream error output in real-time
-        if (shouldStream) {
-          process.stderr.write(dataStr)
-        }
-      })
-
-      // Single-shot resolver to avoid multiple resolve calls
-      let resolved = false
       const finish = (code?: number | null, signal?: NodeJS.Signals | null) => {
-        if (resolved)
+        if (settled)
           return
-        resolved = true
-        // Clear any pending timeout
-        if (timeoutHandle) {
-          clearTimeout(timeoutHandle)
-          timeoutHandle = null
-        }
+        settled = true
+        if (timeoutTimer)
+          clearTimeout(timeoutTimer)
         // Compute exit code
-        let exitCode = code || 0
-        if (signal)
+        let exitCode = code ?? 0
+        if (timedOut) {
+          // Standard timeout exit
+          exitCode = 124
+        }
+        else if (signal) {
           exitCode = signal === 'SIGTERM' ? 143 : 130
+        }
         this.lastExitCode = exitCode
+
+        // If buffering (not streaming) and stdout is captured, prefix echo
+        if (!shouldStream && !skipStdoutCapture && echoPrefix) {
+          stdout = `${echoPrefix}${stdout}`
+        }
+
         resolve({
           exitCode: this.lastExitCode,
           stdout: skipStdoutCapture ? '' : stdout,
-          stderr: killedForTimeout ? `${stderr}krusty: process timed out after ${timeoutMs}ms\n` : stderr,
+          stderr,
           duration: performance.now() - start,
           streamed: shouldStream,
         })
       }
 
-      // Handle errors
+      // Error from spawn or exec
       child.on('error', (_error) => {
-        if (process.env.KRUSTY_CI_DEBUG) {
-          try {
-            this.log.info(`[ci-debug] child error: ${String(_error)}`)
-          }
-          catch {}
-        }
         this.lastExitCode = 127
-        // Provide a friendly stderr when executable is missing or spawn fails
         if (!stderr.includes('command not found')) {
           stderr += `krusty: ${command.name}: command not found\n`
         }
         finish(127, null)
       })
 
-      // Handle process completion via both 'close' and 'exit'
-      child.on('close', (code, signal) => {
-        if (process.env.KRUSTY_CI_DEBUG) {
-          try {
-            this.log.info(`[ci-debug] child close: code=${code} signal=${signal}`)
-          }
-          catch {}
-        }
-        finish(code ?? 0, signal ?? null)
-      })
-      child.on('exit', (code, signal) => {
-        if (process.env.KRUSTY_CI_DEBUG) {
-          try {
-            this.log.info(`[ci-debug] child exit: code=${code} signal=${signal}`)
-          }
-          catch {}
-        }
-        // Some environments may emit 'exit' without 'close' if stdio already ended
-        setTimeout(() => finish(code ?? 0, signal ?? null), 0)
-      })
+      // Handle completion via both 'close' and 'exit'
+      child.on('close', (code, signal) => finish(code ?? 0, signal ?? null))
+      child.on('exit', (code, signal) => setTimeout(() => finish(code ?? 0, signal ?? null), 0))
 
-      // Handle input: write provided input, pipe from file, or explicitly close stdin to signal EOF
+      // Start timeout timer after listeners are attached (foreground only)
+      if (!command.background && typeof timeoutMs === 'number' && timeoutMs > 0) {
+        try {
+          timeoutTimer = setTimeout(() => {
+            timedOut = true
+            try {
+              stderr += 'process timed out\n'
+              if (shouldStream)
+                process.stderr.write('process timed out\n')
+            }
+            catch {}
+            try {
+              // Attempt graceful termination first with configured signal
+              child.kill(killSignal)
+            }
+            catch {}
+            // Resolution will occur via 'close'/'exit' -> finish()
+          }, timeoutMs)
+        }
+        catch {}
+      }
+
+      // Handle stdin piping if provided
       if (child.stdin) {
+        const childStdin = child.stdin
         if (input !== undefined) {
           try {
-            if (input) {
-              // Write as UTF-8 string by default
-              child.stdin.write(input)
-            }
-            child.stdin.end()
+            if (input)
+              childStdin.write(input)
           }
-          catch (err) {
-            this.log.error('Error writing to stdin:', err)
+          catch {}
+          try {
+            childStdin.end()
           }
+          catch {}
         }
         else if (command.stdinFile) {
           try {
             const rs = createReadStream(command.stdinFile, { encoding: 'utf-8' })
             rs.on('error', (err) => {
-              // Surface error to stderr stream and close stdin
               stderr += `${String(err)}\n`
               try {
-                child.stdin?.end()
+                childStdin?.end()
               }
               catch {}
             })
-            rs.pipe(child.stdin)
+            rs.pipe(childStdin)
           }
           catch (err) {
             try {
               this.log.error('Error opening stdin file:', err)
             }
-            catch (logError) {
-              console.error(logError)
-            }
+            catch {}
             try {
-              child.stdin.end()
+              childStdin.end()
             }
-            catch (endError) {
-              console.error(endError)
-            }
+            catch {}
           }
         }
         else {
-          // No input provided and no stdin file: close stdin so processes that read from it don't hang
           try {
-            child.stdin.end()
+            childStdin.end()
           }
           catch {}
         }
       }
 
-      // Handle background processes
+      // Handle background processes: don't wait, consider streamed
       if (command.background) {
-        this.log.info(`[${jobId}] ${child.pid} ${command.raw || `${command.name} ${command.args.join(' ')}`}`)
-        // For background processes, we don't wait for completion
+        try {
+          this.log.info(`[${jobId}] ${child.pid} ${command.raw || `${command.name} ${command.args.join(' ')}`}`)
+        }
+        catch {}
         this.lastExitCode = 0
         resolve({
           exitCode: 0,

@@ -398,7 +398,11 @@ export class PromptRenderer {
     if (minutes > 0)
       parts.push(`${minutes}m`)
     parts.push(`${seconds}s`)
-    return `took ${parts.join('')}`
+    const text = `took ${parts.join('')}`
+    // Special-case: make 0s yellow for better visibility
+    if (minutes === 0 && seconds === 0)
+      return this.colorize(text, this.config.theme?.colors?.warning || '#FFD700')
+    return text
   }
 }
 

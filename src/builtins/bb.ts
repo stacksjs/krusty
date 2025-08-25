@@ -1,4 +1,7 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import process from 'node:process'
 
 export const bbCommand: BuiltinCommand = {
   name: 'bb',
@@ -15,7 +18,42 @@ export const bbCommand: BuiltinCommand = {
 
       // Always use bun run build with any passed args
       const cmd = ['bun', 'run', 'build', ...args]
-      const echo = `$ ${cmd.join(' ')}\n`
+
+      // Build styled echo lines with nested script expansion
+      const echoLines: string[] = []
+      const styleEcho = (line: string) => {
+        // Light purple-ish for '$', dim for the command
+        const purple = '\x1B[38;2;199;146;234m'
+        const dim = '\x1B[2m'
+        const reset = '\x1B[0m'
+        return `${purple}$${reset} ${dim}${line}${reset}`
+      }
+
+      echoLines.push(styleEcho(cmd.join(' ')))
+
+      // Try to read package.json scripts to expand nested scripts
+      try {
+        const pkgPath = join(process.cwd(), 'package.json')
+        if (existsSync(pkgPath)) {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { scripts?: Record<string, string> }
+          const scripts = pkg.scripts || {}
+          const buildScript = scripts.build
+          if (buildScript) {
+            echoLines.push(styleEcho(buildScript))
+            // Heuristic: if build script triggers 'bun run compile', also echo compile script
+            if (/\bbun\s+run\s+compile\b/.test(buildScript)) {
+              const compileScript = scripts.compile
+              if (compileScript)
+                echoLines.push(styleEcho(compileScript))
+            }
+          }
+        }
+      }
+      catch {
+        // ignore echo expansion errors
+      }
+
+      const echo = `${echoLines.join('\n')}\n`
       const res = await shell.executeCommand('bun', ['run', 'build', ...args])
       if (res.exitCode === 0)
         return { exitCode: 0, stdout: echo + (res.stdout || ''), stderr: '', duration: performance.now() - start }

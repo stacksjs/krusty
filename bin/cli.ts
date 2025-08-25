@@ -45,7 +45,7 @@ cli
       const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
       // Welcome message
-      process.stdout.write(`Welcome to krusty v${version}\n`)
+      process.stdout.write(`Welcome to krusty betaa v${version}\n`)
       process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
       // Graceful shutdown handlers
@@ -80,6 +80,91 @@ cli
         process.off('SIGINT', onSigint)
         process.off('SIGTERM', onSigterm)
       }
+    }
+  })
+
+// Dev setup command: create a shim pointing to the local source (bin/cli.ts)
+cli
+  .command('dev-setup', 'Create a dev shim that executes this repo\'s source (bin/cli.ts)')
+  .option('--prefix <path>', 'Install prefix for the shim (defaults to ~/.local/bin on Unix)')
+  .option('--name <name>', 'Shim file name', { default: 'krusty' })
+  .option('--no-backup', 'Do not create a .bak backup if target exists')
+  .example('krusty dev-setup')
+  .example('krusty dev-setup --prefix ~/bin --name krusty')
+  .action(async (options: { prefix?: string, name?: string, noBackup?: boolean }) => {
+    try {
+      const isWindows = process.platform === 'win32'
+      const { homedir } = await import('node:os')
+      const { join } = await import('node:path')
+      const { writeFileSync, chmodSync, mkdirSync, renameSync, existsSync } = await import('node:fs')
+      const { fileURLToPath } = await import('node:url')
+
+      // Resolve source path to this file (bin/cli.ts)
+      const thisFile = fileURLToPath(import.meta.url)
+      const srcCli = thisFile // absolute path to bin/cli.ts when run via `bun run`
+
+      // Determine install prefix
+      let prefix = options.prefix
+      if (!prefix) {
+        if (isWindows) {
+          prefix = join(homedir(), 'AppData', 'Local', 'krusty')
+        }
+        else {
+          prefix = join(homedir(), '.local', 'bin')
+        }
+      }
+
+      // Ensure directory exists
+      try {
+        mkdirSync(prefix, { recursive: true })
+      }
+      catch {}
+
+      const name = options.name || 'krusty'
+      const target = join(prefix, name)
+
+      // Backup existing target unless --no-backup
+      if (existsSync(target) && options.noBackup !== true) {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-')
+        const backup = `${target}.bak-${ts}`
+        try {
+          renameSync(target, backup)
+        }
+        catch {}
+        process.stdout.write(`Backed up existing ${name} to ${backup}\n`)
+      }
+
+      if (isWindows) {
+        // Write a .bat shim next to target, and also write target without extension for convenience
+        const batPath = `${target}.bat`
+        const batScript = `@echo off\r\n`
+          + `setlocal enabledelayedexpansion\r\n`
+          + `"%~dp0\\..\\..\\bun\\bun.exe" run "${srcCli}" %*\r\n`
+        writeFileSync(batPath, batScript)
+        // Also write a PowerShell shim
+        const ps1Path = `${target}.ps1`
+        const ps1Script = `#!/usr/bin/env pwsh\n& bun run \"${srcCli}\" $args\n`
+        writeFileSync(ps1Path, ps1Script)
+        process.stdout.write(`Installed Windows dev shims: ${batPath} and ${ps1Path}\n`)
+      }
+      else {
+        // POSIX shell shim
+        const shim = `#!/bin/sh\n`
+          + `# Krusty dev shim -> ${srcCli}\n`
+          + `exec bun run "${srcCli}" "$@"\n`
+        writeFileSync(target, shim)
+        try {
+          chmodSync(target, 0o755)
+        }
+        catch {}
+        process.stdout.write(`Installed dev shim: ${target}\n`)
+        process.stdout.write(`It will execute: bun run ${srcCli}\n`)
+        process.stdout.write(`Ensure ${prefix} is in your PATH (e.g., export PATH=\"${prefix}:$PATH\").\n`)
+      }
+    }
+    catch (err: any) {
+      process.stderr.write(`dev-setup error: ${err?.message ?? String(err)}\n`)
+      process.exit(1)
     }
   })
 
@@ -120,7 +205,7 @@ cli
     const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
     // Welcome message
-    process.stdout.write(`Welcome to krusty v${version}\n`)
+    process.stdout.write(`Welcome to krusty beta-v${version}\n`)
     process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
 
     const onSigint = async () => {
