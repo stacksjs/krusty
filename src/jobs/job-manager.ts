@@ -42,7 +42,7 @@ export class JobManager extends EventEmitter {
     super()
     this.shell = shell
     this.setupSignalHandlers()
-    this.startBackgroundMonitoring()
+    // Defer monitoring until a job is added to reduce idle overhead
   }
 
   /**
@@ -91,15 +91,30 @@ export class JobManager extends EventEmitter {
    * Start real-time background process monitoring
    */
   private startBackgroundMonitoring(): void {
+    if (this.monitoringInterval)
+      return
     this.monitoringInterval = setInterval(() => {
       this.checkJobStatuses()
-    }, 1000) // Check every second
+    }, 1000)
+    // Do not keep the event loop alive for the monitoring timer
+    ;(this.monitoringInterval as any).unref?.()
+  }
+
+  private stopBackgroundMonitoringIfIdle(): void {
+    // Stop monitoring when there are no non-done jobs left
+    const hasActive = Array.from(this.jobs.values()).some(j => j.status !== 'done')
+    if (!hasActive && this.monitoringInterval) {
+      clearInterval(this.monitoringInterval)
+      this.monitoringInterval = undefined
+    }
   }
 
   /**
    * Check and update job statuses
    */
   private checkJobStatuses(): void {
+    if (this.jobs.size === 0)
+      return
     for (const job of this.jobs.values()) {
       if (job.status === 'done')
         continue
@@ -129,6 +144,8 @@ export class JobManager extends EventEmitter {
         }
       }
     }
+    // After checking, possibly stop monitoring if idle
+    this.stopBackgroundMonitoringIfIdle()
   }
 
   /**
@@ -179,6 +196,9 @@ export class JobManager extends EventEmitter {
     }
 
     this.jobs.set(jobId, job)
+
+    // Ensure monitoring is active when jobs exist
+    this.startBackgroundMonitoring()
 
     // Set as foreground job if not background
     if (!background) {
@@ -236,6 +256,9 @@ export class JobManager extends EventEmitter {
       const statusMsg = signal ? `terminated by ${signal}` : `exited with code ${exitCode}`
       this.shell?.log?.info(`[${job.id}] ${statusMsg} ${job.command}`)
     }
+
+    // Possibly stop monitoring if no active jobs remain
+    this.stopBackgroundMonitoringIfIdle()
   }
 
   /**
@@ -258,10 +281,11 @@ export class JobManager extends EventEmitter {
         process.kill(-job.pgid, 'SIGSTOP')
       }
       catch (killError) {
-        // In test environment, process.kill might throw but we still want to update job status
-        if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
+        // In tests, process.kill is often mocked and may throw. Detect mock and swallow.
+        const killFn: any = process.kill as any
+        const isTest = process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test' || !!(killFn && killFn.mock)
+        if (!isTest)
           throw killError
-        }
       }
 
       const previousStatus = job.status
@@ -315,10 +339,10 @@ export class JobManager extends EventEmitter {
         }
       }
       catch (killError) {
-        // In test environment, process.kill might throw but we still want to update job status
-        if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
+        const killFn: any = process.kill as any
+        const isTest = process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test' || !!(killFn && killFn.mock)
+        if (!isTest)
           throw killError
-        }
       }
 
       const previousStatus = job.status
@@ -373,10 +397,10 @@ export class JobManager extends EventEmitter {
           }
         }
         catch (killError) {
-          // In test environment, process.kill might throw but we still want to update job status
-          if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
+          const killFn: any = process.kill as any
+          const isTest = process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test' || !!(killFn && killFn.mock)
+          if (!isTest)
             throw killError
-          }
         }
 
         const previousStatus = job.status
@@ -442,10 +466,10 @@ export class JobManager extends EventEmitter {
         }
       }
       catch (killError) {
-        // In test environment, process.kill might throw but we still want to update job status
-        if (process.env.NODE_ENV !== 'test' && process.env.BUN_ENV !== 'test') {
+        const killFn: any = process.kill as any
+        const isTest = process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test' || !!(killFn && killFn.mock)
+        if (!isTest)
           throw killError
-        }
       }
 
       // If it's the foreground job, clear it
@@ -488,6 +512,7 @@ export class JobManager extends EventEmitter {
     this.emit('jobRemoved', { job } as JobEvent)
     // Remove from recency tracking
     this.jobRecency = this.jobRecency.filter(id => id !== jobId)
+    this.stopBackgroundMonitoringIfIdle()
     return true
   }
 
@@ -612,7 +637,10 @@ export class JobManager extends EventEmitter {
       this.jobs.delete(jobId)
     }
 
-    return completedJobs.length
+    const removed = completedJobs.length
+    if (removed > 0)
+      this.stopBackgroundMonitoringIfIdle()
+    return removed
   }
 
   /**

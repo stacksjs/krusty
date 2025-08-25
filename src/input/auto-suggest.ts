@@ -503,11 +503,21 @@ export class AutoSuggestInput {
         stdin.off('data', handleMouse)
       }
 
-      const cleanup = () => {
-        stdin.setRawMode(false)
-        stdin.removeAllListeners('keypress')
-        disableMouseTracking()
+      // Ensure we always restore terminal modes, even on hard exits
+      const tidy = () => {
+        try { stdin.setRawMode(false) } catch {}
+        try { disableMouseTracking() } catch {}
       }
+      const cleanup = () => {
+        tidy()
+        stdin.removeAllListeners('keypress')
+        process.off('exit', tidy)
+        process.off('SIGINT', tidy)
+        process.off('SIGTERM', tidy)
+      }
+      process.once('exit', tidy)
+      process.once('SIGINT', tidy)
+      process.once('SIGTERM', tidy)
 
       const handleKeypress = (str: string, key: any) => {
         if (!key)
@@ -567,10 +577,10 @@ export class AutoSuggestInput {
             }
             const expanded = this.expandHistory(this.currentInput)
             const result = expanded.trim()
-            // Before executing, explicitly clear any inline suggestions and re-render
-            // to avoid leaving a stale hint on the line (e.g., after completing a dir).
+            // Before executing, clear any inline suggestions to avoid stale hints
+            // (e.g., after completing a directory). Avoid re-rendering here to
+            // prevent stray ANSI sequences before subprocess output.
             this.suppressSuggestions()
-            this.updateDisplay(prompt)
             cleanup()
             stdout.write('\n')
             resolve(result || null)

@@ -187,17 +187,20 @@ describe('ThemeManager', () => {
     })
 
     it('should render left and right prompts with padding', () => {
-      // Mock process.stdout.columns
-      const originalColumns = process.stdout.columns
-      process.stdout.columns = 80
+      // Safely mock process.stdout.columns using a redefinable property
+      const desc = Object.getOwnPropertyDescriptor(process.stdout, 'columns')
+      Object.defineProperty(process.stdout, 'columns', { value: 80, configurable: true })
 
-      const result = themeManager.renderPrompt('$ ', 'right')
-      expect(result).toContain('$ ')
-      // Note: right prompt may not be rendered if enableRightPrompt is not properly set
-      expect(result.length).toBeGreaterThanOrEqual('$ '.length)
-
-      // Restore
-      process.stdout.columns = originalColumns
+      try {
+        const result = themeManager.renderPrompt('$ ', 'right')
+        expect(result).toContain('$ ')
+        // Note: right prompt may not be rendered if enableRightPrompt is not properly set
+        expect(result.length).toBeGreaterThanOrEqual('$ '.length)
+      }
+      finally {
+        if (desc)
+          Object.defineProperty(process.stdout, 'columns', desc)
+      }
     })
 
     it('should handle right prompt when disabled', () => {
