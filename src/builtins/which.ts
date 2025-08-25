@@ -1,6 +1,7 @@
 import type { BuiltinCommand, CommandResult, Shell } from './types'
 import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
+import { config } from '../config'
 
 /**
  * Which command - shows the full path of commands
@@ -23,6 +24,11 @@ export const whichCommand: BuiltinCommand = {
     }
 
     const pathDirs = (shell.environment.PATH || '').split(delimiter)
+    // Merge aliases from config and runtime shell; runtime takes precedence
+    const mergedAliases: Record<string, string> = {
+      ...(config.aliases || {}),
+      ...(shell.aliases || {}),
+    }
     const results: string[] = []
     const notFound: string[] = []
 
@@ -33,13 +39,32 @@ export const whichCommand: BuiltinCommand = {
 
       // Check if it's a builtin command
       if (shell.builtins.has(cmd)) {
-        results.push(`${cmd}: shell built-in command`)
+        // Friendly alias-like descriptions for select builtins
+        const builtinAliases: Record<string, string> = {
+          b: 'bun run build',
+          bb: 'bun run build',
+          bd: 'bun run dev',
+          bi: 'bun install',
+          bl: 'bun run lint',
+          br: 'bun run <script>',
+          // bf intentionally left generic due to multiple fallbacks
+        }
+
+        if (builtinAliases[cmd]) {
+          results.push(`${cmd}: aliased to ${builtinAliases[cmd]}`)
+        }
+        else if (cmd === 'bf') {
+          results.push(`${cmd}: aliased to format (pkg script | pickier . --fix)`) // informative
+        }
+        else {
+          results.push(`${cmd}: shell built-in command`)
+        }
         continue
       }
 
-      // Check if it's an alias
-      if (shell.aliases[cmd]) {
-        results.push(`${cmd}: aliased to ${shell.aliases[cmd]}`)
+      // Check if it's an alias (from runtime or config)
+      if (mergedAliases[cmd]) {
+        results.push(`${cmd}: aliased to ${mergedAliases[cmd]}`)
         continue
       }
 

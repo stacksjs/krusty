@@ -286,6 +286,25 @@ describe('AutoSuggestInput', () => {
     })
   })
 
+  describe('Ctrl+C behavior', () => {
+    it('Ctrl+C aborts the line: resolves empty string and prints a newline', async () => {
+      const shell = { ...mockShell } as any
+      const inp = new AutoSuggestInput(shell)
+
+      mockStdout()
+      const prompt = '~/test ❯ '
+
+      const p = inp.readLine(prompt)
+      // Simulate user hitting Ctrl+C
+      process.stdin.emit('keypress', '', { ctrl: true, name: 'c' })
+
+      const res = await p
+      expect(res).toBe('')
+      expect(mockOutput).toContain('\n')
+      restoreStdout()
+    })
+  })
+
   describe('character input simulation', () => {
     it('should handle multiple character inputs without line breaks', () => {
       const prompt = '~/test ❯ '

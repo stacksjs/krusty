@@ -55,6 +55,34 @@ export class KrustyShell implements Shell {
   private autoSuggestInput: AutoSuggestInput
   private scriptManager: ScriptManager
 
+  // Heuristic to decide if a command should run attached to an interactive TTY
+  // We avoid this when there are redirections or backgrounding.
+  private needsInteractiveTTY(command: any, redirections?: any[]): boolean {
+    try {
+      if (!process.stdin.isTTY || !process.stdout.isTTY)
+        return false
+    }
+    catch {
+      return false
+    }
+
+    if (!command || !command.name || command.background)
+      return false
+
+    // Only consider simple foreground commands without redirections
+    if (Array.isArray(redirections) && redirections.length > 0)
+      return false
+
+    const name = String(command.name).toLowerCase()
+    // Common interactive commands that require a TTY
+    const interactiveNames = new Set(['sudo', 'ssh', 'sftp', 'scp', 'passwd', 'su'])
+    if (interactiveNames.has(name))
+      return true
+
+    // Fallback: if explicitly requested via env/config in the future we can extend here
+    return false
+  }
+
   // Getter for testing access
   get testHookManager(): HookManager {
     return this.hookManager
@@ -819,7 +847,8 @@ export class KrustyShell implements Shell {
             const items: any[] = []
             for (const it of incomingItems) {
               const key = getText(it)
-              if (!key) continue
+              if (!key)
+                continue
               if (!seen.has(key)) { seen.add(key); items.push(it) }
             }
             groupMap.set(norm, { title: (g.title || '').trim(), items })
@@ -829,7 +858,8 @@ export class KrustyShell implements Shell {
             const seen = new Set(existing.items.map(getText))
             for (const it of incomingItems) {
               const key = getText(it)
-              if (!key) continue
+              if (!key)
+                continue
               if (!seen.has(key)) { seen.add(key); existing.items.push(it) }
             }
           }
@@ -881,7 +911,8 @@ export class KrustyShell implements Shell {
           // Merge all matching builtins into the list
           let merged = [...completions]
           for (const b of matchingBuiltins) {
-            if (!merged.includes(b)) merged.push(b)
+            if (!merged.includes(b))
+              merged.push(b)
           }
           // Clean and sort alphabetically
           merged = merged
@@ -1864,6 +1895,67 @@ export class KrustyShell implements Shell {
         BUN_FORCE_COLOR: '3', // Specifically for bun commands
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
+
+    // If this command needs an interactive TTY, run it attached to the terminal.
+    // We avoid this path if there are redirections or backgrounding.
+    if (this.needsInteractiveTTY(command, redirections)) {
+      // Ensure the terminal is in cooked mode (AutoSuggestInput turns raw on during readLine).
+      try {
+        const stdinAny = process.stdin as any
+        if (typeof stdinAny.setRawMode === 'function' && stdinAny.isTTY)
+          stdinAny.setRawMode(false)
+      }
+      catch {}
+
+      // Prepare arguments for external command
+      const externalArgs = (command.args || []).map((arg: string) => this.processAliasArgument(arg))
+
+      // Spawn child attached to our TTY so it can handle password prompts, etc.
+      const child = spawn(command.name, externalArgs, {
+        cwd: this.cwd,
+        env: cleanEnv,
+        stdio: 'inherit',
+      })
+
+      // Register the job (foreground)
+      const _jobId = this.addJob(command.raw || `${command.name} ${command.args.join(' ')}`, child, false)
+
+      // Wait for completion without setting up our usual piping/capture
+      const exitCode: number = await new Promise((resolve) => {
+        let settled = false
+        const finish = (code?: number | null, signal?: NodeJS.Signals | null) => {
+          if (settled)
+            return
+          settled = true
+          let ec = code ?? 0
+          if (signal)
+            ec = signal === 'SIGTERM' ? 143 : 130
+          resolve(ec)
+        }
+
+        child.on('error', (_error) => {
+          // Provide a friendly message when the executable is missing
+          try {
+            const msg = `krusty: ${command.name}: command not found\n`
+            process.stderr.write(msg)
+          }
+          catch {}
+          finish(127, null)
+        })
+        child.on('close', (code, signal) => finish(code ?? 0, signal ?? null))
+        child.on('exit', (code, signal) => setTimeout(() => finish(code ?? 0, signal ?? null), 0))
+      })
+
+      this.lastExitCode = exitCode
+      return {
+        exitCode,
+        stdout: '',
+        stderr: '',
+        duration: performance.now() - start,
+        // We let the child handle all I/O directly to the terminal
+        streamed: true,
+      }
+    }
 
     // Configure stdio (we keep pipes and let RedirectionHandler rewire/close as needed)
     const stdio: any = ['pipe', 'pipe', 'pipe']

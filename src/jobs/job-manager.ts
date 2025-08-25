@@ -215,8 +215,9 @@ export class JobManager extends EventEmitter {
         this.handleJobExit(jobId, code, signal)
       })
 
-      childProcess.on('error', (error) => {
-        this.shell?.log?.error(`Job ${jobId} error:`, error)
+      childProcess.on('error', (_error) => {
+        // Avoid logging here to prevent duplicate error output. The shell's
+        // execution layer handles presenting a single, user-friendly message.
         this.handleJobExit(jobId, 1, null)
       })
     }

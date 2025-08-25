@@ -15,15 +15,21 @@ export const bCommand: BuiltinCommand = {
 
       // Prefer package.json script if present
       const scriptCheck = await shell.executeCommand('sh', ['-c', 'test -f package.json && jq -e .scripts.build package.json >/dev/null 2>&1'])
-      if (scriptCheck.exitCode === 0)
-        return await shell.executeCommand('bun', ['run', 'build'])
+      if (scriptCheck.exitCode === 0) {
+        const cmd = ['bun', 'run', 'build']
+        const echo = `$ ${cmd.join(' ')}\n`
+        const res = await shell.executeCommand('bun', ['run', 'build'])
+        return { exitCode: res.exitCode, stdout: echo + (res.stdout || ''), stderr: res.exitCode === 0 ? '' : (res.stderr || 'b: build failed\n'), duration: performance.now() - start }
+      }
 
       // Fallback to bun build src/index.ts
       const entry = 'src/index.ts'
+      const cmd = ['bun', 'build', entry]
+      const echo = `$ ${cmd.join(' ')}\n`
       const res = await shell.executeCommand('bun', ['build', entry])
       if (res.exitCode === 0)
-        return { exitCode: 0, stdout: res.stdout, stderr: '', duration: performance.now() - start }
-      return { exitCode: res.exitCode || 1, stdout: '', stderr: res.stderr || 'b: build failed\n', duration: performance.now() - start }
+        return { exitCode: 0, stdout: echo + (res.stdout || ''), stderr: '', duration: performance.now() - start }
+      return { exitCode: res.exitCode || 1, stdout: echo + (res.stdout || ''), stderr: res.stderr || 'b: build failed\n', duration: performance.now() - start }
     }
     finally {
       shell.config.streamOutput = prev

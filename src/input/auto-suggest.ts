@@ -512,7 +512,10 @@ export class AutoSuggestInput {
             (stdin as any).setRawMode(false)
         }
         catch {}
-        try { disableMouseTracking() } catch {}
+        try {
+          disableMouseTracking()
+        }
+        catch {}
       }
       const cleanup = () => {
         tidy()
@@ -1976,16 +1979,17 @@ export class AutoSuggestInput {
       this.cursorPosition = this.currentInput.length
   }
 
-  private killToEnd() {
-    if (this.cursorPosition < this.currentInput.length) {
-      this.currentInput = this.currentInput.slice(0, this.cursorPosition)
-    }
-  }
-
   private killToStart() {
     if (this.cursorPosition > 0) {
       this.currentInput = this.currentInput.slice(this.cursorPosition)
       this.cursorPosition = 0
+    }
+  }
+
+  private killToEnd() {
+    if (this.cursorPosition < this.currentInput.length) {
+      this.currentInput = this.currentInput.slice(0, this.cursorPosition)
+      // cursorPosition remains the same, now at end of the (shorter) input
     }
   }
 

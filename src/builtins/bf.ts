@@ -11,16 +11,22 @@ export const bfCommand: BuiltinCommand = {
     try {
       // Check for package.json format script first
       const hasFormatScript = await shell.executeCommand('sh', ['-c', 'test -f package.json && jq -e .scripts.format package.json >/dev/null 2>&1'])
-      if (hasFormatScript.exitCode === 0)
-        return await shell.executeCommand('bun', ['run', 'format', ...args])
+      if (hasFormatScript.exitCode === 0) {
+        const cmd = ['bun', 'run', 'format', ...args]
+        const echo = `$ ${cmd.join(' ')}\n`
+        const res = await shell.executeCommand('bun', ['run', 'format', ...args])
+        return { exitCode: res.exitCode, stdout: echo + (res.stdout || ''), stderr: res.stderr, duration: performance.now() - start }
+      }
 
       // Check for pickier
       const hasPickier = await shell.executeCommand('sh', ['-c', 'command -v pickier >/dev/null 2>&1'])
       if (hasPickier.exitCode === 0) {
+        const cmd = ['pickier', '--fix', '.', ...args]
+        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('pickier', ['--fix', '.', ...args])
         return {
           exitCode: res.exitCode,
-          stdout: res.stdout,
+          stdout: echo + (res.stdout || ''),
           stderr: res.stderr,
           duration: performance.now() - start,
         }
@@ -29,10 +35,12 @@ export const bfCommand: BuiltinCommand = {
       // Fallback to prettier if available
       const hasPrettier = await shell.executeCommand('sh', ['-c', 'command -v prettier >/dev/null 2>&1'])
       if (hasPrettier.exitCode === 0) {
+        const cmd = ['prettier', '--write', '.', ...args]
+        const echo = `$ ${cmd.join(' ')}\n`
         const res = await shell.executeCommand('prettier', ['--write', '.', ...args])
         return {
           exitCode: res.exitCode,
-          stdout: res.stdout,
+          stdout: echo + (res.stdout || ''),
           stderr: res.stderr,
           duration: performance.now() - start,
         }
