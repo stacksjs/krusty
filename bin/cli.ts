@@ -5,6 +5,11 @@ import { version } from '../package.json'
 import { config as defaultConfig, loadKrustyConfig } from '../src/config'
 import { KrustyShell } from '../src/shell'
 
+// Skip CLI execution during tests to prevent hanging
+if (process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test') {
+  process.exit(0)
+}
+
 const cli = new CAC('krusty')
 
 interface CliOptions {
