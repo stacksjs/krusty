@@ -31,6 +31,12 @@ export interface PromptConfig {
   rightPrompt?: string
   transient?: boolean
   /**
+   * When true (default), render a simplified prompt (no ANSI colors/emojis)
+   * when stdout is not a TTY, TERM is 'dumb', or NO_COLOR/CLICOLOR=0/FORCE_COLOR=0 are set.
+   * Set to false to keep full styling even when not attached to an interactive TTY.
+   */
+  simpleWhenNotTTY?: boolean
+  /**
    * Config for a timestamp line printed once on shell startup above the first prompt.
    * When `enabled` is false, nothing is printed.
    */

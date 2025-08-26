@@ -175,6 +175,10 @@ export class KrustyShell implements Shell {
 
   private rl: readline.Interface | null = null
   private running = false
+  // Whether we're currently in an interactive REPL session (start(true))
+  private interactiveSession = false
+  // If true, a prompt was already rendered proactively and the next loop should not reprint it
+  private promptPreRendered = false
 
   constructor(config?: KrustyConfig) {
     // Use defaultConfig from src/config to preserve exact equality in tests
@@ -743,6 +747,12 @@ export class KrustyShell implements Shell {
     if (this.running)
       return
 
+    // Skip any interactive/session setup during tests or when explicitly disabled.
+    // Important: return BEFORE initializing modules, hooks, or plugins to avoid
+    // creating long-lived handles that keep the test runner alive.
+    if (!interactive || process.env.NODE_ENV === 'test')
+      return
+
     // Initialize modules
     const { initializeModules } = await import('./modules/registry')
     initializeModules(this.config.modules)
@@ -758,12 +768,8 @@ export class KrustyShell implements Shell {
     // Execute shell:start hooks
     await this.hookManager.executeHooks('shell:start', {})
 
-    // Skip interactive mode for tests or when explicitly disabled
-    if (!interactive || process.env.NODE_ENV === 'test') {
-      return
-    }
-
     try {
+      this.interactiveSession = true
       // Don't setup readline interface - AutoSuggestInput handles all input
       // this.rl = readline.createInterface({
       //   input: process.stdin,
@@ -777,7 +783,26 @@ export class KrustyShell implements Shell {
       while (this.running) {
         try {
           const prompt = await this.renderPrompt()
-          process.stdout.write(prompt) // Write prompt before readLine
+          // If we already rendered a prompt proactively (e.g., right after a process finished),
+          // do not print it again to avoid double prompts. Still pass it to readLine.
+          if (this.promptPreRendered) {
+            this.promptPreRendered = false
+            try {
+              if (process.env.KRUSTY_DEBUG) {
+                process.stderr.write('[krusty] prompt was pre-rendered; skipping duplicate\n')
+              }
+            }
+            catch {}
+          }
+          else {
+            try {
+              if (process.env.KRUSTY_DEBUG) {
+                process.stderr.write('[krusty] refreshing prompt before readLine\n')
+              }
+            }
+            catch {}
+            this.autoSuggestInput.refreshPrompt(prompt)
+          }
           const input = await this.readLine(prompt)
 
           if (input === null) {
@@ -787,6 +812,12 @@ export class KrustyShell implements Shell {
 
           if (input.trim()) {
             const result = await this.execute(input)
+            // Record completion status for prompt rendering
+            try {
+              this.lastExitCode = typeof result.exitCode === 'number' ? result.exitCode : this.lastExitCode
+              this.lastCommandDurationMs = typeof result.duration === 'number' ? result.duration : 0
+            }
+            catch {}
 
             // Print buffered output only if it wasn't already streamed live
             if (!result.streamed) {
@@ -796,6 +827,27 @@ export class KrustyShell implements Shell {
               if (result.stderr) {
                 process.stderr.write(result.stderr)
               }
+              // Ensure prompt appears on a new line when the command output did not end with one
+              try {
+                const combined = `${result.stdout || ''}${result.stderr || ''}`
+                if (combined && !combined.endsWith('\n'))
+                  process.stdout.write('\n')
+              }
+              catch {}
+
+              // Immediately refresh the prompt in interactive sessions
+              try {
+                const nextPrompt = await this.renderPrompt()
+                try {
+                  if (process.env.KRUSTY_DEBUG) {
+                    process.stderr.write('[krusty] refreshing prompt after buffered output\n')
+                  }
+                }
+                catch {}
+                this.autoSuggestInput.refreshPrompt(nextPrompt)
+                this.promptPreRendered = true
+              }
+              catch {}
             }
           }
         }
@@ -811,6 +863,7 @@ export class KrustyShell implements Shell {
       this.log.error('Fatal shell error:', error)
     }
     finally {
+      this.interactiveSession = false
       this.stop()
     }
   }
@@ -1750,7 +1803,7 @@ export class KrustyShell implements Shell {
       processedValue = processedValue.replace(/\$@|\$\d+/g, '')
     }
 
-    // Handle multiple commands separated by ;, &&, || (quote-aware)
+    // Handle multiple commands separated by ;, &&, ||
     const segments: Array<{ cmd: string, op?: ';' | '&&' | '||' }> = []
     {
       let buf = ''
@@ -2269,6 +2322,8 @@ export class KrustyShell implements Shell {
     return new Promise((resolve) => {
       let stdout = ''
       let stderr = ''
+      // Track if the last character written to the terminal ended with a newline when streaming
+      let lastWriteEndedWithNewline = true
 
       // Stream output in real-time by default, unless explicitly disabled or running in background
       const shouldStream = !command.background && this.config.streamOutput !== false
@@ -2299,6 +2354,11 @@ export class KrustyShell implements Shell {
             }
             catch {}
           }
+          try {
+            if (s.length > 0)
+              lastWriteEndedWithNewline = s.endsWith('\n')
+          }
+          catch {}
         })
       }
 
@@ -2313,6 +2373,11 @@ export class KrustyShell implements Shell {
             }
             catch {}
           }
+          try {
+            if (s.length > 0)
+              lastWriteEndedWithNewline = s.endsWith('\n')
+          }
+          catch {}
         })
       }
 
@@ -2336,6 +2401,39 @@ export class KrustyShell implements Shell {
         // If buffering (not streaming) and stdout is captured, prefix echo
         if (!shouldStream && !skipStdoutCapture && echoPrefix) {
           stdout = `${echoPrefix}${stdout}`
+        }
+
+        // If we streamed and the last output didn't end with a newline, add one so the next prompt is on a fresh line
+        if (shouldStream) {
+          try {
+            // Determine whether we wrote anything at all; if yes and no trailing newline, write one
+            const wroteSomething = (!skipStdoutCapture && stdout.length > 0) || stderr.length > 0
+            if (wroteSomething && !lastWriteEndedWithNewline)
+              process.stdout.write('\n')
+          }
+          catch {}
+        }
+
+        // Immediately refresh the prompt in interactive sessions after a foreground streamed process ends
+        if (shouldStream && this.interactiveSession) {
+          try {
+            // Render prompt now, and signal the next loop to not print it again
+            this.renderPrompt().then((p) => {
+              try {
+                // Use coordinated prompt refresh via AutoSuggestInput
+                try {
+                  if (process.env.KRUSTY_DEBUG) {
+                    process.stderr.write('[krusty] refreshing prompt after streamed process finish\n')
+                  }
+                }
+                catch {}
+                this.autoSuggestInput.refreshPrompt(p)
+                this.promptPreRendered = true
+              }
+              catch {}
+            }).catch(() => {})
+          }
+          catch {}
         }
 
         resolve({

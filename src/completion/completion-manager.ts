@@ -24,6 +24,142 @@ export class CompletionManager {
     this.loadCache()
   }
 
+  private getCdCompletions(partial: string, shell: any): string[] {
+    try {
+      const caseSensitive = shell.config.completion?.caseSensitive ?? false
+      const match = (s: string, p: string) =>
+        caseSensitive ? s.startsWith(p) : s.toLowerCase().startsWith(p.toLowerCase())
+
+      const cwd: string = typeof shell.cwd === 'string' ? shell.cwd : ''
+      const env = shell.environment || process.env
+
+      // Resolve search base and prefix
+      let searchPath = partial
+      let prefix = ''
+
+      if (!partial || !partial.length) {
+        searchPath = cwd || ''
+        prefix = ''
+      }
+      else if (partial.startsWith('~')) {
+        const expanded = partial.replace(/^~/, homedir())
+        if (expanded.includes('/')) {
+          const [dir, base] = [dirname(expanded), basename(expanded)]
+          searchPath = dir
+          prefix = base
+        }
+        else {
+          searchPath = homedir()
+          prefix = ''
+        }
+      }
+      else if (partial.startsWith('/')) {
+        if (partial.endsWith('/')) {
+          searchPath = partial
+          prefix = ''
+        }
+        else if (partial.includes('/')) {
+          searchPath = dirname(partial)
+          prefix = basename(partial)
+        }
+        else {
+          searchPath = '/'
+          prefix = partial
+        }
+      }
+      else {
+        // Relative to cwd
+        if (partial.includes('/')) {
+          searchPath = cwd ? join(cwd, dirname(partial)) : ''
+          prefix = basename(partial)
+        }
+        else {
+          searchPath = cwd || ''
+          prefix = partial
+        }
+      }
+
+      // Normalize ~ once more in searchPath
+      if (searchPath && searchPath.startsWith('~'))
+        searchPath = searchPath.replace(/^~/, homedir())
+
+      // If we don't have a cwd and the request is for relative paths, avoid using process.cwd().
+      // Only serve semantic entries (cd -, cd ~, cd ..) in that case.
+      const canList = Boolean(searchPath)
+      const fullPath = canList ? resolve(searchPath) : ''
+      const entries = canList ? readdirSync(fullPath) : []
+
+      const out: string[] = []
+
+      // Include OLDPWD as '-'
+      if (env?.OLDPWD && (!prefix || match('-', prefix)))
+        out.push('cd -')
+
+      // Include ~ suggestion
+      if (!prefix || match('~', prefix))
+        out.push('cd ~')
+
+      // Include .. when applicable
+      if (!prefix || match('..', prefix))
+        out.push('cd ..')
+
+      // If no prefix was provided (user typed just `cd `), avoid listing directories to prevent noise.
+      // Only semantic entries above are returned in that case.
+      for (const entry of (prefix ? entries : [])) {
+        if (prefix && !match(entry, prefix))
+          continue
+        const entryPath = join(fullPath, entry)
+        let isDir = false
+        try {
+          isDir = statSync(entryPath).isDirectory()
+        }
+        catch {}
+        if (!isDir)
+          continue
+
+        // Build displayed result using the same style as user input
+        let result: string
+        if (partial.startsWith('~')) {
+          const home = homedir()
+          const tildePath = entryPath.startsWith(home) ? `~${entryPath.slice(home.length)}` : entryPath
+          result = partial.includes('/') ? join(dirname(partial), entry) : tildePath
+        }
+        else if (partial.startsWith('/')) {
+          result = partial.includes('/') ? join(dirname(partial), entry) : join('/', entry)
+        }
+        else {
+          // Relative to current input form
+          if (partial.includes('/')) {
+            result = join(dirname(partial), entry)
+          }
+          else {
+            result = entry
+          }
+        }
+
+        out.push(`cd ${result}/`)
+      }
+
+      // Deduplicate while preserving order, and cap
+      const seen = new Set<string>()
+      const max = shell.config.completion?.maxSuggestions || 10
+      const deduped: string[] = []
+      for (const s of out) {
+        if (!seen.has(s)) {
+          seen.add(s)
+          deduped.push(s)
+          if (deduped.length >= max)
+            break
+        }
+      }
+
+      return deduped
+    }
+    catch {
+      return []
+    }
+  }
+
   private ensureCacheDir(): void {
     if (!existsSync(this.cacheDir)) {
       mkdirSync(this.cacheDir, { recursive: true })
@@ -143,10 +279,15 @@ export class CompletionManager {
     if (!shell)
       return []
 
+    // If the entire line is empty, do not suggest anything
+    if (!input || input.trim().length === 0)
+      return []
+
     const cursor = context.cursor || input.length
     const tokens = this.tokenize(input)
     const before = input.slice(0, Math.max(0, cursor))
     const isFirstToken = !before.includes(' ') || before.trim() === tokens[0]
+    const isCdContext = /^\s*cd\b/i.test(before)
 
     let completions: string[] = []
 
@@ -158,12 +299,20 @@ export class CompletionManager {
       }
       else {
         // Argument completions (files, directories, etc.)
+        const firstToken = tokens[0] || ''
         const lastToken = tokens[tokens.length - 1] || ''
-        completions = this.getArgumentCompletions(lastToken, shell)
+        if (/^cd$/i.test(firstToken)) {
+          // Compute arg partial reliably from the input before the cursor
+          const argPartial = before.replace(/^\s*cd\b/i, '').replace(/^\s*/, '')
+          completions = this.getCdCompletions(argPartial, shell)
+        }
+        else {
+          completions = this.getArgumentCompletions(lastToken, shell)
+        }
       }
 
       // Add plugin completions
-      if (shell.pluginManager?.getPluginCompletions) {
+      if (!isCdContext && shell.pluginManager?.getPluginCompletions) {
         try {
           const pluginCompletions = shell.pluginManager.getPluginCompletions(input, cursor) || []
           completions = [...new Set([...completions, ...pluginCompletions])]
@@ -174,7 +323,10 @@ export class CompletionManager {
       }
 
       // Apply filtering and sorting
-      const filtered = completions.filter(c => c && c.trim().length > 0)
+      const filteredAll = completions.filter(c => c && c.trim().length > 0)
+      const filtered = isCdContext
+        ? filteredAll.filter(s => /^cd\b/.test(s))
+        : filteredAll
       const maxSuggestions = shell.config.completion?.maxSuggestions || 10
 
       return filtered

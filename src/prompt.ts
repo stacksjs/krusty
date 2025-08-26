@@ -9,7 +9,24 @@ import { promisify } from 'node:util'
 const execAsync = promisify(exec)
 
 export class PromptRenderer {
-  constructor(private config: KrustyConfig) {}
+  private simpleMode: boolean
+  constructor(private config: KrustyConfig) {
+    // Simple mode triggers when:
+    // - Not a TTY, or TERM=dumb
+    // - NO_COLOR/CLICOLOR=0/FORCE_COLOR=0
+    // - Or config.prompt?.simpleWhenNotTTY !== false (default true)
+    const env = process.env || {}
+    const notTty = !(process.stdout && process.stdout.isTTY)
+    const term = (env.TERM || '').toLowerCase()
+    const termDumb = term === 'dumb'
+    const noColor = (env.NO_COLOR !== undefined) || (env.FORCE_COLOR === '0') || (env.CLICOLOR === '0')
+    const cfgSimpleWhenNotTTY = this.config.prompt?.simpleWhenNotTTY !== false
+    this.simpleMode = !!(cfgSimpleWhenNotTTY && (notTty || termDumb || noColor))
+    // In test environments, force colors to be enabled so unit tests that
+    // assert on ANSI sequences and color differences are reliable.
+    if ((process.env.NODE_ENV || '').toLowerCase() === 'test')
+      this.simpleMode = false
+  }
 
   async render(cwd: string, systemInfo: SystemInfo, gitInfo: GitInfo, exitCode: number, lastDurationMs?: number): Promise<string> {
     const format = this.config.prompt?.format || '{user}@{host} {path}{git} {symbol} '
@@ -86,7 +103,7 @@ export class PromptRenderer {
     const segments: string[] = []
 
     // Add branch name with custom symbol if available
-    const branchSymbol = this.config.theme?.symbols?.git?.branch || '🌱'
+    const branchSymbol = this.simpleEmoji(this.config.theme?.symbols?.git?.branch || '🌱')
     const customBranchColor = this.config.theme?.colors?.git?.branch
     const branchBold = this.config.theme?.gitStatus?.branchBold ?? true
     if (gitInfo.branch) {
@@ -100,7 +117,7 @@ export class PromptRenderer {
       }
       else {
         // No color configured: optionally bold only the branch name
-        const styledBranch = branchBold
+        const styledBranch = (branchBold && !this.simpleMode)
           ? `\x1B[1m${branchOnly}\x1B[22m`
           : branchOnly
         segments.push(`${branchSymbol} ${styledBranch}`)
@@ -150,7 +167,7 @@ export class PromptRenderer {
   }
 
   private renderSymbol(exitCode: number): string {
-    const symbol = this.config.theme?.symbols?.prompt || '❯'
+    const symbol = this.simpleEmoji(this.config.theme?.symbols?.prompt || '❯')
     // Use different colors based on exit code
     const color = exitCode === 0
       ? this.config.theme?.colors?.primary || '#00D9FF' // Success: turquoise
@@ -192,7 +209,7 @@ export class PromptRenderer {
       const pkgVersion = packageJson?.version
       if (pkgVersion) {
         const pkgColor = this.config.theme?.colors?.modules?.packageVersion || '#FFA500'
-        modules.push(this.boldColorize(`📦 v${pkgVersion}`, pkgColor))
+        modules.push(this.boldColorize(`${this.simpleEmoji('📦')} v${pkgVersion}`, pkgColor))
       }
     }
 
@@ -204,7 +221,7 @@ export class PromptRenderer {
     const nodeEnabled = nodeModuleCfg?.enabled !== false
 
     if (bunEnabled && systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
-      const symbol = bunModuleCfg?.symbol || '🐰'
+      const symbol = this.simpleEmoji(bunModuleCfg?.symbol || '🐰')
       const format = bunModuleCfg?.format || 'via {symbol} {version}'
       const bunColor = this.config.theme?.colors?.modules?.bunVersion || '#FF6B6B'
       const content = format
@@ -213,7 +230,7 @@ export class PromptRenderer {
       pushModule(content, bunColor)
     }
     else if (nodeEnabled) {
-      const symbol = nodeModuleCfg?.symbol || '⬢'
+      const symbol = this.simpleEmoji(nodeModuleCfg?.symbol || '⬢')
       const format = nodeModuleCfg?.format || 'via {symbol} {version}'
       const content = format
         .replace('{symbol}', symbol)
@@ -224,22 +241,22 @@ export class PromptRenderer {
 
     // Detect Python projects
     if (this.hasFile('requirements.txt') || this.hasFile('pyproject.toml') || this.hasFile('setup.py')) {
-      modules.push(this.colorize('🐍 python', this.config.theme?.colors?.warning || '#FFD700'))
+      modules.push(this.colorize(`${this.simpleEmoji('🐍')} python`, this.config.theme?.colors?.warning || '#FFD700'))
     }
 
     // Detect Go projects
     if (this.hasFile('go.mod') || this.hasFile('go.sum')) {
-      modules.push(this.colorize('🐹 go', this.config.theme?.colors?.info || '#74B9FF'))
+      modules.push(this.colorize(`${this.simpleEmoji('🐹')} go`, this.config.theme?.colors?.info || '#74B9FF'))
     }
 
     // Detect Rust projects
     if (this.hasFile('Cargo.toml')) {
-      modules.push(this.colorize('🦀 rust', this.config.theme?.colors?.error || '#FF4757'))
+      modules.push(this.colorize(`${this.simpleEmoji('🦀')} rust`, this.config.theme?.colors?.error || '#FF4757'))
     }
 
     // Detect Docker projects
     if (this.hasFile('Dockerfile') || this.hasFile('docker-compose.yml')) {
-      modules.push(this.colorize('🐳 docker', this.config.theme?.colors?.info || '#74B9FF'))
+      modules.push(this.colorize(`${this.simpleEmoji('🐳')} docker`, this.config.theme?.colors?.info || '#74B9FF'))
     }
 
     return modules.length > 0 ? modules.join(' ') : ''
@@ -286,15 +303,17 @@ export class PromptRenderer {
   }
 
   colorize(text: string, color: string): string {
+    if (this.simpleMode)
+      return text
     if (!color)
       return text
-
-    // Convert hex color to ANSI (with truecolor fallback to xterm-256)
     const ansiColor = this.hexToAnsi(color)
     return `\x1B[${ansiColor}m${text}\x1B[0m`
   }
 
   boldColorize(text: string, color: string): string {
+    if (this.simpleMode)
+      return text
     // Emit a single combined SGR sequence: <color>;1
     if (!color)
       return `\x1B[1m${text}\x1B[0m`
@@ -303,7 +322,27 @@ export class PromptRenderer {
   }
 
   private dim(text: string): string {
+    if (this.simpleMode)
+      return text
     return `\x1B[2m${text}\x1B[22m`
+  }
+
+  private simpleEmoji(symbol: string): string {
+    if (!this.simpleMode)
+      return symbol
+    // Replace common emoji/symbols with ASCII fallbacks for logs/plain terminals
+    const map: Record<string, string> = {
+      '🌱': 'git:',
+      '🐰': 'bun',
+      '⬢': 'node',
+      '📦': 'pkg',
+      '🐍': 'py',
+      '🐹': 'go',
+      '🦀': 'rs',
+      '🐳': 'docker',
+      '❯': '>'
+    }
+    return map[symbol] || symbol
   }
 
   formatSegment(segment: PromptSegment): string {

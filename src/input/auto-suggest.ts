@@ -374,6 +374,17 @@ export class AutoSuggestInput {
     return nl >= 0 ? upto.slice(nl + 1) : upto
   }
 
+  // Detect whether the current line is in `cd` context (i.e., starts with `cd` and optional arg)
+  private isCdContext(): boolean {
+    try {
+      const line = this.getCurrentLinePrefix()
+      return /^\s*cd(?:\s+|$)/i.test(line)
+    }
+    catch {
+      return false
+    }
+  }
+
   // Suggest from history: entries starting with prefix, most recent first, deduped
   private getHistorySuggestions(prefix: string): string[] {
     const history = ((this.shell as any)?.history as string[] | undefined)
@@ -828,13 +839,14 @@ export class AutoSuggestInput {
               }
               else {
                 const histMatches = prefixRaw ? this.getHistorySuggestions(prefixRaw) : []
-                if (histMatches.length > 0) {
+                // Do NOT force history-only when in cd context
+                if (histMatches.length > 0 && !this.isCdContext()) {
                   this.forceHistoryOnlyOnce = true
                   // Force a clean re-render of suggestions area when switching modes
                   this.hadSuggestionsLastRender = false
                 }
                 // Fallback: if we previously accepted a completion and then edited, also prefer history
-                if (!this.forceHistoryOnlyOnce && this.acceptedCompletion && this.editedSinceAccept) {
+                if (!this.forceHistoryOnlyOnce && this.acceptedCompletion && this.editedSinceAccept && !this.isCdContext()) {
                   this.forceHistoryOnlyOnce = true
                   this.hadSuggestionsLastRender = false
                 }
@@ -1250,26 +1262,9 @@ export class AutoSuggestInput {
         return
       }
 
-      // If forcing history-only this invocation (e.g., Tab after editing post-accept)
-      // Note: bypass if a special grouped-restore is requested this cycle.
-      if (this.forceHistoryOnlyOnce && !this.specialRestoreGroupedOnce) {
-        const prefix = this.getCurrentLinePrefix()
-        const max = Math.min(5, this.options.maxSuggestions ?? 10)
-        const hist = this.getHistorySuggestions(prefix).slice(0, max)
-        this.groupedActive = false
-        this.groupedForRender = null
-        this.groupedIndexMap = []
-        this.suggestions = hist
-        this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.suggestions.length - 1))
-        this.updateSuggestion()
-        // One-shot flag; only applies to this update
-        this.forceHistoryOnlyOnce = false
-        return
-      }
-
-      // Preserve previous selection context
-      const prevSuggestions = this.suggestions || []
-      const prevSelectedIndex = this.selectedIndex ?? 0
+      // Snapshot previous selection to try to preserve it after refresh
+      const prevSelectedIndex = this.selectedIndex
+      const prevSuggestions = this.suggestions.slice()
       const prevSelected = prevSuggestions[prevSelectedIndex]
 
       // Get suggestions from shell (includes plugin completions)
@@ -1382,7 +1377,7 @@ export class AutoSuggestInput {
 
         // Merge history suggestions into a trailing History group only if there is remaining room
         // This preserves all explicit group items intact and only fills up to max with history.
-        if (flat.length < max && !this.suppressHistoryMergeOnce) {
+        if (flat.length < max && !this.suppressHistoryMergeOnce && !this.isCdContext()) {
           const prefix = this.getCurrentLinePrefix()
           const seen = new Set(flat)
           const histItems: string[] = []
@@ -1434,7 +1429,7 @@ export class AutoSuggestInput {
               break
           }
         }
-        if (merged.length < max && !this.suppressHistoryMergeOnce) {
+        if (merged.length < max && !this.suppressHistoryMergeOnce && !this.isCdContext()) {
           const prefix = this.getCurrentLinePrefix()
           const hist = this.getHistorySuggestions(prefix)
           for (const h of hist) {
@@ -1487,7 +1482,7 @@ export class AutoSuggestInput {
   private updateSuggestion() {
     if (this.suggestions.length > 0) {
       // Special-case: inline hint sourced from most recent history match (one-shot)
-      const selected = (this.inlineFromHistoryOnce ?? this.getSelectedLabel()) || ''
+      const selected = (((this.isCdContext() ? null : this.inlineFromHistoryOnce) ?? this.getSelectedLabel()) || '')
       const inputBeforeCursor = this.currentInput.slice(0, this.cursorPosition)
 
       // Suppress inline overlay when user has only typed "bun run" (no third token yet)
@@ -2043,5 +2038,40 @@ export class AutoSuggestInput {
     if (line >= lines.length - 1)
       return
     this.cursorPosition = this.lineColToIndex(line + 1, col)
+  }
+  
+  // Public method for shells to proactively refresh the prompt and position the cursor
+  // without directly writing to stdout outside of the input subsystem. This avoids
+  // conflicts between prompt writes and input rendering/cursor management.
+  public refreshPrompt(prompt: string): void {
+    const stdout = process.stdout
+
+    // Write the prompt exactly as provided (may be multi-line)
+    stdout.write(prompt)
+    try {
+      if (process.env.KRUSTY_DEBUG) {
+        process.stderr.write('[krusty] AutoSuggestInput.refreshPrompt: prompt written, state reset\n')
+      }
+    }
+    catch {}
+
+    // Mark that the prompt has been externally written so subsequent display updates
+    // use shell-mode rendering that assumes the prompt exists on screen.
+    this.promptAlreadyWritten = true
+
+    // Reset editing state for a fresh input line
+    this.currentInput = ''
+    this.currentSuggestion = ''
+    this.cursorPosition = 0
+    this.suggestions = []
+    this.selectedIndex = 0
+    this.isShowingSuggestions = false
+    this.isNavigatingSuggestions = false
+
+    // Align last-displayed tracking with current state to suppress unnecessary redraw
+    this.lastDisplayedInput = this.currentInput
+    this.lastDisplayedSuggestion = this.currentSuggestion
+    this.lastSelectedIndex = this.selectedIndex
+    this.lastShowSuggestions = this.isShowingSuggestions
   }
 }

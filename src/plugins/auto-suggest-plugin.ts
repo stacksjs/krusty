@@ -27,14 +27,29 @@ class AutoSuggestPlugin implements Plugin {
           caseSensitive ? a === b : a.toLowerCase() === b.toLowerCase()
         const max = context.config.completion?.maxSuggestions || 10
 
+        // If the prompt is empty (user deleted everything), do not suggest anything
+        if (partial.length === 0)
+          return []
+
+        // Special handling for `cd` suggestions
+        // Defer to core cd completions if the line starts with `cd` (case-insensitive)
+        const trimmedLeading = before.replace(/^\s+/, '')
+        if (/^cd\b/i.test(trimmedLeading))
+          return []
+
         // History suggestions (most recent first)
+        // Do not suggest `cd ...` here; cd is handled specially above.
         const history = [...context.shell.history].reverse()
-        for (const h of history) {
-          if (!partial || startsWith(h, partial)) {
-            if (!suggestions.includes(h))
-              suggestions.push(h)
-            if (suggestions.length >= max)
-              break
+        const partialIsCd = /^\s*cd\b/i.test(partial)
+        if (!partialIsCd) {
+          for (const h of history) {
+            if (h.startsWith('cd ')) continue
+            if (!partial || startsWith(h, partial)) {
+              if (!suggestions.includes(h))
+                suggestions.push(h)
+              if (suggestions.length >= max)
+                break
+            }
           }
         }
 
