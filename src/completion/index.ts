@@ -378,8 +378,8 @@ export class CompletionProvider {
         return []
       }
       case 'cd': {
-        // Directories
-        const files = this.getFileCompletions(last).filter(f => f.endsWith('/'))
+        // Get directories from current working directory ONLY (not repo root)
+        const files = this.getCdDirectoryCompletions(last)
         // Stack indices: -N (1-based)
         const stack = getStack()
         const stackIdx: string[] = []
@@ -1070,11 +1070,74 @@ export class CompletionProvider {
           return bunComps
       }
 
-      // Fallback: file path completions
+      // Fallback: file path completions (but not for cd command)
+      if (cmd === 'cd') {
+        return [] // cd should only use builtin completions, no file fallback
+      }
       return this.getFileCompletions(last)
     }
     catch {
       return [] as string[]
+    }
+  }
+
+  /**
+   * Get directory completions for cd command (current directory only)
+   */
+  private getCdDirectoryCompletions(prefix: string): string[] {
+    try {
+      const hadQuote = prefix.startsWith('"') || prefix.startsWith('\'')
+      const rawPrefix = hadQuote ? prefix.slice(1) : prefix
+
+      // Handle home directory shortcut
+      const basePath = rawPrefix.startsWith('~')
+        ? rawPrefix.replace('~', homedir())
+        : rawPrefix
+
+      // Only check current working directory for cd completions
+      const candidate = resolve(this.shell.cwd, basePath)
+      
+      const listInside = rawPrefix.endsWith('/') || rawPrefix === ''
+      const attempt = {
+        dir: listInside ? candidate : dirname(candidate),
+        base: listInside ? '' : basename(candidate),
+        rawBaseDir: dirname(rawPrefix),
+      }
+
+      let files
+      try {
+        files = readdirSync(attempt.dir, { withFileTypes: true })
+      }
+      catch {
+        return []
+      }
+
+      const completions: string[] = []
+      for (const file of files) {
+        // Only include directories
+        if (!file.isDirectory()) continue
+        
+        // Hide dotfiles unless explicitly requested
+        const dotPrefixed = attempt.base.startsWith('.') && attempt.base !== '.'
+        if (!dotPrefixed && file.name.startsWith('.')) continue
+        
+        if (file.name.startsWith(attempt.base)) {
+          const displayBase = rawPrefix.endsWith('/')
+            ? file.name
+            : join(attempt.rawBaseDir, file.name)
+          
+          let displayPath = `${displayBase}/`
+          if (hadQuote) {
+            displayPath = `"${displayPath}"`
+          }
+          completions.push(displayPath)
+        }
+      }
+
+      return completions
+    }
+    catch {
+      return []
     }
   }
 

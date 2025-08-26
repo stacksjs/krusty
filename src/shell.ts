@@ -750,7 +750,7 @@ export class KrustyShell implements Shell {
     // Skip any interactive/session setup during tests or when explicitly disabled.
     // Important: return BEFORE initializing modules, hooks, or plugins to avoid
     // creating long-lived handles that keep the test runner alive.
-    if (!interactive || process.env.NODE_ENV === 'test')
+    if (!interactive || process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test')
       return
 
     // Initialize modules
@@ -827,27 +827,21 @@ export class KrustyShell implements Shell {
               if (result.stderr) {
                 process.stderr.write(result.stderr)
               }
-              // Ensure prompt appears on a new line when the command output did not end with one
-              try {
-                const combined = `${result.stdout || ''}${result.stderr || ''}`
-                if (combined && !combined.endsWith('\n'))
-                  process.stdout.write('\n')
-              }
-              catch {}
-
-              // Immediately refresh the prompt in interactive sessions
-              try {
-                const nextPrompt = await this.renderPrompt()
+              // Only refresh prompt if we actually printed output and not already pre-rendered
+              if ((result.stdout || result.stderr) && !this.promptPreRendered) {
                 try {
-                  if (process.env.KRUSTY_DEBUG) {
-                    process.stderr.write('[krusty] refreshing prompt after buffered output\n')
+                  const nextPrompt = await this.renderPrompt()
+                  try {
+                    if (process.env.KRUSTY_DEBUG) {
+                      process.stderr.write('[krusty] refreshing prompt after buffered output\n')
+                    }
                   }
+                  catch {}
+                  this.autoSuggestInput.refreshPrompt(nextPrompt)
+                  this.promptPreRendered = true
                 }
                 catch {}
-                this.autoSuggestInput.refreshPrompt(nextPrompt)
-                this.promptPreRendered = true
               }
-              catch {}
             }
           }
         }
