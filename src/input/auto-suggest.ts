@@ -518,13 +518,6 @@ export class AutoSuggestInput {
         }
       }
 
-      // Local functions delegate to class methods
-      const enableMouseTracking = () => {
-        if (!this.mouseTrackingEnabled) {
-          this.enableMouseTracking()
-          process.stdin.on('data', handleMouse)
-        }
-      }
       const disableMouseTracking = () => {
         if (this.mouseTrackingEnabled) {
           this.disableMouseTracking()
@@ -927,55 +920,28 @@ export class AutoSuggestInput {
               this.moveCursorDown()
               this.updateDisplay(prompt)
             }
-            else {
-              const prefix = this.getCurrentLinePrefix()
-              
-              // If we're browsing history, continue with down navigation
-              if (this.historyBrowseActive && this.historyNav) {
-                const hist = this.getHistoryArray() || []
-                this.historyNav.setHistory(hist)
-                this.historyNav.setPrefix(prefix)
-                const val = this.historyNav.down()
-                this.historyBrowseActive = this.historyNav.isBrowsing()
-                this.currentInput = val
-                this.cursorPosition = this.currentInput.length
-                // Close suggestions while browsing
-                this.isShowingSuggestions = false
-                this.isNavigatingSuggestions = false
-                this.disableMouseTracking()
-                this.updateSuggestions()
-                this.updateDisplay(prompt)
+            else if (this.historyBrowseActive) {
+              // Navigate forward in history or return to saved input
+              const hist = this.getHistoryArray() || []
+              if (this.historyBrowseIndex < hist.length - 1) {
+                // Go to newer entry
+                this.historyBrowseIndex++
+                this.currentInput = hist[this.historyBrowseIndex] || ''
               }
               else {
-                // If not browsing and there's no text, Down should keep empty and not open suggestions
-                if (prefix.trim().length === 0) {
-                  this.isShowingSuggestions = false
-                  this.isNavigatingSuggestions = false
-                  this.disableMouseTracking()
-                  this.updateSuggestions()
-                  this.updateDisplay(prompt)
-                }
-                else {
-                  // Ensure suggestions are fresh when deciding to open the list
-                  this.updateSuggestions()
-                  if (this.suggestions.length > 0) {
-                    // Open the list if not open and select the first item for Down
-                    if (!this.isShowingSuggestions) {
-                      this.isShowingSuggestions = true
-                      this.isNavigatingSuggestions = true
-                      this.selectedIndex = 0
-                      // Only enable mouse for grouped layout (flat list uses vertical lines, no click map)
-                      if (this.groupedActive) {
-                        this.enableMouseTracking()
-                      }
-                    }
-                    else {
-                      this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1)
-                    }
-                    this.updateDisplay(prompt)
-                  }
-                }
+                // Return to original input and exit history browsing
+                this.historyBrowseActive = false
+                this.currentInput = this.historyBrowseSaved
+                this.historyBrowseIndex = -1
               }
+
+              this.cursorPosition = this.currentInput.length
+              this.isShowingSuggestions = false
+              this.isNavigatingSuggestions = false
+              this.suggestions = []
+              this.currentSuggestion = ''
+              this.disableMouseTracking()
+              this.updateDisplay(prompt)
             }
             return
           }
@@ -986,15 +952,21 @@ export class AutoSuggestInput {
               this.updateDisplay(prompt)
             }
             else {
+              // Simple history navigation - cycle through all history entries
               const hist = this.getHistoryArray() || []
-              
-              // If we're already browsing, continue with the existing navigator
-              if (this.historyBrowseActive && this.historyNav) {
-                // Continue browsing with existing prefix
-                this.historyNav.setHistory(hist)
-                const val = this.historyNav.up()
-                this.historyBrowseActive = this.historyNav.isBrowsing()
-                this.currentInput = val
+              if (hist.length > 0) {
+                if (!this.historyBrowseActive) {
+                  // Start browsing from the most recent entry
+                  this.historyBrowseActive = true
+                  this.historyBrowseIndex = hist.length - 1
+                  this.historyBrowseSaved = this.currentInput
+                }
+                else if (this.historyBrowseIndex > 0) {
+                  // Go to older entry
+                  this.historyBrowseIndex--
+                }
+
+                this.currentInput = hist[this.historyBrowseIndex] || ''
                 this.cursorPosition = this.currentInput.length
                 // Close suggestions while browsing
                 this.isShowingSuggestions = false
@@ -1002,50 +974,7 @@ export class AutoSuggestInput {
                 this.suggestions = []
                 this.currentSuggestion = ''
                 this.disableMouseTracking()
-                this.updateSuggestions()
                 this.updateDisplay(prompt)
-              }
-              else {
-                // Start new history browsing with current input as prefix
-                const prefix = this.getCurrentLinePrefix()
-                this.historyNav = new HistoryNavigator(hist, prefix)
-                const val = this.historyNav.up()
-                this.historyBrowseActive = this.historyNav.isBrowsing()
-                
-                if (this.historyBrowseActive) {
-                  // Found matching history entry
-                  this.currentInput = val
-                  this.cursorPosition = this.currentInput.length
-                  // Close suggestions while browsing
-                  this.isShowingSuggestions = false
-                  this.isNavigatingSuggestions = false
-                  this.suggestions = []
-                  this.currentSuggestion = ''
-                  this.disableMouseTracking()
-                  this.updateSuggestions()
-                  this.updateDisplay(prompt)
-                }
-                else if (prefix.trim().length > 0) {
-                  // No history match found, try suggestions for non-empty input
-                  this.updateSuggestions()
-                  if (this.suggestions.length > 0) {
-                    // Reset navigator when opening suggestions
-                    this.historyNav = undefined
-                    this.historyBrowseActive = false
-                    if (!this.isShowingSuggestions) {
-                      this.isShowingSuggestions = true
-                      this.isNavigatingSuggestions = true
-                      this.selectedIndex = this.suggestions.length - 1
-                      if (!this.groupedActive) {
-                        this.enableMouseTracking()
-                      }
-                    }
-                    else {
-                      this.selectedIndex = Math.max(this.selectedIndex - 1, 0)
-                    }
-                    this.updateDisplay(prompt)
-                  }
-                }
               }
             }
             return
@@ -2065,7 +1994,7 @@ export class AutoSuggestInput {
       return
     this.cursorPosition = this.lineColToIndex(line + 1, col)
   }
-  
+
   // Public method for shells to proactively refresh the prompt and position the cursor
   // without directly writing to stdout outside of the input subsystem. This avoids
   // conflicts between prompt writes and input rendering/cursor management.
