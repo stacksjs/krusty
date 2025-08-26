@@ -44,9 +44,16 @@ cli
       // Start interactive shell
       const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
-      // Welcome message
-      process.stdout.write(`Welcome to krusty betaa v${version}\n`)
-      process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
+      // Startup timestamp (configurable)
+      const tsCfg = base.prompt?.startupTimestamp
+      if (tsCfg?.enabled !== false) {
+        const now = new Date()
+        const locale = tsCfg?.locale
+        const options: any = tsCfg?.options || { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }
+        const stamp = locale ? now.toLocaleString(locale, options) : now.toLocaleString(undefined, options)
+        const label = tsCfg?.label ? `${tsCfg.label} ` : ''
+        process.stdout.write(`${label}${stamp}\n`)
+      }
 
       // Graceful shutdown handlers
       const onSigint = async () => {
@@ -204,9 +211,16 @@ cli
     const base = { ...defaultConfig, ...cfg }
     const shell = new KrustyShell({ ...base, verbose: options.verbose ?? base.verbose })
 
-    // Welcome message
-    process.stdout.write(`Welcome to krusty beta-v${version}\n`)
-    process.stdout.write('Type "help" for available commands or "exit" to quit.\n\n')
+    // Startup timestamp (configurable)
+    const tsCfg = base.prompt?.startupTimestamp
+    if (tsCfg?.enabled !== false) {
+      const now = new Date()
+      const locale = tsCfg?.locale
+      const options: any = tsCfg?.options || { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }
+      const stamp = locale ? now.toLocaleString(locale, options) : now.toLocaleString(undefined, options)
+      const label = tsCfg?.label ? `${tsCfg.label} ` : ''
+      process.stdout.write(`${label}${stamp}\n`)
+    }
 
     const onSigint = async () => {
       try {

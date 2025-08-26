@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { config } from '../config'
+import { Logger } from '../logger'
 
 export class PluginManager {
   private plugins: Map<string, Plugin> = new Map()
@@ -49,6 +50,12 @@ export class PluginManager {
     this.config = shellConfig
     this.pluginDir = this.resolvePath(shellConfig.plugins?.[0]?.directory || config.plugins?.[0]?.directory || '~/.krusty/plugins')
     this.ensurePluginDir()
+  }
+
+  private createPluginLogger(name: string): Logger {
+    // Use shell config verbosity and provide a namespaced logger for plugins
+    const verbose = !!this.shell?.config?.verbose
+    return new Logger(verbose, `plugin:${name}`)
   }
 
   private resolvePath(path: string): string {
@@ -279,12 +286,7 @@ export class PluginManager {
       shell: this.shell,
       config: this.config,
       pluginConfig,
-      logger: {
-        debug: console.warn.bind(console, `[DEBUG ${plugin.name}]`),
-        info: console.warn.bind(console, `[INFO ${plugin.name}]`),
-        warn: console.warn.bind(console, `[${plugin.name}]`),
-        error: console.error.bind(console, `[${plugin.name}]`),
-      },
+      logger: this.createPluginLogger(plugin.name),
       utils: {
         exec: async (command: string, _options?: any) => {
           const result = await this.shell.execute(command)
@@ -361,14 +363,7 @@ export class PluginManager {
         const context: PluginContext = {
           shell: this.shell,
           config: this.config,
-          logger: {
-            // eslint-disable-next-line no-console
-            debug: console.debug.bind(console, `[${plugin.name}]`),
-            // eslint-disable-next-line no-console
-            info: console.info.bind(console, `[${plugin.name}]`),
-            warn: console.warn.bind(console, `[${plugin.name}]`),
-            error: console.error.bind(console, `[${plugin.name}]`),
-          },
+          logger: this.createPluginLogger(plugin.name),
           utils: {} as any, // Simplified for shutdown
         }
         await this.callLifecycle(plugin, 'deactivate', context)
@@ -400,12 +395,7 @@ export class PluginManager {
     return {
       shell: this.shell,
       config: this.config,
-      logger: {
-        debug: console.warn.bind(console, `[DEBUG ${plugin.name}]`),
-        info: console.warn.bind(console, `[INFO ${plugin.name}]`),
-        warn: console.warn.bind(console, `[${plugin.name}]`),
-        error: console.error.bind(console, `[${plugin.name}]`),
-      },
+      logger: this.createPluginLogger(plugin.name),
       utils: {
         exec: async (command: string, _options?: any) => {
           const result = await this.shell.execute(command)

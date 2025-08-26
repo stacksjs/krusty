@@ -204,7 +204,7 @@ export class PromptRenderer {
     const nodeEnabled = nodeModuleCfg?.enabled !== false
 
     if (bunEnabled && systemInfo.bunVersion && systemInfo.bunVersion !== 'unknown') {
-      const symbol = bunModuleCfg?.symbol || '🥟'
+      const symbol = bunModuleCfg?.symbol || '🐰'
       const format = bunModuleCfg?.format || 'via {symbol} {version}'
       const bunColor = this.config.theme?.colors?.modules?.bunVersion || '#FF6B6B'
       const content = format
@@ -396,6 +396,21 @@ export class PromptRenderer {
   private renderDuration(lastDurationMs?: number): string {
     if (!lastDurationMs || lastDurationMs <= 0)
       return ''
+
+    // Respect duration visibility thresholds if configured
+    const durCfg = this.config.modules?.cmd_duration || {}
+    const threshold = (durCfg.min_ms ?? durCfg.min_time) ?? 0
+    if (threshold && lastDurationMs < threshold)
+      return ''
+
+    // If configured, show milliseconds for sub-second durations
+    const showMs = durCfg.show_milliseconds === true
+    if (showMs && lastDurationMs < 1000) {
+      const numColored = this.boldColorize(`${Math.max(1, Math.round(lastDurationMs))}ms`, this.config.theme?.colors?.warning || '#FFD700')
+      return `took ${numColored}`
+    }
+
+    // Default minutes/seconds formatting
     const totalSec = Math.floor(lastDurationMs / 1000)
     const minutes = Math.floor(totalSec / 60)
     const seconds = totalSec % 60

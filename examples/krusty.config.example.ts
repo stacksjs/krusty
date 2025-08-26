@@ -149,7 +149,7 @@ const exampleConfig: KrustyConfig = {
   // Module configuration
   modules: {
     // Language modules
-    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🥟' },
+    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🐰' },
     deno: { enabled: true, format: 'via {symbol} {version}', symbol: '🦕' },
     nodejs: { enabled: true, format: 'via {symbol} {version}', symbol: '⬢' },
     python: { enabled: true, format: 'via {symbol} {version}', symbol: '🐍' },

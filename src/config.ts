@@ -24,9 +24,10 @@ export const defaultConfig: KrustyConfig = {
   },
   prompt: {
     // Default prompt focuses on path, git status, and runtime module info (e.g. bun)
-    // Example: "~/Code/krusty on 🌱 main [●1○1] 📦 v0.1.0 via 🐰 v1.2.21 took 5m12s ❯"
-    // Note: we keep this single-line for robust cursor handling
-    format: '{path} on {git} {modules} {duration} {symbol} ',
+    // Example (2-line):
+    // "~/Code/krusty on 🌱 main [●1○1] 📦 v0.1.0 via 🐰 v1.2.21 took 5m12s\n❯ "
+    // Note: a newline before the prompt symbol places input on the next line
+    format: '{path} on {git} {modules} {duration} \n{symbol} ',
     showGit: true,
     showTime: false,
     // Hide user/host by default to match the expected style
@@ -35,6 +36,13 @@ export const defaultConfig: KrustyConfig = {
     showPath: true,
     showExitCode: true,
     transient: false,
+    // Print a single timestamp line on startup above the first prompt
+    startupTimestamp: {
+      enabled: true,
+      locale: 'en-US',
+      options: { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' },
+      label: undefined,
+    },
   },
   history: {
     maxEntries: 10000,
@@ -186,7 +194,7 @@ export const defaultConfig: KrustyConfig = {
   },
   modules: {
     // Language modules - enabled by default
-    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🥟' },
+    bun: { enabled: true, format: 'via {symbol} {version}', symbol: '🐰' },
     deno: { enabled: true, format: 'via {symbol} {version}', symbol: '🦕' },
     nodejs: { enabled: true, format: 'via {symbol} {version}', symbol: '⬢' },
     python: { enabled: true, format: 'via {symbol} {version}', symbol: '🐍' },

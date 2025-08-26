@@ -15,7 +15,7 @@ export class BunModule extends BaseModule {
   async render(context: ModuleContext): Promise<ModuleResult | null> {
     const version = await ModuleUtils.getCommandOutput('bun --version')
     const cfg = (context.config as any)?.bun || {}
-    const symbol = cfg.symbol ?? '🥟'
+    const symbol = cfg.symbol ?? '🐰'
     const format = cfg.format ?? 'via {symbol} {version}'
     const content = version
       ? format.replace('{symbol}', symbol).replace('{version}', `v${version}`)

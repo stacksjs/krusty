@@ -76,7 +76,7 @@ class AutoSuggestPlugin implements Plugin {
   ]
 
   async activate(context: PluginContext): Promise<void> {
-    context.logger.info('Auto-suggest plugin activated')
+    context.logger.debug('Auto-suggest plugin activated')
   }
 }
 

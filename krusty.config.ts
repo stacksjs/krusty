@@ -286,8 +286,8 @@ export default {
     cmd_duration: {
       enabled: true,
       format: 'took [{duration}](yellow)',
-      min_time: 1000, // Show for commands taking more than 1 second
-      show_milliseconds: false,
+      // min_time: 1000, // Show for commands taking more than 1 second
+      show_milliseconds: true,
     },
     time: { enabled: false, format: '🕐 {time}' },
     memory_usage: { enabled: false, format: '🐏 {ram}', threshold: 80 },

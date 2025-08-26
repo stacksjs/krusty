@@ -238,7 +238,7 @@ export class KrustyShell implements Shell {
    * Build styled echo for package.json script runs (bun/npm/pnpm/yarn)
    * Expands nested script references recursively with cycle protection.
    */
-  private async buildPackageRunEcho(command: any): Promise<string | null> {
+  private async buildPackageRunEcho(command: any, includeNested: boolean = false): Promise<string | null> {
     try {
       const name = (command?.name || '').toLowerCase()
       const args: string[] = Array.isArray(command?.args) ? command.args : []
@@ -294,27 +294,29 @@ export class KrustyShell implements Shell {
 
       const lines: string[] = [styleEcho(asTyped)]
 
-      // Recursive nested expansion following occurrences of *run <script>
-      const visited = new Set<string>()
-      const maxDepth = 5
-      const runRegex = /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?([\w:\-]+)/g
-      const expand = (scr: string, depth: number) => {
-        if (!scripts || !scripts[scr] || visited.has(scr) || depth > maxDepth)
-          return
-        visited.add(scr)
-        const body = scripts[scr]
-        lines.push(styleEcho(body))
-        // Find nested script references
-        let m: RegExpExecArray | null
-        runRegex.lastIndex = 0
-        // eslint-disable-next-line no-cond-assign
-        while ((m = runRegex.exec(body)) !== null) {
-          const nextScr = m[1]
-          if (nextScr && scripts[nextScr])
-            expand(nextScr, depth + 1)
+      // Only include nested expansion when explicitly requested (i.e., when buffering output)
+      if (includeNested) {
+        const visited = new Set<string>()
+        const maxDepth = 5
+        const runRegex = /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?([\w:\-]+)/g
+        const expand = (scr: string, depth: number) => {
+          if (!scripts || !scripts[scr] || visited.has(scr) || depth > maxDepth)
+            return
+          visited.add(scr)
+          const body = scripts[scr]
+          lines.push(styleEcho(body))
+          // Find nested script references
+          let m: RegExpExecArray | null
+          runRegex.lastIndex = 0
+          // eslint-disable-next-line no-cond-assign
+          while ((m = runRegex.exec(body)) !== null) {
+            const nextScr = m[1]
+            if (nextScr && scripts[nextScr])
+              expand(nextScr, depth + 1)
+          }
         }
+        expand(scriptName, 1)
       }
-      expand(scriptName, 1)
 
       return `${lines.join('\n')}\n`
     }
@@ -1991,9 +1993,11 @@ export class KrustyShell implements Shell {
       }).filter(([_, value]) => value !== undefined) as [string, string][],
     )
 
+    // Determine if we'll stream output for this command (used to avoid duplicate nested echoes)
+    const willStream = !command.background && this.config.streamOutput !== false
     // Build echo prefix for package manager script runs (bun/npm/pnpm/yarn)
-    // This returns styled lines (or null) to prepend to stdout
-    const echoPrefix = await this.buildPackageRunEcho(command)
+    // Only include nested expansion when buffering (not streaming) to avoid duplicates
+    const echoPrefix = await this.buildPackageRunEcho(command, !willStream)
 
     // If this command needs an interactive TTY, run it attached to the terminal.
     // We avoid this path if there are redirections or backgrounding.

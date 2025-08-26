@@ -30,6 +30,19 @@ export interface PromptConfig {
   showExitCode?: boolean
   rightPrompt?: string
   transient?: boolean
+  /**
+   * Config for a timestamp line printed once on shell startup above the first prompt.
+   * When `enabled` is false, nothing is printed.
+   */
+  startupTimestamp?: {
+    enabled?: boolean
+    /** Optional locale, e.g. 'en-US' */
+    locale?: string
+    /** Intl.DateTimeFormat options */
+    options?: Record<string, any>
+    /** Optional label prefix, e.g. 'Started' */
+    label?: string
+  }
 }
 
 export interface HistoryConfig {
