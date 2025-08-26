@@ -213,6 +213,9 @@ export class AutoSuggestInput {
   private historyBrowseActive = false
   private historyBrowseIndex = -1
   private historyBrowseSaved = ''
+  // Prefix-based history filtering state
+  private historyFilteredIndexes: number[] = []
+  private historyFilteredPosition = 0
   // New: pure history navigator for prefix-filtered browsing
   private historyNav?: HistoryNavigator
 
@@ -459,6 +462,8 @@ export class AutoSuggestInput {
       this.historyBrowseActive = false
       this.historyBrowseIndex = -1
       this.historyBrowseSaved = ''
+      this.historyFilteredIndexes = []
+      this.historyFilteredPosition = 0
       this.historyNav = undefined
 
       // Don't write prompt - shell already wrote it via renderPrompt()
@@ -921,18 +926,20 @@ export class AutoSuggestInput {
               this.updateDisplay(prompt)
             }
             else if (this.historyBrowseActive) {
-              // Navigate forward in history or return to saved input
-              const hist = this.getHistoryArray() || []
-              if (this.historyBrowseIndex < hist.length - 1) {
-                // Go to newer entry
-                this.historyBrowseIndex++
-                this.currentInput = hist[this.historyBrowseIndex] || ''
+              // Navigate forward in filtered history or return to saved input
+              if (this.historyFilteredPosition > 0) {
+                // Go to newer filtered entry
+                this.historyFilteredPosition--
+                const hist = this.getHistoryArray() || []
+                const actualIndex = this.historyFilteredIndexes[this.historyFilteredPosition]
+                this.currentInput = hist[actualIndex] || ''
               }
               else {
                 // Return to original input and exit history browsing
                 this.historyBrowseActive = false
                 this.currentInput = this.historyBrowseSaved
-                this.historyBrowseIndex = -1
+                this.historyFilteredIndexes = []
+                this.historyFilteredPosition = 0
               }
 
               this.cursorPosition = this.currentInput.length
@@ -952,29 +959,47 @@ export class AutoSuggestInput {
               this.updateDisplay(prompt)
             }
             else {
-              // Simple history navigation - cycle through all history entries
+              // Prefix-based history navigation - only show entries that start with current input
               const hist = this.getHistoryArray() || []
               if (hist.length > 0) {
                 if (!this.historyBrowseActive) {
-                  // Start browsing from the most recent entry
+                  // Start browsing - filter history by current input prefix
                   this.historyBrowseActive = true
-                  this.historyBrowseIndex = hist.length - 1
                   this.historyBrowseSaved = this.currentInput
+                  const prefix = this.currentInput.trim()
+                  
+                  // Filter history entries that start with the current prefix
+                  const filtered: number[] = []
+                  for (let i = hist.length - 1; i >= 0; i--) {
+                    const entry = hist[i]
+                    if (typeof entry === 'string' && entry.startsWith(prefix)) {
+                      filtered.push(i)
+                    }
+                  }
+                  
+                  this.historyFilteredIndexes = filtered
+                  this.historyFilteredPosition = 0
                 }
-                else if (this.historyBrowseIndex > 0) {
-                  // Go to older entry
-                  this.historyBrowseIndex--
+                else {
+                  // Move to next older filtered entry
+                  if (this.historyFilteredPosition < this.historyFilteredIndexes.length - 1) {
+                    this.historyFilteredPosition++
+                  }
                 }
 
-                this.currentInput = hist[this.historyBrowseIndex] || ''
-                this.cursorPosition = this.currentInput.length
-                // Close suggestions while browsing
-                this.isShowingSuggestions = false
-                this.isNavigatingSuggestions = false
-                this.suggestions = []
-                this.currentSuggestion = ''
-                this.disableMouseTracking()
-                this.updateDisplay(prompt)
+                // Set current input to the filtered entry
+                if (this.historyFilteredIndexes.length > 0) {
+                  const actualIndex = this.historyFilteredIndexes[this.historyFilteredPosition]
+                  this.currentInput = hist[actualIndex] || ''
+                  this.cursorPosition = this.currentInput.length
+                  // Close suggestions while browsing
+                  this.isShowingSuggestions = false
+                  this.isNavigatingSuggestions = false
+                  this.suggestions = []
+                  this.currentSuggestion = ''
+                  this.disableMouseTracking()
+                  this.updateDisplay(prompt)
+                }
               }
             }
             return
@@ -1467,8 +1492,8 @@ export class AutoSuggestInput {
           this.currentSuggestion = selected.slice(inputBeforeCursor.length)
         }
         else {
-          // If the completion doesn't build on the full prefix, show it fully
-          this.currentSuggestion = selected
+          // Don't show suggestions that don't logically extend the current input
+          this.currentSuggestion = ''
         }
       }
       else {
@@ -1492,8 +1517,8 @@ export class AutoSuggestInput {
             this.currentSuggestion = selected.slice(inputBeforeCursor.length)
           }
           else {
-            // If it doesn't align at token level, fall back to showing full selected as a correction hint.
-            this.currentSuggestion = selected
+            // Don't suggest if it doesn't align properly
+            this.currentSuggestion = ''
           }
         }
         else if (selLower.startsWith(lastToken.toLowerCase())) {
@@ -1501,8 +1526,8 @@ export class AutoSuggestInput {
           this.currentSuggestion = selected.slice(lastToken.length)
         }
         else {
-          // Typo-correction hint: show full selection
-          this.currentSuggestion = selected
+          // Don't suggest unrelated completions
+          this.currentSuggestion = ''
         }
       }
     }
