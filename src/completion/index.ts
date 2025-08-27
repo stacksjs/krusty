@@ -1155,11 +1155,8 @@ export class CompletionProvider {
         ? rawPrefix.replace('~', homedir())
         : rawPrefix
 
-      // Build candidate base directories: shell.cwd, then repo root
-      // Using import.meta.url directly and stepping up to project root
-      const moduleDir = dirname(fileURLToPath(import.meta.url))
-      const repoRoot = resolve(moduleDir, '../..')
-      const candidates = [resolve(this.shell.cwd, basePath), resolve(repoRoot, basePath)]
+      // Build candidate base directories: shell.cwd only for test consistency
+      const candidates = [resolve(this.shell.cwd, basePath)]
 
       const completions: string[] = []
       const seen = new Set<string>()
@@ -1184,7 +1181,7 @@ export class CompletionProvider {
         }
         for (const file of files) {
           // Hide dotfiles unless the user explicitly started with a '.' prefix (not just './')
-          const dotPrefixed = attempt.base.startsWith('.') && attempt.base !== '.'
+          const dotPrefixed = attempt.base.startsWith('.') && attempt.base !== '.' && attempt.base !== './'
           if (!dotPrefixed && file.name.startsWith('.'))
             continue
           if (file.name.startsWith(attempt.base)) {

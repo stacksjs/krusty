@@ -122,8 +122,8 @@ export class KrustyShell implements Shell {
       this.promptRenderer = {} as any
       this.systemInfoProvider = {} as any
       this.gitInfoProvider = {} as any
-      this.completionProvider = {} as any
-      this.pluginManager = { shutdown: async () => {} } as any
+      this.completionProvider = new CompletionProvider(this)
+      this.pluginManager = { shutdown: async () => {}, getPluginCompletions: () => [] } as any
       this.hookManager = { executeHooks: async () => {} } as any
       this.log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any
       this.autoSuggestInput = {} as any

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 describe('File/path completions edge cases', () => {
   let shell: KrustyShell
@@ -14,6 +14,8 @@ describe('File/path completions edge cases', () => {
         maxSuggestions: 100,
       },
     })
+    // Set the shell's cwd to the project root for consistent test results
+    shell.cwd = process.cwd()
   })
 
   it('handles single-quoted path fragments', () => {
@@ -26,6 +28,7 @@ describe('File/path completions edge cases', () => {
   it('hides dot-directories unless prefix starts with .', () => {
     // Without leading dot prefix, should not show .github/
     const noDot = shell.getCompletions('ls ./', 'ls ./'.length)
+    // @ts-expect-error - expecting to be false
     expect(noDot.includes('.github/')).toBe(false)
 
     // With dot prefix, should suggest .github/
