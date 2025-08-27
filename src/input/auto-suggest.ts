@@ -230,9 +230,6 @@ export class AutoSuggestInput {
   }
 
   private updateDisplay(prompt: string): void {
-    if (this.testMode)
-      return
-
     // Clear the current line and any suggestion lines below
     process.stdout.write('\r\x1B[2K')
 
@@ -312,6 +309,7 @@ export class AutoSuggestInput {
           const after = this.currentInput.slice(this.cursorPosition)
           this.currentInput = before + after
           this.cursorPosition--
+          this.updateSuggestions()
         }
       }
       // Handle delete
@@ -320,6 +318,7 @@ export class AutoSuggestInput {
           const before = this.currentInput.slice(0, this.cursorPosition)
           const after = this.currentInput.slice(this.cursorPosition + 1)
           this.currentInput = before + after
+          this.updateSuggestions()
         }
       }
       // Handle enter
@@ -327,6 +326,73 @@ export class AutoSuggestInput {
         process.stdout.write('\n')
         this.rl?.close()
       }
+      // Handle regular character input
+      else if (str && str.length === 1 && !key.ctrl && !key.meta) {
+        const before = this.currentInput.slice(0, this.cursorPosition)
+        const after = this.currentInput.slice(this.cursorPosition)
+        this.currentInput = before + str + after
+        this.cursorPosition++
+
+        // Reset history browsing when typing
+        this.historyBrowseActive = false
+        this.historyIndex = -1
+
+        // Get suggestions for the current input
+        this.updateSuggestions()
+      }
+      
+      // Update display after any input change
+      if (key.name === 'backspace' || key.name === 'delete' || (str && str.length === 1 && !key.ctrl && !key.meta)) {
+        this.updateDisplay('❯ ')
+      }
+    }
+  }
+
+  // Update suggestions based on current input
+  private updateSuggestions(): void {
+    if (!this.shell.getCompletions) {
+      return
+    }
+
+    try {
+      const completions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
+      
+      // Handle different completion result types
+      let suggestions: string[] = []
+      if (Array.isArray(completions)) {
+        suggestions = completions.map(item => 
+          typeof item === 'string' ? item : (item as any).text || String(item)
+        ).filter(s => typeof s === 'string' && s.length > 0)
+      }
+      
+      // Set the first suggestion as inline suggestion if available
+      if (suggestions.length > 0) {
+        const currentText = this.currentInput.trim()
+        const firstSuggestion = suggestions[0]
+        
+        // For typo corrections, show the full suggestion if it's different from current input
+        if (currentText && firstSuggestion !== currentText) {
+          if (firstSuggestion.toLowerCase().startsWith(currentText.toLowerCase())) {
+            // Show remaining part of suggestion
+            this.currentSuggestion = firstSuggestion.slice(currentText.length)
+          } else {
+            // Show full suggestion for typo corrections (e.g., 'gti' -> 'git')
+            this.currentSuggestion = firstSuggestion
+          }
+        } else if (!currentText && firstSuggestion) {
+          this.currentSuggestion = firstSuggestion
+        } else {
+          this.currentSuggestion = ''
+        }
+        
+      } else {
+        this.currentSuggestion = ''
+      }
+      
+      this.suggestions = suggestions
+    } catch {
+      this.currentSuggestion = ''
+      this.suggestions = []
     }
   }
 
