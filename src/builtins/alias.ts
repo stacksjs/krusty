@@ -26,9 +26,9 @@ export const aliasCommand: BuiltinCommand = {
       
       const output = aliasEntries
         .map(([name, value]) => `${name}=${value}`)
-        .join('\n') + '\n'
+        .join('\n')
       
-      return { exitCode: 0, stdout: output, stderr: '' }
+      return { exitCode: 0, stdout: `${output}\n`, stderr: '' }
     }
 
     if (args.length === 1 && !args[0].includes('=')) {
@@ -51,15 +51,20 @@ export const aliasCommand: BuiltinCommand = {
       }
     }
 
-    // Process each argument to set aliases
-    for (const arg of args) {
-      const trimmed = arg.trim()
-      if (!trimmed) continue
+    // Process arguments to set aliases
+    // Handle the case where alias value is split across multiple arguments
+    let i = 0
+    while (i < args.length) {
+      const arg = args[i].trim()
+      if (!arg) {
+        i++
+        continue
+      }
 
-      const eq = trimmed.indexOf('=')
+      const eq = arg.indexOf('=')
       if (eq === -1) {
         // No '=' in this token -> treat as lookup for specific alias
-        const aliasNameLookup = trimmed
+        const aliasNameLookup = arg
         if (aliasNameLookup in shell.aliases) {
           return {
             exitCode: 0,
@@ -79,8 +84,17 @@ export const aliasCommand: BuiltinCommand = {
       }
 
       // Parse alias definition
-      let aliasName = trimmed.substring(0, eq).trim()
-      let aliasValue = trimmed.substring(eq + 1)
+      let aliasName = arg.substring(0, eq).trim()
+      let aliasValue = arg.substring(eq + 1)
+      
+      // Collect remaining arguments as part of the alias value
+      const remainingArgs = args.slice(i + 1)
+      if (remainingArgs.length > 0) {
+        aliasValue = [aliasValue, ...remainingArgs].join(' ')
+        i = args.length // Skip all remaining args since we consumed them
+      } else {
+        i++
+      }
 
       if (!aliasName) {
         return {
@@ -97,11 +111,9 @@ export const aliasCommand: BuiltinCommand = {
         aliasName = aliasName.slice(1, -1)
       }
 
-      // Remove quotes from alias value if present
-      if ((aliasValue.startsWith('"') && aliasValue.endsWith('"'))
-        || (aliasValue.startsWith('\'') && aliasValue.endsWith('\''))) {
-        aliasValue = aliasValue.slice(1, -1)
-      }
+      // Don't automatically remove quotes from alias value - preserve them
+      // The shell parser may have already processed quotes, so we should preserve
+      // the value as-is to maintain the user's intent
 
       shell.aliases[aliasName] = aliasValue
     }

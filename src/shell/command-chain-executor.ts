@@ -95,7 +95,7 @@ export class CommandChainExecutor {
     }
   }
 
-  async executeCommandChain(input: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean, bypassScriptDetection?: boolean }): Promise<CommandResult> {
+  async executeCommandChain(input: string, options?: { bypassAliases?: boolean, bypassFunctions?: boolean, bypassScriptDetection?: boolean, aliasDepth?: number }): Promise<CommandResult> {
     const start = performance.now()
 
     try {
