@@ -1,6 +1,6 @@
 import type { KrustyConfig } from '../src/types'
 import { describe, expect, it } from 'bun:test'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 // Helper to create a bare-minimum config
 function makeConfig(partial: Partial<KrustyConfig> = {}): KrustyConfig {

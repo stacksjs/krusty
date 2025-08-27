@@ -289,7 +289,8 @@ export function renderGroupedSuggestionList(
       const items: Array<string | { text: string }> = []
       for (const it of (g.items || [])) {
         const key = getText(it)
-        if (!key) continue
+        if (!key)
+          continue
         if (!seen.has(key)) { seen.add(key); items.push(it) }
       }
       mergedGroups.push({ title: (g.title || '').trim(), items })
@@ -301,7 +302,8 @@ export function renderGroupedSuggestionList(
       const seen = new Set(existing.items.map(getText))
       for (const it of (g.items || [])) {
         const key = getText(it)
-        if (!key) continue
+        if (!key)
+          continue
         if (!seen.has(key)) { seen.add(key); existing.items.push(it) }
       }
     }
@@ -353,7 +355,8 @@ export function renderGroupedSuggestionList(
     let truncated = false
 
     for (let gi = 0; gi < mergedGroups.length; gi++) {
-      if (truncated) break
+      if (truncated)
+        break
       const g = mergedGroups[gi]
       const labels = labelsByGroup[gi]
       if (labels.length <= 0)
@@ -422,7 +425,7 @@ export function renderGroupedSuggestionList(
     }
 
     // Ensure content fits terminal width per line (ANSI-aware)
-    const lines = out.split('\n').map((l) => truncateAnsiToWidth(l, cols))
+    const lines = out.split('\n').map(l => truncateAnsiToWidth(l, cols))
 
     // Clear the previous render blocks completely (both grouped and flat)
     stdout.write(`\x1B[s`)

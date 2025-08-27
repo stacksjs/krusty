@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 async function initGitRepo(cwd: string) {
   const shell = new KrustyShell({ ...defaultConfig, verbose: false })

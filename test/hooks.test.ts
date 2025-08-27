@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
 import { HookUtils } from '../src/hooks'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 describe('Hooks System', () => {
   let shell: KrustyShell

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PluginManager } from '../src/plugins/plugin-manager'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 describe('Plugin System', () => {
   let shell: KrustyShell

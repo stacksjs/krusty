@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 describe('Alias Support', () => {
   let shell: KrustyShell

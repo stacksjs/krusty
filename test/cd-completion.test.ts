@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 /**
  * CD completion tests to ensure only existing directories are suggested

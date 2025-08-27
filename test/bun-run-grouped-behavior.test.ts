@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 function asGroups(out: any): { title: string, items: string[] }[] | null {
   if (Array.isArray(out) && out.length && typeof out[0] === 'object' && 'title' in out[0])

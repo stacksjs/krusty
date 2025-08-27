@@ -3,7 +3,7 @@ import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { homedir } from 'node:os'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 describe('KrustyShell', () => {
   let shell: KrustyShell

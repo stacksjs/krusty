@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 // Helper to safely treat CompletionResults as string[] when we expect flat results
 function flatStrings(out: any): string[] {

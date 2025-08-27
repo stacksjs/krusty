@@ -4,7 +4,7 @@ import { mkdtemp, rmdir } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultConfig } from '../src/config'
-import { KrustyShell } from '../src/shell'
+import { KrustyShell } from '../src'
 
 describe('Builtin Commands', () => {
   let shell: KrustyShell
