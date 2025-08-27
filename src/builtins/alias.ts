@@ -10,7 +10,7 @@ export const aliasCommand: BuiltinCommand = {
   usage: 'alias [name[=value] ...]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-
+    
     // Helper function to format alias output in the format: name=value
     const formatAlias = (name: string, value: string): string => {
       return `${name}=${value}`
@@ -18,17 +18,17 @@ export const aliasCommand: BuiltinCommand = {
 
     // If no arguments, list all aliases
     if (args.length === 0) {
-      const aliases = Object.entries(shell.aliases)
-        .map(([name, value]) => formatAlias(name, value))
-        .sort()
-        .join('\n')
-
-      return {
-        exitCode: 0,
-        stdout: aliases + (aliases ? '\n' : ''),
-        stderr: '',
-        duration: performance.now() - start,
+      // List all aliases
+      const aliasEntries = Object.entries(shell.aliases)
+      if (aliasEntries.length === 0) {
+        return { exitCode: 0, stdout: '', stderr: '' }
       }
+      
+      const output = aliasEntries
+        .map(([name, value]) => `${name}=${value}`)
+        .join('\n') + '\n'
+      
+      return { exitCode: 0, stdout: output, stderr: '' }
     }
 
     if (args.length === 1 && !args[0].includes('=')) {
@@ -51,23 +51,15 @@ export const aliasCommand: BuiltinCommand = {
       }
     }
 
-    // Reconstruct and parse definitions: support spaces and '=' in values.
-    // Tokenizer removes quotes for quoted segments after '=', so we heuristically
-    // restore quotes around tokens that need them (contain whitespace or shell specials)
-    // when the value is split across multiple tokens.
+    // Process each argument to set aliases
+    for (const arg of args) {
+      const trimmed = arg.trim()
+      if (!trimmed) continue
 
-    let i = 0
-    while (i < args.length) {
-      const token = args[i]
-      if (!token || !token.trim()) {
-        i++
-        continue
-      }
-
-      const eq = token.indexOf('=')
+      const eq = trimmed.indexOf('=')
       if (eq === -1) {
         // No '=' in this token -> treat as lookup for specific alias
-        const aliasNameLookup = token.trim()
+        const aliasNameLookup = trimmed
         if (aliasNameLookup in shell.aliases) {
           return {
             exitCode: 0,
@@ -86,9 +78,9 @@ export const aliasCommand: BuiltinCommand = {
         }
       }
 
-      // Start of a definition
-      let aliasName = token.substring(0, eq).trim()
-      const valuePart = token.substring(eq + 1)
+      // Parse alias definition
+      let aliasName = trimmed.substring(0, eq).trim()
+      let aliasValue = trimmed.substring(eq + 1)
 
       if (!aliasName) {
         return {
@@ -99,42 +91,16 @@ export const aliasCommand: BuiltinCommand = {
         }
       }
 
-      // Consume all remaining tokens as part of the value
-      const extraParts: string[] = []
-      i++
-      while (i < args.length) {
-        extraParts.push(args[i])
-        i++
-      }
-
-      // Build alias value preserving semantics
-      // If the entire value was quoted as a single token (no extra parts), keep it verbatim
-      // Otherwise, re-quote tokens that contain unsafe characters
-      const needsQuoting = (s: string) => /[\s!@#$%^&*(){}[\]|;:<>,?`~]/.test(s)
-      let aliasValue: string
-      if (extraParts.length === 0) {
-        // Remove quotes from single quoted value
-        if ((valuePart.startsWith('"') && valuePart.endsWith('"'))
-          || (valuePart.startsWith('\'') && valuePart.endsWith('\''))) {
-          aliasValue = valuePart.slice(1, -1)
-        }
-        else {
-          aliasValue = valuePart
-        }
-      }
-      else {
-        const parts = [valuePart, ...extraParts].map((p, idx) => {
-          if (idx === 0)
-            return p // first token (e.g., command) typically safe
-          return needsQuoting(p) ? `'${p.replace(/'/g, '\'\\\'\'')}'` : p
-        })
-        aliasValue = parts.join(' ')
-      }
-
-      // If the alias name is quoted, remove the quotes
+      // Remove quotes from alias name if present
       if ((aliasName.startsWith('"') && aliasName.endsWith('"'))
         || (aliasName.startsWith('\'') && aliasName.endsWith('\''))) {
         aliasName = aliasName.slice(1, -1)
+      }
+
+      // Remove quotes from alias value if present
+      if ((aliasValue.startsWith('"') && aliasValue.endsWith('"'))
+        || (aliasValue.startsWith('\'') && aliasValue.endsWith('\''))) {
+        aliasValue = aliasValue.slice(1, -1)
       }
 
       shell.aliases[aliasName] = aliasValue

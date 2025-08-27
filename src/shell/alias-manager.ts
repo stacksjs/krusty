@@ -37,7 +37,7 @@ export class AliasManager {
   /**
    * Expands aliases with cycle detection to prevent infinite recursion
    */
-  expandAliasWithCycleDetection(command: any, visited: Set<string> = new Set()): any {
+  async expandAliasWithCycleDetection(command: any, visited: Set<string> = new Set()): Promise<any> {
     if (!command?.name)
       return command
 
@@ -47,7 +47,7 @@ export class AliasManager {
       return command
     }
 
-    const expanded = this.expandAlias(command)
+    const expanded = await this.expandAlias(command)
 
     // If the command wasn't an alias, we're done
     if (expanded === command) {
@@ -62,7 +62,7 @@ export class AliasManager {
   /**
    * Expands a command if it matches a defined alias
    */
-  private expandAlias(command: any): any {
+  private async expandAlias(command: any): Promise<any> {
     if (!command?.name) {
       return command
     }
@@ -82,6 +82,29 @@ export class AliasManager {
         }
       }
       return { ...command, name: 'true', args: [] }
+    }
+
+    // If the alias contains a pipe, we need to parse it as a command chain
+    if (aliasValue.includes('|') && !aliasValue.includes('\"') && !aliasValue.includes('\'')) {
+      try {
+        // Parse the alias value as a command chain
+        const parsed = await this.parser.parse(aliasValue, { cwd: this.cwd, env: this.environment } as any)
+
+        // If we have a command chain, return it directly
+        if (parsed?.commands?.length > 0) {
+          // Preserve the original command's arguments if needed
+          if (command.args.length > 0) {
+            // Append the original command's arguments to the last command in the pipeline
+            const lastCmd = parsed.commands[parsed.commands.length - 1]
+            lastCmd.args = [...(lastCmd.args || []), ...command.args]
+          }
+          return parsed
+        }
+      }
+      catch (e) {
+        // If parsing fails, fall through to the regular alias expansion
+        console.error('Failed to parse alias with pipe:', e)
+      }
     }
 
     // Process the alias value
@@ -355,15 +378,12 @@ export class AliasManager {
   }
 
   private processAliasArgument(arg: string): string {
-    if (!arg)
-      return arg
-
+    if (!arg) return '';
     // Handle quoted strings
     if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
-      return arg.slice(1, -1)
+      return arg.slice(1, -1);
     }
-
-    // Handle escaped characters
+    // Handle escaped characters by removing the backslash
     return arg.replace(/\\(.)/g, '$1')
   }
 }

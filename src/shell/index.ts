@@ -171,8 +171,19 @@ export class KrustyShell implements Shell {
       return await this.commandChainExecutor.executeCommandChain(parsed, options)
     }
     
-    // For ParsedCommand objects, we need to execute them directly
-    return await this.executeSingleCommand(parsed, undefined, options)
+    // For ParsedCommand objects with multiple commands, execute them as a pipeline
+    if (parsed.commands && parsed.commands.length > 0) {
+      if (parsed.commands.length === 1) {
+        // Single command - execute directly
+        return await this.executeSingleCommand(parsed.commands[0], undefined, options)
+      } else {
+        // Multiple commands - execute as pipeline
+        return await this.executePipedCommands(parsed.commands, options)
+      }
+    }
+    
+    // Fallback for empty commands
+    return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
   }
 
   async executeParsedCommand(parsed: ParsedCommand): Promise<number> {

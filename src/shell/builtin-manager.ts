@@ -95,15 +95,12 @@ export class BuiltinManager {
   }
 
   private processAliasArgument(arg: string): string {
-    if (!arg)
-      return arg
-
+    if (!arg) return '';
     // Handle quoted strings
     if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
-      return arg.slice(1, -1)
+      return arg.slice(1, -1);
     }
-
-    // Handle escaped characters
+    // Handle escaped characters by removing the backslash
     return arg.replace(/\\(.)/g, '$1')
   }
 
