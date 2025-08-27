@@ -167,6 +167,9 @@ export class CommandExecutor {
     }
 
     // Wait for process completion with timeout
+    const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 1000)
+    let timedOut = false
+    
     const exitCode = await Promise.race([
       new Promise<number>((resolve) => {
         child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -175,14 +178,25 @@ export class CommandExecutor {
         })
       }),
       new Promise<number>((resolve) => {
-        const timeout = process.env.NODE_ENV === 'test' ? 10000 : 1000 // 10 seconds in tests, 1 second otherwise
         setTimeout(() => {
-          child.kill('SIGKILL')
+          timedOut = true
+          child.kill(this.config.execution?.killSignal as NodeJS.Signals || 'SIGTERM')
+          // Give process a chance to exit gracefully, then force kill
+          setTimeout(() => {
+            if (!child.killed) {
+              child.kill('SIGKILL')
+            }
+          }, 100)
           this.children = this.children.filter(c => c.child.pid !== child.pid)
           resolve(124) // timeout exit code
-        }, timeout)
+        }, timeoutMs)
       }),
     ])
+    
+    // Add timeout message to stderr if process timed out
+    if (timedOut) {
+      stderr += `krusty: process timed out after ${timeoutMs}ms\n`
+    }
 
     const end = performance.now()
     const duration = end - start
@@ -259,6 +273,9 @@ export class CommandExecutor {
       }
 
       // Wait for process completion with timeout
+      const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 2000)
+      let timedOut = false
+      
       const exitCode = await Promise.race([
         new Promise<number>((resolve) => {
           child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -266,13 +283,24 @@ export class CommandExecutor {
           })
         }),
         new Promise<number>((resolve) => {
-          const timeout = process.env.NODE_ENV === 'test' ? 10000 : 2000 // 10 seconds in tests, 2 seconds otherwise
           setTimeout(() => {
-            child.kill('SIGKILL')
+            timedOut = true
+            child.kill(this.config.execution?.killSignal as NodeJS.Signals || 'SIGTERM')
+            // Give process a chance to exit gracefully, then force kill
+            setTimeout(() => {
+              if (!child.killed) {
+                child.kill('SIGKILL')
+              }
+            }, 100)
             resolve(124) // timeout exit code
-          }, timeout)
+          }, timeoutMs)
         }),
       ])
+      
+      // Add timeout message to stderr if process timed out
+      if (timedOut) {
+        stderr += `krusty: process timed out after ${timeoutMs}ms\n`
+      }
 
       const end = performance.now()
       const duration = end - start
