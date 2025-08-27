@@ -70,8 +70,7 @@ export class HistoryNavigator {
   private recompute(): void {
     const out: number[] = []
     const seen = new Set<string>()
-    // Process from oldest to newest, but reverse the final array
-    // so up arrow shows older commands first
+    // Process from newest to oldest, so up arrow shows most recent commands first
     for (let i = this.history.length - 1; i >= 0; i--) {
       const h = this.history[i]
       if (typeof h !== 'string')
@@ -85,8 +84,8 @@ export class HistoryNavigator {
       }
       out.push(i)
     }
-    // Reverse so that up arrow shows older matching commands first
-    this.filtered = out.reverse()
+    // Keep the order so that up arrow shows most recent matching commands first
+    this.filtered = out
     this.index = -1
   }
 }

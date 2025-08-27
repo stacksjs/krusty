@@ -1,10 +1,8 @@
-// Local modules
 import type { Shell } from '../types'
 import type { AutoSuggestOptions } from './types'
-
-// Built-in Node.js modules
 import process from 'node:process'
 import * as readline from 'node:readline'
+import { sharedHistory } from '../history'
 import { renderHighlighted } from './highlighting'
 import { ReverseSearchManager } from './reverse-search'
 
@@ -474,25 +472,28 @@ export class AutoSuggestInput {
     if (!input.includes('!'))
       return input
 
+    // Use shell history if available, otherwise fall back to shared history
+    const history = this.shell.history || sharedHistory.getHistory()
+
     // Handle !! - replace with last command
     input = input.replace(/!!/g, () => {
-      return this.shell.history[this.shell.history.length - 1] || ''
+      return history[history.length - 1] || ''
     })
 
     // Handle !n (where n is a number) - replace with nth command (1-based)
     input = input.replace(/!(\d+)/g, (match, n) => {
       const index = Number.parseInt(n, 10) - 1
-      return (index >= 0 && index < this.shell.history.length)
-        ? this.shell.history[index]
+      return (index >= 0 && index < history.length)
+        ? history[index]
         : ''
     })
 
     // Handle !prefix - replace with most recent matching command
     input = input.replace(/!([^\s!]+)/g, (match, prefix) => {
       // Find the most recent command that starts with the prefix
-      for (let i = this.shell.history.length - 1; i >= 0; i--) {
-        if (this.shell.history[i].startsWith(prefix)) {
-          return this.shell.history[i]
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].startsWith(prefix)) {
+          return history[i]
         }
       }
       // If no match, remove the !prefix
