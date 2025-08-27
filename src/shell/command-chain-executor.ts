@@ -145,16 +145,74 @@ export class CommandChainExecutor {
             break
           }
 
+          // Check for alias expansion in this segment before parsing
+          let expandedSegment = segment
+          if (!options?.bypassAliases) {
+            const parser = (this.shell as any).parser
+            const tokens = parser.tokenize(segment.trim())
+            if (tokens.length > 0 && tokens[0] in (this.shell as any).aliases) {
+              const aliasValue = (this.shell as any).aliases[tokens[0]]
+              const args = tokens.slice(1)
+              
+              // Handle parameter substitution
+              const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
+              
+              if (hasPlaceholders) {
+                // Replace $@ with all arguments
+                expandedSegment = aliasValue.replace(/\$@/g, () => {
+                  return args.map((arg: string) => {
+                    let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                      ? arg.slice(1, -1) 
+                      : arg
+                    cleanArg = cleanArg.replace(/\$/g, '\\$')
+                    cleanArg = cleanArg.replace(/'/g, "\\''")
+                    return cleanArg
+                  }).join(' ')
+                })
+                
+                // Replace $1, $2, etc. with positional arguments
+                for (let j = 1; j <= args.length; j++) {
+                  const arg = args[j - 1] || ''
+                  
+                  if (expandedSegment.includes(`"$${j}"`)) {
+                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                      ? arg.slice(1, -1) 
+                      : arg
+                    expandedSegment = expandedSegment.replace(`"$${j}"`, `\\"${cleanArg}\\"`)
+                  } else if (expandedSegment.includes(`'$${j}'`)) {
+                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                      ? arg.slice(1, -1) 
+                      : arg
+                    expandedSegment = expandedSegment.replace(`'$${j}'`, `'${cleanArg}'`)
+                  } else if (expandedSegment.includes(`$${j}`)) {
+                    expandedSegment = expandedSegment.replace(`$${j}`, arg)
+                  }
+                }
+                
+                expandedSegment = expandedSegment.replace(/\$\d+/g, '')
+              } else {
+                // Handle trailing space expansion or append arguments
+                if (aliasValue.endsWith(' ') && args.length > 0) {
+                  expandedSegment = `${aliasValue}${args.join(' ')}`
+                } else if (args.length > 0) {
+                  expandedSegment = `${aliasValue} ${args.join(' ')}`
+                } else {
+                  expandedSegment = aliasValue
+                }
+              }
+            }
+          }
+
           // Parse + execute this segment (supports pipes/redirections inside)
           let segParsed: ParsedCommand
           try {
-            segParsed = await (this.shell as any).parseCommand(segment)
+            segParsed = await (this.shell as any).parseCommand(expandedSegment)
           }
           catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             // Build a caret indicator when feasible (unterminated quotes -> caret at end)
-            const caretIdx = segment.length // best-effort: end of segment for unterminated quotes
-            const caretLine = `${segment}\n${' '.repeat(Math.max(0, caretIdx))}^\n`
+            const caretIdx = expandedSegment.length // best-effort: end of segment for unterminated quotes
+            const caretLine = `${expandedSegment}\n${' '.repeat(Math.max(0, caretIdx))}^\n`
             const stderr = `krusty: syntax error: ${msg}\n${caretLine}`
             const segResult = { exitCode: 2, stdout: '', stderr, duration: 0 }
             // Include parse error in aggregation and stop processing further segments
