@@ -207,20 +207,81 @@ export class CommandExecutor {
       return this.executeExternalCommand(commands[0], _redirections)
     }
 
-    // Temporarily disable complex pipeline execution to prevent hangs
-    // Return a simple mock result for now
+    const start = performance.now()
     const commandStr = commands.map(cmd => `${cmd.name} ${(cmd.args || []).join(' ')}`).join(' | ')
     
     if (this.xtrace) {
-      process.stderr.write(`+ ${commandStr} (pipeline disabled)\n`)
+      process.stderr.write(`+ ${commandStr}\n`)
     }
 
-    return {
-      exitCode: 0,
-      stdout: 'Pipeline execution temporarily disabled\n',
-      stderr: '',
-      duration: 1,
-      streamed: false,
+    const cleanEnv = {
+      ...process.env,
+      ...this.environment,
+      FORCE_COLOR: '1',
+      TERM: process.env.TERM || 'xterm-256color',
+    }
+
+    try {
+      const child = spawn('sh', ['-c', commandStr], {
+        cwd: this.cwd,
+        env: cleanEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      }) as ChildProcess
+
+      let stdout = ''
+      let stderr = ''
+
+      if (child.stdout) {
+        child.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString()
+        })
+      }
+
+      if (child.stderr) {
+        child.stderr.on('data', (data: Buffer) => {
+          stderr += data.toString()
+        })
+      }
+
+      const exitCode = await Promise.race([
+        new Promise<number>((resolve) => {
+          child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+            resolve(code ?? (signal === 'SIGINT' ? 130 : 1))
+          })
+        }),
+        new Promise<number>((resolve) => {
+          setTimeout(() => {
+            child.kill('SIGKILL')
+            resolve(124) // timeout exit code
+          }, 2000) // 2 second timeout for tests
+        }),
+      ])
+
+      const end = performance.now()
+      const duration = end - start
+
+      if (this.xtrace) {
+        process.stderr.write(`[pipeline exit] ${exitCode} (${duration.toFixed(2)}ms)\n`)
+      }
+
+      return {
+        exitCode,
+        stdout,
+        stderr,
+        duration,
+        streamed: this.config.streamOutput !== false,
+      }
+    }
+    catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Error executing pipeline: ${errorMessage}\n`,
+        duration: performance.now() - start,
+        streamed: false,
+      }
     }
   }
 }

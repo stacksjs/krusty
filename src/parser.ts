@@ -503,6 +503,10 @@ export class CommandParser {
       if (segment.includes('\\$') && arg.includes('\\')) {
         return arg
       }
+      // Special case: preserve quotes for alias command to handle quote preservation correctly
+      if (tokens[0] === 'alias') {
+        return arg
+      }
       return this.processArgument(arg)
     })
 
