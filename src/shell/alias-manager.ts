@@ -62,7 +62,7 @@ export class AliasManager {
   /**
    * Expands a command if it matches a defined alias
    */
-  private async expandAlias(command: any): Promise<any> {
+  async expandAlias(command: any): Promise<any> {
     if (!command?.name) {
       return command
     }
@@ -161,22 +161,38 @@ export class AliasManager {
     // Handle argument substitution
     if (hasArgs) {
       // Replace $@ with all arguments
-      if (processedValue.includes('$@')) {
-        processedValue = processedValue.replace(/\$@/g, argsToUse.join(' '))
-      }
+      processedValue = processedValue.replace(/\$@/g, () => {
+        return argsToUse.map((arg: string) => {
+          // Preserve original quotes if they exist, otherwise add quotes for spaces
+          if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
+            return arg
+          }
+          return /\s/.test(arg) ? `"${arg}"` : arg
+        }).join(' ')
+      })
 
-      // Replace $1, $2, etc. with specific arguments
+      // Replace numbered placeholders like $1, $2, etc.
       processedValue = processedValue.replace(/\$(\d+)/g, (_, num) => {
         const index = Number.parseInt(num, 10) - 1
         if (argsToUse[index] === undefined)
           return ''
-        return dequote(argsToUse[index])
+        const arg = argsToUse[index]
+        // Preserve original quotes if they exist
+        if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
+          return arg
+        }
+        return dequote(arg)
       })
 
       // If alias ends with space OR it doesn't contain placeholders, append remaining args
       if (command.args.length > 0 && (endsWithSpace || !hasPlaceholders)) {
         const quoted = command.args.map((arg: string) => (/\s/.test(arg) ? `"${arg}"` : arg))
-        processedValue += ` ${quoted.join(' ')}`
+        if (endsWithSpace) {
+          // For trailing space, append directly without extra space
+          processedValue += quoted.join(' ')
+        } else {
+          processedValue += ` ${quoted.join(' ')}`
+        }
       }
     }
     else {

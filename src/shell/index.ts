@@ -687,7 +687,6 @@ export class KrustyShell implements Shell {
 
     // Check for alias expansion (only if not bypassing aliases)
     if (!options?.bypassAliases && command.name in this.aliases) {
-      const aliasValue = this.aliases[command.name]
       const aliasDepth = (options?.aliasDepth || 0) + 1
       
       // Prevent infinite recursion with depth limit
@@ -701,27 +700,16 @@ export class KrustyShell implements Shell {
         }
       }
       
-      // Expand parameters in alias value
-      let expandedAlias = aliasValue
-      
-      // Replace $@ with all arguments
-      expandedAlias = expandedAlias.replace(/\$@/g, command.args.join(' '))
-      
-      // Replace $1, $2, etc. with positional arguments
-      for (let i = 1; i <= command.args.length; i++) {
-        const arg = command.args[i - 1] || ''
-        expandedAlias = expandedAlias.replace(new RegExp(`\\$${i}`, 'g'), arg)
+      // Use AliasManager for proper alias expansion
+      const expandedCommand = await this.aliasManager.expandAlias(command)
+      if (expandedCommand && expandedCommand !== command) {
+        // Execute the expanded alias command (allow nested aliases with depth tracking)
+        return await this.executeCommandChain(expandedCommand, { 
+          bypassAliases: options?.bypassAliases, 
+          bypassFunctions: options?.bypassFunctions, 
+          aliasDepth 
+        })
       }
-      
-      // Replace $0 with the alias name itself
-      expandedAlias = expandedAlias.replace(/\$0/g, command.name)
-      
-      // Execute the expanded alias command (allow nested aliases with depth tracking)
-      return await this.execute(expandedAlias, { 
-        bypassAliases: options?.bypassAliases, 
-        bypassFunctions: options?.bypassFunctions, 
-        aliasDepth 
-      })
     }
 
     // Execute external command using CommandExecutor

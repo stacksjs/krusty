@@ -176,6 +176,77 @@ export class CommandChainExecutor {
         return result
       }
 
+      // Check for alias expansion before parsing
+      if (!options?.bypassAliases) {
+        // Parse input to extract command and arguments properly
+        const parser = (this.shell as any).parser
+        const tokens = parser.tokenize(input.trim())
+        if (tokens.length > 0 && tokens[0] in (this.shell as any).aliases) {
+          const aliasValue = (this.shell as any).aliases[tokens[0]]
+          const args = tokens.slice(1)
+          
+          // Handle parameter substitution
+          let expandedInput = aliasValue
+          const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
+          
+          if (hasPlaceholders) {
+            // Replace $@ with all arguments - preserve special characters
+            expandedInput = expandedInput.replace(/\$@/g, () => {
+              return args.map((arg: string) => {
+                // Remove outer quotes if present but preserve the content
+                let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                  ? arg.slice(1, -1) 
+                  : arg
+                // Escape $ characters to prevent shell variable expansion
+                cleanArg = cleanArg.replace(/\$/g, '\\$')
+                // Escape single quotes to prevent shell parsing issues
+                cleanArg = cleanArg.replace(/'/g, "\\''")
+                return cleanArg
+              }).join(' ')
+            })
+            
+            // Replace $1, $2, etc. with positional arguments
+            for (let i = 1; i <= args.length; i++) {
+              const arg = args[i - 1] || ''
+              
+              // Handle quoted and unquoted placeholders
+              if (expandedInput.includes(`"$${i}"`)) {
+                // Quoted placeholder - preserve quotes by using escaped quotes
+                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                  ? arg.slice(1, -1) 
+                  : arg
+                expandedInput = expandedInput.replace(`"$${i}"`, `\\"${cleanArg}\\"`)
+              } else if (expandedInput.includes(`'$${i}'`)) {
+                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
+                  ? arg.slice(1, -1) 
+                  : arg
+                expandedInput = expandedInput.replace(`'$${i}'`, `'${cleanArg}'`)
+              } else if (expandedInput.includes(`$${i}`)) {
+                // Unquoted placeholder - use arg as-is
+                expandedInput = expandedInput.replace(`$${i}`, arg)
+              }
+            }
+            
+            // Remove any remaining unreplaced placeholders
+            expandedInput = expandedInput.replace(/\$\d+/g, '')
+          } else {
+            // Handle trailing space expansion or append arguments
+            if (aliasValue.endsWith(' ') && args.length > 0) {
+              expandedInput = `${aliasValue}${args.join(' ')}`
+            } else if (args.length > 0) {
+              expandedInput = `${aliasValue} ${args.join(' ')}`
+            }
+          }
+          
+          
+          // Execute the expanded command
+          return await this.executeCommandChain(expandedInput, { 
+            ...options, 
+            aliasDepth: (options?.aliasDepth || 0) + 1 
+          })
+        }
+      }
+
       // Parse the command (no operator chain)
       let parsed
       try {

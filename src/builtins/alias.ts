@@ -115,8 +115,11 @@ export const aliasCommand: BuiltinCommand = {
       if (aliasValue.startsWith('"') && aliasValue.endsWith('"') && aliasValue.length > 1) {
         // Remove outer double quotes for values like "echo it's ok"
         shell.aliases[aliasName] = aliasValue.slice(1, -1)
+      } else if (aliasValue.startsWith('\'') && aliasValue.endsWith('\'') && aliasValue.length > 1) {
+        // Remove outer single quotes for values like 'echo long text'
+        shell.aliases[aliasName] = aliasValue.slice(1, -1)
       } else {
-        // Preserve single quotes and unquoted values as-is
+        // Unquoted values as-is
         shell.aliases[aliasName] = aliasValue
       }
     }

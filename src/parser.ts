@@ -531,13 +531,22 @@ export class CommandParser {
     if (!arg)
       return arg
 
-    // Handle quoted strings
-    if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
-      return arg.slice(1, -1)
+    // Handle escaped characters first
+    const processed = arg.replace(/\\(.)/g, '$1')
+
+    // For quoted strings, only remove quotes if they're not part of the content
+    // This preserves quotes that should be part of the output
+    if ((processed.startsWith('"') && processed.endsWith('"')) || (processed.startsWith('\'') && processed.endsWith('\''))) {
+      // Check if this is a simple quoted string or if quotes should be preserved
+      const inner = processed.slice(1, -1)
+      // If the inner content doesn't contain the same quote character, remove outer quotes
+      const quoteChar = processed[0]
+      if (!inner.includes(quoteChar)) {
+        return inner
+      }
     }
 
-    // Handle escaped characters
-    return arg.replace(/\\(.)/g, '$1')
+    return processed
   }
 
   private isInQuotes(input: string, position: number): boolean {

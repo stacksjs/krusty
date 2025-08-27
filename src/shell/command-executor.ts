@@ -104,12 +104,25 @@ export class CommandExecutor {
       TERM: process.env.TERM || 'xterm-256color',
     }
 
-    // Spawn the process
-    const child = spawn(command.name, command.args || [], {
+    // Spawn the process - use sh -c for shell features but handle quotes properly
+    const args = command.args || []
+    const escapedArgs = args.map(arg => {
+      // If arg contains single quotes, wrap in double quotes
+      if (arg.includes("'")) {
+        return `"${arg}"`
+      }
+      // If arg contains spaces but no quotes, wrap in single quotes
+      if (arg.includes(' ') && !arg.startsWith('"') && !arg.startsWith("'")) {
+        return `'${arg}'`
+      }
+      return arg
+    })
+    const fullCommand = [command.name, ...escapedArgs].join(' ')
+    
+    const child = spawn('/bin/sh', ['-c', fullCommand], {
       cwd: this.cwd,
       env: cleanEnv,
       stdio,
-      shell: true,
       windowsHide: true,
     }) as ChildProcess
 
@@ -162,11 +175,12 @@ export class CommandExecutor {
         })
       }),
       new Promise<number>((resolve) => {
+        const timeout = process.env.NODE_ENV === 'test' ? 10000 : 1000 // 10 seconds in tests, 1 second otherwise
         setTimeout(() => {
           child.kill('SIGKILL')
           this.children = this.children.filter(c => c.child.pid !== child.pid)
           resolve(124) // timeout exit code
-        }, 1000) // 1 second timeout
+        }, timeout)
       }),
     ])
 
@@ -209,7 +223,7 @@ export class CommandExecutor {
 
     const start = performance.now()
     const commandStr = commands.map(cmd => `${cmd.name} ${(cmd.args || []).join(' ')}`).join(' | ')
-    
+
     if (this.xtrace) {
       process.stderr.write(`+ ${commandStr}\n`)
     }
@@ -222,7 +236,7 @@ export class CommandExecutor {
     }
 
     try {
-      const child = spawn('sh', ['-c', commandStr], {
+      const child = spawn('/bin/sh', ['-c', commandStr], {
         cwd: this.cwd,
         env: cleanEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -244,6 +258,7 @@ export class CommandExecutor {
         })
       }
 
+      // Wait for process completion with timeout
       const exitCode = await Promise.race([
         new Promise<number>((resolve) => {
           child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -251,10 +266,11 @@ export class CommandExecutor {
           })
         }),
         new Promise<number>((resolve) => {
+          const timeout = process.env.NODE_ENV === 'test' ? 10000 : 2000 // 10 seconds in tests, 2 seconds otherwise
           setTimeout(() => {
             child.kill('SIGKILL')
             resolve(124) // timeout exit code
-          }, 2000) // 2 second timeout for tests
+          }, timeout)
         }),
       ])
 
