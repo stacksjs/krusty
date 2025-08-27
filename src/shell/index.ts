@@ -127,7 +127,8 @@ export class KrustyShell implements Shell {
       this.hookManager = { executeHooks: async () => {} } as any
       this.log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any
       this.autoSuggestInput = {} as any
-      this.jobManager = {} as any
+      // Initialize real JobManager even in test mode since tests depend on it
+      this.jobManager = new JobManager(this)
       this.scriptManager = {} as any
     } else {
       this.themeManager = new ThemeManager(this.config.theme)
