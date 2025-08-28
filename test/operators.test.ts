@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 describe('Operator Chaining', () => {
   let shell: KrustyShell

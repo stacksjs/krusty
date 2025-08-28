@@ -96,22 +96,22 @@ function mockGitCommand(args: string[]): CommandResult {
  */
 export function createMockShellWithNoChanges(tempDir?: string): KrustyShell {
   const shell = new KrustyShell({ ...defaultConfig, verbose: false })
-  
+
   if (tempDir) {
     shell.changeDirectory(tempDir)
   }
-  
+
   // Mock executeCommand to prevent all external command execution
   shell.executeCommand = mock(async (command: string, args: string[]): Promise<CommandResult> => {
     // Mock git commands for no changes scenario
     if (command === 'git') {
       return mockGitCommandNoChanges(args)
     }
-    
+
     // Mock all other commands
     return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
   })
-  
+
   return shell
 }
 

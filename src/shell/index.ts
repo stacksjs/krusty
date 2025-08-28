@@ -119,7 +119,7 @@ export class KrustyShell implements Shell {
     }
 
     this.parser = new CommandParser()
-    
+
     // Skip complex initialization in test environment to prevent hanging
     if (process.env.NODE_ENV === 'test') {
       // Minimal initialization for tests
@@ -128,11 +128,11 @@ export class KrustyShell implements Shell {
       this.systemInfoProvider = {} as any
       this.gitInfoProvider = {} as any
       this.completionProvider = new CompletionProvider(this)
-      this.pluginManager = { 
-        shutdown: async () => {}, 
+      this.pluginManager = {
+        shutdown: async () => {},
         getPluginCompletions: () => [],
         loadPlugins: async () => {},
-        getPlugin: () => undefined
+        getPlugin: () => undefined,
       } as any
       // Initialize real HookManager even in test mode since hook tests depend on it
       this.hookManager = new HookManager(this, this.config)
@@ -142,7 +142,8 @@ export class KrustyShell implements Shell {
       this.jobManager = new JobManager(this)
       // Initialize real ScriptManager even in test mode since script tests depend on it
       this.scriptManager = new ScriptManager(this)
-    } else {
+    }
+    else {
       this.themeManager = new ThemeManager(this.config.theme)
       this.promptRenderer = new PromptRenderer(this.config)
       this.systemInfoProvider = new SystemInfoProvider()
@@ -202,18 +203,19 @@ export class KrustyShell implements Shell {
     if (typeof parsed === 'string') {
       return await this.commandChainExecutor.executeCommandChain(parsed, options)
     }
-    
+
     // For ParsedCommand objects with multiple commands, execute them as a pipeline
     if (parsed.commands && parsed.commands.length > 0) {
       if (parsed.commands.length === 1) {
         // Single command - execute directly
         return await this.executeSingleCommand(parsed.commands[0], undefined, options)
-      } else {
+      }
+      else {
         // Multiple commands - execute as pipeline
         return await this.executePipedCommands(parsed.commands, options)
       }
     }
-    
+
     // Fallback for empty commands
     return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
   }
@@ -405,12 +407,12 @@ export class KrustyShell implements Shell {
       }
 
       // Check if completions are grouped (CompletionGroup[])
-      const isGrouped = Array.isArray(completions) && 
-        completions.length > 0 && 
-        completions[0] && 
-        typeof completions[0] === 'object' && 
-        'title' in completions[0] && 
-        'items' in completions[0]
+      const isGrouped = Array.isArray(completions)
+        && completions.length > 0
+        && completions[0]
+        && typeof completions[0] === 'object'
+        && 'title' in completions[0]
+        && 'items' in completions[0]
 
       // If grouped, return as-is (don't flatten or process further)
       if (isGrouped) {
@@ -717,7 +719,7 @@ export class KrustyShell implements Shell {
     // Check for alias expansion (only if not bypassing aliases)
     if (!options?.bypassAliases && command.name in this.aliases) {
       const aliasDepth = (options?.aliasDepth || 0) + 1
-      
+
       // Prevent infinite recursion with depth limit
       if (aliasDepth > 10) {
         return {
@@ -728,15 +730,15 @@ export class KrustyShell implements Shell {
           streamed: false,
         }
       }
-      
+
       // Use AliasManager for proper alias expansion
       const expandedCommand = await this.aliasManager.expandAlias(command)
       if (expandedCommand && expandedCommand !== command) {
         // Execute the expanded alias command (allow nested aliases with depth tracking)
-        return await this.executeCommandChain(expandedCommand, { 
-          bypassAliases: options?.bypassAliases, 
-          bypassFunctions: options?.bypassFunctions, 
-          aliasDepth 
+        return await this.executeCommandChain(expandedCommand, {
+          bypassAliases: options?.bypassAliases,
+          bypassFunctions: options?.bypassFunctions,
+          aliasDepth,
         })
       }
     }

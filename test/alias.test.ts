@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 describe('Alias Support', () => {
   let shell: KrustyShell
@@ -111,7 +111,7 @@ describe('Alias Support', () => {
     const content = 'hello-stdin-redirection\n'
     await Bun.write(filename, content)
     try {
-      shell.aliases.readfile = `cat ${filename}`  // Use direct file reading instead of stdin redirection
+      shell.aliases.readfile = `cat ${filename}` // Use direct file reading instead of stdin redirection
       const result = await shell.execute('readfile')
       expect(result.exitCode).toBe(0)
       expect(result.stderr).toBe('')
@@ -138,7 +138,7 @@ describe('Alias Support', () => {
     const content = 'hello-stdin-2\n'
     await Bun.write(filename, content)
     try {
-      shell.aliases.combo = `cat ${filename} || echo fail`  // Use direct file reading instead of stdin redirection
+      shell.aliases.combo = `cat ${filename} || echo fail` // Use direct file reading instead of stdin redirection
       const result = await shell.execute('combo')
       expect(result.exitCode).toBe(0)
       expect(result.stdout).toContain('hello-stdin-2')
@@ -219,7 +219,7 @@ describe('Alias Builtin Commands', () => {
 
   // Alias with single quote inside value executes correctly
   test('should execute alias containing single quotes in value', async () => {
-    await shell.execute("alias a='echo \"it\\'s working\"'")
+    await shell.execute('alias a=\'echo "it\\\'s working"\'')
     expect(shell.aliases.a).toBe('echo "it\\\'s working"')
     const result = await shell.execute('a')
     expect(result.stdout.trim()).toBe('it\'s working')

@@ -296,14 +296,14 @@ export class RedirectionHandler {
                 }
                 catch {}
               })
-              
+
               // Handle pipe errors gracefully
               ;(process.stdin as any)?.on?.('error', (err: any) => {
                 if (err && (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END')) {
                   // ignore benign pipe errors
                 }
               })
-              
+
               // End stdin after piping to prevent hanging
               stream.on('end', () => {
                 try {
@@ -313,7 +313,7 @@ export class RedirectionHandler {
                 }
                 catch {}
               })
-              
+
               stream.pipe(process.stdin as any, { end: false })
             }
             catch {}

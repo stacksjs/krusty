@@ -82,10 +82,10 @@ describe('Typo Corrections Test', () => {
 
     // Start readLine
     const readLinePromise = autoSuggestInput.readLine(prompt)
-    
+
     // Debug: Check how many keypress handlers were registered
     console.log(`DEBUG: ${keypressHandlers.length} keypress handlers registered`)
-    
+
     const keypressHandler = keypressHandlers[keypressHandlers.length - 1] // Use the last one
 
     // Type 'g'
@@ -132,10 +132,10 @@ describe('Typo Corrections Test', () => {
 
     // Start readLine
     const readLinePromise = autoSuggestInput.readLine(prompt)
-    
+
     // Debug: Check how many keypress handlers were registered
     console.log(`DEBUG: ${keypressHandlers.length} keypress handlers registered`)
-    
+
     const keypressHandler = keypressHandlers[keypressHandlers.length - 1] // Use the last one
 
     // Type 'b' - should show 'build' or 'bundle' suggestion

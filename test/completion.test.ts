@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { homedir } from 'node:os'
-import process from 'node:process'
 import { KrustyShell } from '../src'
 import { defaultConfig } from '../src/config'
 
@@ -58,12 +57,12 @@ describe('CompletionProvider', () => {
   it('handles quoted/escaped path fragments', () => {
     // Cursor inside a quoted arg; we still pass full input and cursor at end
     const input = 'cat "./src/co'
-    
+
     // Force reset the shell's cwd to ensure test isolation
     shell.cwd = '/Users/chrisbreuer/Code/krusty'
-    
+
     const out = shell.getCompletions(input, input.length)
-    
+
     // Should return some completions for paths starting with co
     expect(out.length).toBeGreaterThan(0)
     // Should contain completions that start with co or config

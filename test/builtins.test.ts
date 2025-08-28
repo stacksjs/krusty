@@ -24,7 +24,7 @@ describe('Builtin Commands', () => {
     }
     shell = new KrustyShell(testConfig)
     tempDir = await mkdtemp(join(tmpdir(), 'krusty-test-'))
-    
+
     // Store original cwd for restoration
     originalCwd = shell.cwd
 
@@ -47,7 +47,7 @@ describe('Builtin Commands', () => {
   afterEach(async () => {
     // Restore original cwd to prevent test isolation issues
     shell.cwd = originalCwd
-    
+
     // Restore original method
     if (originalExecuteCommand) {
       shell.executeCommand = originalExecuteCommand

@@ -1,4 +1,4 @@
-import type { Shell, CompletionGroup, CompletionItem } from '../types'
+import type { CompletionGroup, CompletionItem, Shell } from '../types'
 import type { AutoSuggestOptions, GroupedSuggestion } from './types'
 
 export class SuggestionManager {
@@ -9,18 +9,18 @@ export class SuggestionManager {
   private currentSuggestion: string = ''
   private isShowingSuggestions: boolean = false
   private isNavigatingSuggestions: boolean = false
-  
+
   // Grouped completion state
   private groupedActive: boolean = false
   private groupedForRender: GroupedSuggestion[] | null = null
   private groupedIndexMap: Array<{ group: number, idx: number }> = []
-  
+
   // One-shot flags for special behavior
   private forceHistoryOnlyOnce: boolean = false
   private suppressHistoryMergeOnce: boolean = false
   private specialRestoreGroupedOnce: boolean = false
   private inlineFromHistoryOnce: string | null = null
-  
+
   // Track acceptance and post-accept edits
   private acceptedCompletion: boolean = false
   private editedSinceAccept: boolean = false
@@ -51,7 +51,7 @@ export class SuggestionManager {
 
       let next: string[] = []
       let groups: GroupedSuggestion[] | null = null
-      
+
       if (isGroupArray(rawNextAny)) {
         // Normalize groups to strings or {text}
         groups = rawNextAny.map(g => ({
@@ -67,7 +67,8 @@ export class SuggestionManager {
 
       if (groups) {
         next = this.processGroupedSuggestions(groups, token, max, getHistorySuggestions, currentInput)
-      } else {
+      }
+      else {
         next = this.processFlatSuggestions(rawNextAny, token, isCompletionItem)
       }
 
@@ -79,10 +80,11 @@ export class SuggestionManager {
       this.suggestions = next
       this.preserveSelection(prevSelected, prevSelectedIndex)
       this.updateCurrentSuggestion(currentInput, cursorPosition)
-      
+
       // One-shot suppression of history merging is consumed here
       this.suppressHistoryMergeOnce = false
-    } catch {
+    }
+    catch {
       this.resetSuggestions()
     }
   }
@@ -112,7 +114,7 @@ export class SuggestionManager {
 
     this.groupedActive = renderGroups.length > 0
     this.groupedForRender = renderGroups.length > 0 ? renderGroups : null
-    
+
     return flat
   }
 
@@ -120,33 +122,33 @@ export class SuggestionManager {
     const rawNext = Array.isArray(rawNextAny)
       ? rawNextAny.map((v: any) => isCompletionItem(v) ? v.text : String(v))
       : []
-    
+
     if (token.length > 0) {
       const lower = token.toLowerCase()
       const filtered = rawNext.filter((s: string) => s.toLowerCase().startsWith(lower))
       // If strict prefix filtering removes all items, keep the raw list for typo correction
       return filtered.length > 0 ? filtered : rawNext
     }
-    
+
     return rawNext
   }
 
   private mergeDuplicateGroups(groups: GroupedSuggestion[]): GroupedSuggestion[] {
     const mergedByTitle: GroupedSuggestion[] = []
     const titleIndex = new Map<string, number>()
-    
+
     for (const g of groups) {
       const displayTitle = (g.title ?? '').trim()
       const key = displayTitle.toLowerCase()
       if (!g.items || g.items.length === 0)
         continue
-      
+
       let idx = titleIndex.get(key)
       if (idx === undefined) {
         idx = mergedByTitle.push({ title: displayTitle, items: [] }) - 1
         titleIndex.set(key, idx)
       }
-      
+
       const target = mergedByTitle[idx]
       const seen = new Set<string>(target.items.map(it => (typeof it === 'string' ? it : it.text)))
       for (const it of g.items) {
@@ -157,7 +159,7 @@ export class SuggestionManager {
         }
       }
     }
-    
+
     return mergedByTitle
   }
 
@@ -165,7 +167,7 @@ export class SuggestionManager {
     const flat: string[] = []
     const map: Array<{ group: number, idx: number }> = []
     const renderGroups: GroupedSuggestion[] = []
-    
+
     for (let gi = 0; gi < groups.length; gi++) {
       const g = groups[gi]
       if (!g.items || g.items.length === 0)
@@ -198,7 +200,7 @@ export class SuggestionManager {
       const seen = new Set(flat)
       const histItems: string[] = []
       const histSorted = getHistorySuggestions(prefix).slice().sort((a, b) => a.localeCompare(b))
-      
+
       for (const h of histSorted) {
         if (flat.length >= max)
           break
@@ -209,7 +211,7 @@ export class SuggestionManager {
         histItems.push(h)
         seen.add(h)
       }
-      
+
       if (histItems.length > 0) {
         renderGroups.push({ title: 'History', items: histItems })
       }
@@ -222,7 +224,7 @@ export class SuggestionManager {
   private mergeWithHistory(suggestions: string[], max: number, getHistorySuggestions: (prefix: string) => string[], currentInput: string): string[] {
     const merged: string[] = []
     const seen = new Set<string>()
-    
+
     for (const s of suggestions) {
       if (!seen.has(s)) {
         merged.push(s)
@@ -231,7 +233,7 @@ export class SuggestionManager {
           break
       }
     }
-    
+
     if (merged.length < max && !this.suppressHistoryMergeOnce && !this.isCdContext(currentInput)) {
       const prefix = this.getCurrentLinePrefix(currentInput)
       const hist = getHistorySuggestions(prefix)
@@ -244,7 +246,7 @@ export class SuggestionManager {
         }
       }
     }
-    
+
     return merged
   }
 
@@ -254,13 +256,16 @@ export class SuggestionManager {
         const idx = this.suggestions.findIndex(s => s === prevSelected)
         if (idx >= 0) {
           this.selectedIndex = idx
-        } else {
+        }
+        else {
           this.selectedIndex = Math.min(prevSelectedIndex, this.suggestions.length - 1)
         }
-      } else {
+      }
+      else {
         this.selectedIndex = Math.min(prevSelectedIndex, this.suggestions.length - 1)
       }
-    } else {
+    }
+    else {
       this.selectedIndex = 0
     }
   }
@@ -282,10 +287,11 @@ export class SuggestionManager {
       }
 
       this.currentSuggestion = this.calculateSuggestionSuffix(selected, inputBeforeCursor)
-    } else {
+    }
+    else {
       this.currentSuggestion = ''
     }
-    
+
     // Consume inline history override after applying once
     this.inlineFromHistoryOnce = null
   }
@@ -295,14 +301,17 @@ export class SuggestionManager {
     if (inputBeforeCursor.trim() === '') {
       // Empty input - show full suggestion
       return selected
-    } else if (/\s$/.test(inputBeforeCursor)) {
+    }
+    else if (/\s$/.test(inputBeforeCursor)) {
       // Starting a new token (cursor preceded by whitespace)
       if (selected.toLowerCase().startsWith(inputBeforeCursor.toLowerCase())) {
         return selected.slice(inputBeforeCursor.length)
-      } else {
+      }
+      else {
         return ''
       }
-    } else {
+    }
+    else {
       // In the middle of a token
       const tokens = inputBeforeCursor.trim().split(/\s+/)
       const lastToken = tokens[tokens.length - 1] || ''
@@ -317,12 +326,15 @@ export class SuggestionManager {
         const remainingLower = remainingFromBase.toLowerCase()
         if (remainingLower.startsWith(lastToken.toLowerCase())) {
           return selected.slice(inputBeforeCursor.length)
-        } else {
+        }
+        else {
           return ''
         }
-      } else if (selLower.startsWith(lastToken.toLowerCase())) {
+      }
+      else if (selLower.startsWith(lastToken.toLowerCase())) {
         return selected.slice(lastToken.length)
-      } else {
+      }
+      else {
         return ''
       }
     }
@@ -338,7 +350,8 @@ export class SuggestionManager {
     try {
       const line = this.getCurrentLinePrefix(currentInput)
       return /^\s*cd(?:\s+|$)/i.test(line)
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -368,16 +381,8 @@ export class SuggestionManager {
     this.selectedIndex = Math.max(0, Math.min(index, this.suggestions.length - 1))
   }
 
-  isShowingSuggestions(): boolean {
-    return this.isShowingSuggestions
-  }
-
   setShowingSuggestions(showing: boolean): void {
     this.isShowingSuggestions = showing
-  }
-
-  isNavigatingSuggestions(): boolean {
-    return this.isNavigatingSuggestions
   }
 
   setNavigatingSuggestions(navigating: boolean): void {
@@ -399,11 +404,11 @@ export class SuggestionManager {
   getSelectedLabel(): string | null {
     if (!this.suggestions || this.suggestions.length === 0)
       return null
-    
+
     const idx = this.selectedIndex
     if (idx < 0 || idx >= this.suggestions.length)
       return null
-    
+
     if (this.isShowingSuggestions && this.groupedActive && this.groupedForRender && this.groupedIndexMap.length === this.suggestions.length) {
       const map = this.groupedIndexMap[idx]
       const group = this.groupedForRender[map.group]
@@ -413,7 +418,7 @@ export class SuggestionManager {
       if (item && typeof (item as any).text === 'string')
         return (item as any).text
     }
-    
+
     return this.suggestions[idx] || null
   }
 
@@ -432,7 +437,7 @@ export class SuggestionManager {
     const selected = this.getSelectedLabel() || ''
     if (!selected)
       return false
-    
+
     const selectedIsDir = selected.endsWith('/')
     const before = currentInput.slice(0, cursorPosition)
     const after = currentInput.slice(cursorPosition)
@@ -447,7 +452,7 @@ export class SuggestionManager {
       this.editedSinceAccept = false
       return selectedIsDir
     }
-    
+
     const m = before.match(/(^|\s)(\S+)$/)
     if (m) {
       const lastTok = m[2] || ''
@@ -455,10 +460,11 @@ export class SuggestionManager {
       const base = currentInput.slice(0, tokenStart)
       const toInsert = selected.startsWith(base) ? selected.slice(base.length) : selected
       setInput(base + toInsert + after, tokenStart + toInsert.length)
-    } else {
+    }
+    else {
       setInput(selected + after, selected.length)
     }
-    
+
     this.currentSuggestion = ''
     this.acceptedCompletion = true
     this.editedSinceAccept = false

@@ -46,14 +46,15 @@ describe('CD Completion Validation', () => {
   afterEach(() => {
     // Restore original cwd to prevent test isolation issues
     shell.changeDirectory(originalCwd)
-    
+
     // Properly stop shell to prevent hanging
     if (shell) {
       shell.stop()
     }
     try {
       rmSync(testDir, { recursive: true, force: true })
-    } catch {}
+    }
+    catch {}
   })
 
   it('should only suggest existing directories for cd command', () => {
@@ -86,20 +87,22 @@ describe('CD Completion Validation', () => {
     // Set OLDPWD to ensure cd - completion works
     const originalOldPwd = process.env.OLDPWD
     process.env.OLDPWD = '/some/old/path'
-    
+
     try {
       const completions = shell.getCompletions('cd ', 3)
       const completionStrings = Array.isArray(completions) ? completions.map(c => typeof c === 'string' ? c : c.text || '') : []
-      
+
       // Should include semantic options (they may be prefixed with 'cd ')
       expect(completionStrings.some(c => c.includes('-') || c === 'cd -')).toBe(true)
       expect(completionStrings.some(c => c.includes('~') || c === 'cd ~')).toBe(true)
       expect(completionStrings.some(c => c.includes('..') || c === 'cd ..')).toBe(true)
-    } finally {
+    }
+    finally {
       // Restore original OLDPWD
       if (originalOldPwd !== undefined) {
         process.env.OLDPWD = originalOldPwd
-      } else {
+      }
+      else {
         delete process.env.OLDPWD
       }
     }

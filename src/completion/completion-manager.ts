@@ -88,7 +88,7 @@ export class CompletionManager {
       const canList = Boolean(searchPath)
       let fullPath = ''
       let entries: string[] = []
-      
+
       if (canList) {
         try {
           fullPath = resolve(searchPath)
@@ -96,7 +96,8 @@ export class CompletionManager {
           if (existsSync(fullPath) && statSync(fullPath).isDirectory()) {
             entries = readdirSync(fullPath)
           }
-        } catch {
+        }
+        catch {
           // If we can't access the directory, return empty entries
           entries = []
         }
@@ -122,12 +123,14 @@ export class CompletionManager {
         if (prefix && !match(entry, prefix))
           continue
         const entryPath = join(fullPath, entry)
-        
+
         // Validate that the entry exists and is actually a directory
         try {
-          if (!existsSync(entryPath)) continue
+          if (!existsSync(entryPath))
+            continue
           const stat = statSync(entryPath)
-          if (!stat.isDirectory()) continue
+          if (!stat.isDirectory())
+            continue
         }
         catch {
           // Skip entries we can't access

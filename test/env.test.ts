@@ -1,7 +1,7 @@
 import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 describe('env builtin', () => {
   let shell: KrustyShell

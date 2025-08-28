@@ -10,7 +10,7 @@ export const aliasCommand: BuiltinCommand = {
   usage: 'alias [name[=value] ...]',
   async execute(args: string[], shell: Shell): Promise<CommandResult> {
     const start = performance.now()
-    
+
     // Helper function to format alias output in the format: name=value
     const formatAlias = (name: string, value: string): string => {
       return `${name}=${value}`
@@ -23,11 +23,11 @@ export const aliasCommand: BuiltinCommand = {
       if (aliasEntries.length === 0) {
         return { exitCode: 0, stdout: '', stderr: '' }
       }
-      
+
       const output = aliasEntries
         .map(([name, value]) => `${name}=${value}`)
         .join('\n')
-      
+
       return { exitCode: 0, stdout: `${output}\n`, stderr: '' }
     }
 
@@ -86,13 +86,14 @@ export const aliasCommand: BuiltinCommand = {
       // Parse alias definition
       let aliasName = arg.substring(0, eq).trim()
       let aliasValue = arg.substring(eq + 1)
-      
+
       // Collect remaining arguments as part of the alias value
       const remainingArgs = args.slice(i + 1)
       if (remainingArgs.length > 0) {
         aliasValue = [aliasValue, ...remainingArgs].join(' ')
         i = args.length // Skip all remaining args since we consumed them
-      } else {
+      }
+      else {
         i++
       }
 
@@ -115,10 +116,12 @@ export const aliasCommand: BuiltinCommand = {
       if (aliasValue.startsWith('"') && aliasValue.endsWith('"') && aliasValue.length > 1) {
         // Remove outer double quotes for values like "echo it's ok"
         shell.aliases[aliasName] = aliasValue.slice(1, -1)
-      } else if (aliasValue.startsWith('\'') && aliasValue.endsWith('\'') && aliasValue.length > 1) {
+      }
+      else if (aliasValue.startsWith('\'') && aliasValue.endsWith('\'') && aliasValue.length > 1) {
         // Remove outer single quotes for values like 'echo long text'
         shell.aliases[aliasName] = aliasValue.slice(1, -1)
-      } else {
+      }
+      else {
         // Unquoted values as-is
         shell.aliases[aliasName] = aliasValue
       }

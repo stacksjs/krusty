@@ -1,5 +1,4 @@
 import type { CommandParser } from '../parser'
-import type { Shell } from '../types'
 
 export class AliasManager {
   private aliases: Record<string, string>
@@ -190,7 +189,8 @@ export class AliasManager {
         if (endsWithSpace) {
           // For trailing space, append directly without extra space
           processedValue += quoted.join(' ')
-        } else {
+        }
+        else {
           processedValue += ` ${quoted.join(' ')}`
         }
       }
@@ -394,10 +394,11 @@ export class AliasManager {
   }
 
   private processAliasArgument(arg: string): string {
-    if (!arg) return '';
+    if (!arg)
+      return ''
     // Handle quoted strings
     if ((arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))) {
-      return arg.slice(1, -1);
+      return arg.slice(1, -1)
     }
     // Handle escaped characters by removing the backslash
     return arg.replace(/\\(.)/g, '$1')

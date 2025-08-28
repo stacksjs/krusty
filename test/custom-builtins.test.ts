@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 describe('Custom simple builtins', () => {
   it('c should clear the screen (ANSI sequence)', async () => {

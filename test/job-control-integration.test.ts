@@ -1,8 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { JobManager } from '../src/jobs/job-manager'
 import { KrustyShell } from '../src'
+import { JobManager } from '../src/jobs/job-manager'
 
 // Simple mock child process
 function createMockChildProcess(pid: number = 12345): Partial<ChildProcess> {

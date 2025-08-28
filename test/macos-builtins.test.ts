@@ -104,12 +104,12 @@ describe('macOS helper builtins', () => {
     const shell = makeShell()
 
     // Track calls to executeCommand
-    const calls: Array<{command: string, args: string[]}> = []
+    const calls: Array<{ command: string, args: string[] }> = []
     const originalExecute = shell.executeCommand
 
     // Mock executeCommand to track calls and prevent actual execution
     shell.executeCommand = async (command: string, args: string[] = []) => {
-      calls.push({command, args})
+      calls.push({ command, args })
 
       // For command -v checks, simulate command exists
       if (args?.[1]?.includes('command -v')) {
@@ -145,8 +145,8 @@ describe('macOS helper builtins', () => {
 
       // Verify it checked for 'code' command
       const codeCheck = calls.find(call =>
-        call.command === 'sh' &&
-        call.args[1].includes('command -v code')
+        call.command === 'sh'
+        && call.args[1].includes('command -v code'),
       )
       expect(codeCheck).toBeDefined()
 
@@ -157,8 +157,8 @@ describe('macOS helper builtins', () => {
 
       // Verify it checked for 'nano' command
       const nanoCheck = calls.find(call =>
-        call.command === 'sh' &&
-        call.args[1].includes('command -v nano')
+        call.command === 'sh'
+        && call.args[1].includes('command -v nano'),
       )
       expect(nanoCheck).toBeDefined()
 
@@ -168,11 +168,12 @@ describe('macOS helper builtins', () => {
 
       // Verify it checked for 'vim' command
       const vimCheck = calls.find(call =>
-        call.command === 'sh' &&
-        call.args[1].includes('command -v vim')
+        call.command === 'sh'
+        && call.args[1].includes('command -v vim'),
       )
       expect(vimCheck).toBeDefined()
-    } finally {
+    }
+    finally {
       // Restore original executeCommand
       shell.executeCommand = originalExecute
     }
@@ -181,31 +182,33 @@ describe('macOS helper builtins', () => {
   it('code should open current directory or return a helpful error', async () => {
     const shell = makeShell()
     const originalExecute = shell.executeCommand
-    
+
     // Mock executeCommand to prevent actual execution
     shell.executeCommand = async (command: string, args: string[] = []) => {
       // For command -v checks, simulate command exists
       if (command === 'sh' && args[1]?.includes('command -v')) {
         return { exitCode: 0, stdout: '/usr/local/bin/code', stderr: '', duration: 0 }
       }
-      
+
       // For code command, simulate success
       if (command === 'code') {
         return { exitCode: 0, stdout: shell.cwd, stderr: '', duration: 0 }
       }
-      
+
       // For any other command, simulate not found
       return { exitCode: 1, stdout: '', stderr: 'command not found', duration: 0 }
     }
-    
+
     try {
       const res = await runBuiltin(shell, 'code')
       if (res.exitCode === 0) {
         expect(res.stdout.trim().length).toBeGreaterThan(0)
-      } else {
+      }
+      else {
         expect(res.stderr).toMatch(/code:|not found/)
       }
-    } finally {
+    }
+    finally {
       // Restore original executeCommand
       shell.executeCommand = originalExecute
     }
@@ -214,36 +217,38 @@ describe('macOS helper builtins', () => {
   it('pstorm should open current directory or return a helpful error', async () => {
     const shell = makeShell()
     const originalExecute = shell.executeCommand
-    
+
     // Mock executeCommand to prevent actual execution
     shell.executeCommand = async (command: string, args: string[] = []) => {
       // For command -v checks, simulate command exists
       if (command === 'sh' && args[1]?.includes('command -v')) {
         return { exitCode: 0, stdout: '/usr/local/bin/pstorm', stderr: '', duration: 0 }
       }
-      
+
       // For pstorm command, simulate success
       if (command === 'pstorm') {
         return { exitCode: 0, stdout: shell.cwd, stderr: '', duration: 0 }
       }
-      
+
       // For open command (macOS fallback), simulate success
       if (command === 'open' && args[0] === '-a' && args[1] === 'PhpStorm') {
         return { exitCode: 0, stdout: shell.cwd, stderr: '', duration: 0 }
       }
-      
+
       // For any other command, simulate not found
       return { exitCode: 1, stdout: '', stderr: 'command not found', duration: 0 }
     }
-    
+
     try {
       const res = await runBuiltin(shell, 'pstorm')
       if (res.exitCode === 0) {
         expect(res.stdout.trim().length).toBeGreaterThan(0)
-      } else {
+      }
+      else {
         expect(res.stderr).toMatch(/pstorm:|not found/)
       }
-    } finally {
+    }
+    finally {
       // Restore original executeCommand
       shell.executeCommand = originalExecute
     }

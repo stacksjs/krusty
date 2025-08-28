@@ -105,7 +105,7 @@ describe('Cursor Positioning Tests', () => {
 
     // Verify cursor positioning is correct - should have at least one cursor positioning command
     expect(finalColumnNumbers.length).toBeGreaterThan(0)
-    
+
     // The cursor should be positioned at least at the prompt position
     const lastCursorPosition = finalColumnNumbers[finalColumnNumbers.length - 1]
     expect(lastCursorPosition).toBeGreaterThanOrEqual(expectedInitialColumn)

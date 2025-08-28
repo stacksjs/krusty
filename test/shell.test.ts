@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import type { KrustyConfig } from '../src/types'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { homedir } from 'node:os'
@@ -28,7 +27,7 @@ describe('KrustyShell', () => {
       },
     }
     shell = new KrustyShell(testConfig)
-    
+
     // Store original cwd for restoration
     originalCwd = shell.cwd
 
@@ -90,7 +89,7 @@ describe('KrustyShell', () => {
   afterEach(() => {
     // Restore original cwd to prevent test isolation issues
     shell.cwd = originalCwd
-    
+
     // Restore original methods
     process.stdout.write = originalWrite
     process.stdin.on = originalOn

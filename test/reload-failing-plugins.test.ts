@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PluginManager } from '../src/plugins/plugin-manager'
 import { KrustyShell } from '../src'
+import { PluginManager } from '../src/plugins/plugin-manager'
 
 /**
  * These tests ensure plugin errors during lifecycle hooks don't crash the shell

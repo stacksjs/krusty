@@ -1,6 +1,6 @@
 import type { AutoSuggestInput } from '../input/auto-suggest'
 import type { Logger } from '../logger'
-import type { CommandResult, Shell } from '../types'
+import type { Shell } from '../types'
 import process from 'node:process'
 
 export class ReplManager {

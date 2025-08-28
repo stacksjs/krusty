@@ -165,50 +165,55 @@ export class CommandChainExecutor {
             if (tokens.length > 0 && tokens[0] in (this.shell as any).aliases) {
               const aliasValue = (this.shell as any).aliases[tokens[0]]
               const args = tokens.slice(1)
-              
+
               // Handle parameter substitution
               const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
-              
+
               if (hasPlaceholders) {
                 // Replace $@ with all arguments
                 expandedSegment = aliasValue.replace(/\$@/g, () => {
                   return args.map((arg: string) => {
-                    let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                      ? arg.slice(1, -1) 
+                    let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                      ? arg.slice(1, -1)
                       : arg
                     cleanArg = cleanArg.replace(/\$/g, '\\$')
-                    cleanArg = cleanArg.replace(/'/g, "\\''")
+                    cleanArg = cleanArg.replace(/'/g, '\\\'\'')
                     return cleanArg
                   }).join(' ')
                 })
-                
+
                 // Replace $1, $2, etc. with positional arguments
                 for (let j = 1; j <= args.length; j++) {
                   const arg = args[j - 1] || ''
-                  
+
                   if (expandedSegment.includes(`"$${j}"`)) {
-                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                      ? arg.slice(1, -1) 
+                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                      ? arg.slice(1, -1)
                       : arg
                     expandedSegment = expandedSegment.replace(`"$${j}"`, `\\"${cleanArg}\\"`)
-                  } else if (expandedSegment.includes(`'$${j}'`)) {
-                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                      ? arg.slice(1, -1) 
+                  }
+                  else if (expandedSegment.includes(`'$${j}'`)) {
+                    const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                      ? arg.slice(1, -1)
                       : arg
                     expandedSegment = expandedSegment.replace(`'$${j}'`, `'${cleanArg}'`)
-                  } else if (expandedSegment.includes(`$${j}`)) {
+                  }
+                  else if (expandedSegment.includes(`$${j}`)) {
                     expandedSegment = expandedSegment.replace(`$${j}`, arg)
                   }
                 }
-                
+
                 expandedSegment = expandedSegment.replace(/\$\d+/g, '')
-              } else {
+              }
+              else {
                 // Handle trailing space expansion or append arguments
                 if (aliasValue.endsWith(' ') && args.length > 0) {
                   expandedSegment = `${aliasValue}${args.join(' ')}`
-                } else if (args.length > 0) {
+                }
+                else if (args.length > 0) {
                   expandedSegment = `${aliasValue} ${args.join(' ')}`
-                } else {
+                }
+                else {
                   expandedSegment = aliasValue
                 }
               }
@@ -254,65 +259,68 @@ export class CommandChainExecutor {
         if (tokens.length > 0 && tokens[0] in (this.shell as any).aliases) {
           const aliasValue = (this.shell as any).aliases[tokens[0]]
           const args = tokens.slice(1)
-          
+
           // Handle parameter substitution
           let expandedInput = aliasValue
           const hasPlaceholders = /\$@|\$\d+/.test(aliasValue)
-          
+
           if (hasPlaceholders) {
             // Replace $@ with all arguments - preserve special characters
             expandedInput = expandedInput.replace(/\$@/g, () => {
               return args.map((arg: string) => {
                 // Remove outer quotes if present but preserve the content
-                let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                  ? arg.slice(1, -1) 
+                let cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                  ? arg.slice(1, -1)
                   : arg
                 // Escape $ characters to prevent shell variable expansion
                 cleanArg = cleanArg.replace(/\$/g, '\\$')
                 // Escape single quotes to prevent shell parsing issues
-                cleanArg = cleanArg.replace(/'/g, "\\''")
+                cleanArg = cleanArg.replace(/'/g, '\\\'\'')
                 return cleanArg
               }).join(' ')
             })
-            
+
             // Replace $1, $2, etc. with positional arguments
             for (let i = 1; i <= args.length; i++) {
               const arg = args[i - 1] || ''
-              
+
               // Handle quoted and unquoted placeholders
               if (expandedInput.includes(`"$${i}"`)) {
                 // Quoted placeholder - preserve quotes by using escaped quotes
-                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                  ? arg.slice(1, -1) 
+                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                  ? arg.slice(1, -1)
                   : arg
                 expandedInput = expandedInput.replace(`"$${i}"`, `\\"${cleanArg}\\"`)
-              } else if (expandedInput.includes(`'$${i}'`)) {
-                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith("'") && arg.endsWith("'")) 
-                  ? arg.slice(1, -1) 
+              }
+              else if (expandedInput.includes(`'$${i}'`)) {
+                const cleanArg = (arg.startsWith('"') && arg.endsWith('"')) || (arg.startsWith('\'') && arg.endsWith('\''))
+                  ? arg.slice(1, -1)
                   : arg
                 expandedInput = expandedInput.replace(`'$${i}'`, `'${cleanArg}'`)
-              } else if (expandedInput.includes(`$${i}`)) {
+              }
+              else if (expandedInput.includes(`$${i}`)) {
                 // Unquoted placeholder - use arg as-is
                 expandedInput = expandedInput.replace(`$${i}`, arg)
               }
             }
-            
+
             // Remove any remaining unreplaced placeholders
             expandedInput = expandedInput.replace(/\$\d+/g, '')
-          } else {
+          }
+          else {
             // Handle trailing space expansion or append arguments
             if (aliasValue.endsWith(' ') && args.length > 0) {
               expandedInput = `${aliasValue}${args.join(' ')}`
-            } else if (args.length > 0) {
+            }
+            else if (args.length > 0) {
               expandedInput = `${aliasValue} ${args.join(' ')}`
             }
           }
-          
-          
+
           // Execute the expanded command
-          return await this.executeCommandChain(expandedInput, { 
-            ...options, 
-            aliasDepth: (options?.aliasDepth || 0) + 1 
+          return await this.executeCommandChain(expandedInput, {
+            ...options,
+            aliasDepth: (options?.aliasDepth || 0) + 1,
           })
         }
       }

@@ -70,16 +70,16 @@ export const wipCommand: BuiltinCommand = {
 
     // CRITICAL: ALWAYS detect test mode and return mock responses
     // Check multiple ways since NODE_ENV might not be reliable
-    const isTestMode = env.NODE_ENV === 'test' || 
-                      (globalThis as any).process?.env?.NODE_ENV === 'test' ||
-                      typeof (globalThis as any).describe !== 'undefined' ||
-                      typeof (globalThis as any).it !== 'undefined' ||
-                      typeof (globalThis as any).expect !== 'undefined' ||
-                      (shell.executeCommand as any).isMockFunction === true ||
-                      // Force test mode if we detect any test-related globals
-                      typeof (globalThis as any).test !== 'undefined' ||
-                      typeof (globalThis as any).beforeEach !== 'undefined' ||
-                      typeof (globalThis as any).afterEach !== 'undefined'
+    const isTestMode = env.NODE_ENV === 'test'
+      || (globalThis as any).process?.env?.NODE_ENV === 'test'
+      || typeof (globalThis as any).describe !== 'undefined'
+      || typeof (globalThis as any).it !== 'undefined'
+      || typeof (globalThis as any).expect !== 'undefined'
+      || (shell.executeCommand as any).isMockFunction === true
+    // Force test mode if we detect any test-related globals
+      || typeof (globalThis as any).test !== 'undefined'
+      || typeof (globalThis as any).beforeEach !== 'undefined'
+      || typeof (globalThis as any).afterEach !== 'undefined'
 
     // FORCE test mode detection - if ANY indication this is a test, return mocks
     if (isTestMode) {
@@ -96,17 +96,17 @@ export const wipCommand: BuiltinCommand = {
 
       // Return mock output for normal test cases
       const mockOutput: string[] = []
-      
+
       if (!opts.quiet) {
         mockOutput.push('1 file changed')
         mockOutput.push(`abc1234 ${opts.message || 'chore: wip'}`)
       }
 
-      return { 
-        exitCode: 0, 
-        stdout: mockOutput.length > 0 ? `${mockOutput.join('\n')}\n` : '', 
-        stderr: '', 
-        duration: performance.now() - start 
+      return {
+        exitCode: 0,
+        stdout: mockOutput.length > 0 ? `${mockOutput.join('\n')}\n` : '',
+        stderr: '',
+        duration: performance.now() - start,
       }
     }
 
@@ -114,9 +114,9 @@ export const wipCommand: BuiltinCommand = {
     // Create a wrapper that can be mocked for testing
     const executeGitCommand = async (command: string, args: string[]) => {
       // Additional safety check - if we somehow get here in test mode, return mocks
-      if (typeof (globalThis as any).describe !== 'undefined' || 
-          typeof (globalThis as any).it !== 'undefined' ||
-          env.NODE_ENV === 'test') {
+      if (typeof (globalThis as any).describe !== 'undefined'
+        || typeof (globalThis as any).it !== 'undefined'
+        || env.NODE_ENV === 'test') {
         // Return appropriate mock responses based on git command
         if (args.includes('add')) {
           return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
@@ -138,7 +138,7 @@ export const wipCommand: BuiltinCommand = {
         }
         return { exitCode: 0, stdout: '', stderr: '', duration: 0 }
       }
-      
+
       // Only execute real commands in production
       return shell.executeCommand(command, args)
     }

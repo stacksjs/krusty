@@ -106,19 +106,19 @@ export class CommandExecutor {
 
     // Spawn the process - use sh -c for shell features but handle quotes properly
     const args = command.args || []
-    const escapedArgs = args.map(arg => {
+    const escapedArgs = args.map((arg) => {
       // If arg contains single quotes, wrap in double quotes
-      if (arg.includes("'")) {
+      if (arg.includes('\'')) {
         return `"${arg}"`
       }
       // If arg contains spaces but no quotes, wrap in single quotes
-      if (arg.includes(' ') && !arg.startsWith('"') && !arg.startsWith("'")) {
+      if (arg.includes(' ') && !arg.startsWith('"') && !arg.startsWith('\'')) {
         return `'${arg}'`
       }
       return arg
     })
     const fullCommand = [command.name, ...escapedArgs].join(' ')
-    
+
     const child = spawn('/bin/sh', ['-c', fullCommand], {
       cwd: this.cwd,
       env: cleanEnv,
@@ -169,7 +169,7 @@ export class CommandExecutor {
     // Wait for process completion with timeout
     const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 1000)
     let timedOut = false
-    
+
     const exitCode = await Promise.race([
       new Promise<number>((resolve) => {
         child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -192,7 +192,7 @@ export class CommandExecutor {
         }, timeoutMs)
       }),
     ])
-    
+
     // Add timeout message to stderr if process timed out
     if (timedOut) {
       stderr += `krusty: process timed out after ${timeoutMs}ms\n`
@@ -281,7 +281,7 @@ export class CommandExecutor {
       // Wait for process completion with timeout
       const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 2000)
       let timedOut = false
-      
+
       const exitCode = await Promise.race([
         new Promise<number>((resolve) => {
           child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -302,7 +302,7 @@ export class CommandExecutor {
           }, timeoutMs)
         }),
       ])
-      
+
       // Add timeout message to stderr if process timed out
       if (timedOut) {
         stderr += `krusty: process timed out after ${timeoutMs}ms\n`
@@ -338,11 +338,11 @@ export class CommandExecutor {
   private async executePipelineWithPipefail(
     commands: Array<{ name: string, args?: string[], background?: boolean }>,
     cleanEnv: Record<string, string>,
-    start: number
+    start: number,
   ): Promise<CommandResult> {
     // When pipefail is enabled, we use shell's built-in pipefail support
     const commandStr = commands.map(cmd => `${cmd.name} ${(cmd.args || []).join(' ')}`).join(' | ')
-    
+
     // Use bash with pipefail enabled for proper pipeline error handling
     // Note: pipefail is a bash feature, not available in basic sh
     const child = spawn('/bin/bash', ['-c', `set -o pipefail; ${commandStr}`], {
@@ -370,7 +370,7 @@ export class CommandExecutor {
     // Wait for process completion with timeout
     const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 2000)
     let timedOut = false
-    
+
     const exitCode = await Promise.race([
       new Promise<number>((resolve) => {
         child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
@@ -391,7 +391,7 @@ export class CommandExecutor {
         }, timeoutMs)
       }),
     ])
-    
+
     // Add timeout message to stderr if process timed out
     if (timedOut) {
       stderr += `krusty: process timed out after ${timeoutMs}ms\n`
