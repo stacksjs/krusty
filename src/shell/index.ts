@@ -134,7 +134,8 @@ export class KrustyShell implements Shell {
         loadPlugins: async () => {},
         getPlugin: () => undefined
       } as any
-      this.hookManager = { executeHooks: async () => {} } as any
+      // Initialize real HookManager even in test mode since hook tests depend on it
+      this.hookManager = new HookManager(this, this.config)
       this.log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any
       this.autoSuggestInput = {} as any
       // Initialize real JobManager even in test mode since tests depend on it

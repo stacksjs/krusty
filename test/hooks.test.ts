@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { KrustyShell } from '../src'
 import { defaultConfig } from '../src/config'
 import { HookUtils } from '../src/hooks'
-import { KrustyShell } from '../src'
 
 describe('Hooks System', () => {
   let shell: KrustyShell
@@ -44,7 +44,7 @@ describe('Hooks System', () => {
     }
   })
 
-  it.skip('should register and execute command hooks', async () => {
+  it('should register and execute command hooks', async () => {
     const hookConfig: HookConfig = {
       name: 'test-hook',
       function: 'testFunction',
@@ -69,7 +69,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should execute script hooks', async () => {
+  it('should execute script hooks', async () => {
     const hookConfig: HookConfig = {
       name: 'test-script-hook',
       function: 'testScript',
@@ -94,7 +94,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should handle hook conditions', async () => {
+  it('should handle hook conditions', async () => {
     const testFile = join(tempDir, 'condition-test-file')
 
     const hookConfig: HookConfig = {
@@ -127,7 +127,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should respect hook priorities', async () => {
+  it('should respect hook priorities', async () => {
     const highPriorityHook: HookConfig = {
       name: 'high-priority',
       function: 'highPriority',
@@ -167,7 +167,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should handle multiple hook conditions', async () => {
+  it('should handle multiple hook conditions', async () => {
     // Create test file for condition checking
     const testFile = join(tempDir, 'test-condition.txt')
     writeFileSync(testFile, 'test content')
@@ -199,7 +199,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should handle async hooks', async () => {
+  it('should handle async hooks', async () => {
     const asyncHook: HookConfig = {
       name: 'async-hook',
       function: 'asyncTest',
@@ -238,7 +238,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should prevent recursive hook execution', async () => {
+  it('should prevent recursive hook execution', async () => {
     const recursiveHook: HookConfig = {
       name: 'recursive-hook',
       function: 'recursiveTest',
@@ -266,7 +266,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should expand template variables in commands', async () => {
+  it('should expand template variables in commands', async () => {
     const hookConfig: HookConfig = {
       name: 'template-hook',
       function: 'templateTest',
@@ -318,7 +318,7 @@ describe('Hooks System', () => {
     expect(asyncHook.priority).toBe(2)
   })
 
-  it.skip('should handle file and directory conditions', async () => {
+  it('should handle file and directory conditions', async () => {
     const testFile = join(tempDir, 'test.txt')
     const testDir = join(tempDir, 'testdir')
 
@@ -363,7 +363,7 @@ describe('Hooks System', () => {
     ;(hookManager as any).executeFunction = originalExecuteFunction
   })
 
-  it.skip('should get registered hooks and events', () => {
+  it('should get registered hooks and events', () => {
     const hookConfig: HookConfig = {
       name: 'test-hook',
       command: 'echo "test"',
@@ -380,7 +380,7 @@ describe('Hooks System', () => {
     expect(events).toContain('test:event')
   })
 
-  it.skip('should clear hooks', () => {
+  it('should clear hooks', () => {
     const hookConfig: HookConfig = {
       name: 'test-hook',
       command: 'echo "test"',
