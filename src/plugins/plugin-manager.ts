@@ -228,7 +228,11 @@ export class PluginManager {
       }
 
       const pluginPath = pluginItem.path
-        ? (pluginItem.path.startsWith('/') ? pluginItem.path : this.resolvePath(pluginItem.path))
+        ? (pluginItem.path.startsWith('/') || pluginItem.path.startsWith('.')
+          ? pluginItem.path.startsWith('.')
+            ? join(process.cwd(), pluginItem.path)
+            : pluginItem.path
+          : this.resolvePath(pluginItem.path))
         : join(this.pluginDir, pluginItem.name)
 
       if (!existsSync(pluginPath)) {
