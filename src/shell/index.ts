@@ -2,6 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import type Readline from 'node:readline'
 import type { Job } from '../jobs/job-manager'
 import type { BuiltinCommand, CommandResult, KrustyConfig, ParsedCommand, Plugin, Shell, ThemeConfig } from '../types'
+import { EventEmitter } from 'node:events'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -20,6 +21,7 @@ import { GitInfoProvider, PromptRenderer, SystemInfoProvider } from '../prompt'
 import { ScriptManager } from '../scripting/script-manager'
 import { ThemeManager } from '../theme/theme-manager'
 import { ExpansionUtils } from '../utils/expansion'
+import { ScriptErrorHandler } from '../utils/script-error-handler'
 import { AliasManager } from './alias-manager'
 import { BuiltinManager } from './builtin-manager'
 import { CommandChainExecutor } from './command-chain-executor'
@@ -35,7 +37,7 @@ export { CommandExecutor } from './command-executor'
 export { ReplManager } from './repl-manager'
 export { ScriptExecutor } from './script-executor'
 
-export class KrustyShell implements Shell {
+export class KrustyShell extends EventEmitter implements Shell {
   public config: KrustyConfig
   public cwd: string
   public environment: Record<string, string>
@@ -61,7 +63,7 @@ export class KrustyShell implements Shell {
   private completionProvider: CompletionProvider
   private pluginManager: PluginManager
   private themeManager: ThemeManager
-  private hookManager: HookManager
+  public hookManager: HookManager
   public log: Logger
   private autoSuggestInput: AutoSuggestInput
   private scriptManager: ScriptManager
@@ -72,6 +74,8 @@ export class KrustyShell implements Shell {
   private builtinManager: BuiltinManager
   private scriptExecutor: ScriptExecutor
   private commandChainExecutor: CommandChainExecutor
+  private scriptErrorHandler: ScriptErrorHandler
+  private lastScriptSuggestion: { originalCommand: string, suggestion: string, timestamp: number } | null = null
 
   // Getter for testing access
   get testHookManager(): HookManager {
@@ -89,6 +93,8 @@ export class KrustyShell implements Shell {
   private promptPreRendered = false
 
   constructor(config?: KrustyConfig) {
+    super()
+
     // Use defaultConfig from src/config to preserve exact equality in tests
     this.config = config || defaultConfig
     // Ensure plugins array exists
@@ -135,7 +141,7 @@ export class KrustyShell implements Shell {
         getPlugin: () => undefined,
       } as any
       // Initialize real HookManager even in test mode since hook tests depend on it
-      this.hookManager = new HookManager(this, this.config)
+      this.hookManager = new HookManager(this, this.config || defaultConfig)
       this.log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any
       this.autoSuggestInput = {} as any
       // Initialize real JobManager even in test mode since tests depend on it
@@ -168,6 +174,7 @@ export class KrustyShell implements Shell {
     this.builtinManager = new BuiltinManager(this)
     this.scriptExecutor = new ScriptExecutor(this)
     this.commandChainExecutor = new CommandChainExecutor(this)
+    this.scriptErrorHandler = new ScriptErrorHandler(this)
 
     // Apply expansion cache limits from config (if any)
     try {
@@ -191,6 +198,22 @@ export class KrustyShell implements Shell {
 
     // Delegate to CommandChainExecutor
     const result = await this.commandChainExecutor.executeCommandChain(command, options)
+
+    // Process bun run errors with enhanced suggestions
+    if (result.exitCode !== 0 && result.stderr && command.trim().startsWith('bun run ')) {
+      const scriptName = command.trim().replace(/^bun run\s+/, '').split(' ')[0]
+      const errorResult = this.scriptErrorHandler.handleBunRunError(result.stderr, scriptName)
+      result.stderr = errorResult.stderr
+
+      // Store suggestion for potential use by 'yes' builtin
+      if (errorResult.suggestion) {
+        this.lastScriptSuggestion = {
+          originalCommand: command.trim(),
+          suggestion: errorResult.suggestion,
+          timestamp: Date.now()
+        }
+      }
+    }
 
     // Execute command:after hooks
     await this.hookManager.executeHooks('command:after', { command, result })
@@ -359,7 +382,7 @@ export class KrustyShell implements Shell {
 
     const systemInfo = await this.systemInfoProvider.getSystemInfo()
     const gitInfo = await this.gitInfoProvider.getGitInfo(this.cwd)
-    const prompt = this.promptRenderer.render(this.cwd, systemInfo, gitInfo, this.lastExitCode, this.lastCommandDurationMs)
+    const prompt = await this.promptRenderer.render(this.cwd, systemInfo, gitInfo, this.lastExitCode, this.lastCommandDurationMs)
     // Clear duration so it only shows once after a command
     this.lastCommandDurationMs = 0
 
@@ -617,9 +640,17 @@ export class KrustyShell implements Shell {
         this.log.warn('Module reinitialization failed:', e)
       }
 
+      // Stop the old REPL, re-create with new config, and restart it.
+      this.replManager.stop()
+      this.autoSuggestInput = new AutoSuggestInput(this)
+      this.autoSuggestInput.setShellMode(true)
+      this.replManager = new ReplManager(this, this.autoSuggestInput, this.log)
+      this.replManager.start(this.interactiveSession)
+
       // Execute a reload hook event if configured
       await this.hookManager.executeHooks('shell:reload', {})
 
+      // Return a success message, but the new REPL will actually handle the prompt.
       return {
         exitCode: 0,
         stdout: 'Configuration reloaded successfully\n',

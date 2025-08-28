@@ -73,6 +73,7 @@ wait         Wait for background jobs or PIDs to finish
 web          cd to $HOME/Code
 which        Show the full path of commands
 wip          Create a work-in-progress commit and optionally push it
+yes          Execute the last suggested script correction
 return       Return from a function or script
 break        Break out of loops
 continue     Continue to next iteration of loop

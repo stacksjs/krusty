@@ -298,8 +298,21 @@ export class AutoSuggestInput {
     }
 
     // Position the cursor correctly (after prompt + input, before inline suggestion)
-    const cursorPos = prompt.length + this.cursorPosition
+    // For multi-line prompts, we need to position relative to the last line only
+    const promptLines = prompt.split('\n')
+    const lastLinePrompt = promptLines[promptLines.length - 1] || ''
+    const visualLastLineWidth = this.getVisualWidth(lastLinePrompt)
+    const cursorPos = visualLastLineWidth + this.cursorPosition
     process.stdout.write(`\x1B[${cursorPos + 1}G`) // Move to column (1-based)
+    
+    // Ensure cursor is visible
+    process.stdout.write('\x1B[?25h') // Show cursor
+  }
+
+  private getVisualWidth(text: string): number {
+    // Remove ANSI escape sequences to get the actual visual width
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1B\[[0-9;]*[mGKHfJ]/g, '').length
   }
 
   private applySyntaxHighlighting(input: string): string {
@@ -495,8 +508,11 @@ export class AutoSuggestInput {
 
       // Handle line input
       this.rl.on('line', (input) => {
-        this.currentInput = input
-        resolve(this.currentInput)
+        // Add newline after command input to separate from output
+        process.stdout.write('\n')
+        // Clear current input after command execution to prevent re-filling
+        this.currentInput = ''
+        resolve(input)
         this.cleanup()
       })
 

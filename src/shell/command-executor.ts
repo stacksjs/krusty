@@ -106,6 +106,7 @@ export class CommandExecutor {
 
     // Spawn the process - use sh -c for shell features but handle quotes properly
     const args = command.args || []
+    const shouldStream = (this.config.streamOutput !== false) && !command.background
     const escapedArgs = args.map((arg) => {
       // If arg contains single quotes, wrap in double quotes
       if (arg.includes('\'')) {
@@ -150,7 +151,7 @@ export class CommandExecutor {
       child.stdout.on('data', (data: Buffer) => {
         const str = data.toString()
         stdout += str
-        if (this.config.streamOutput !== false && !command.background) {
+        if (shouldStream) {
           process.stdout.write(str)
         }
       })
@@ -160,7 +161,7 @@ export class CommandExecutor {
       child.stderr.on('data', (data: Buffer) => {
         const str = data.toString()
         stderr += str
-        if (this.config.streamOutput !== false && !command.background) {
+        if (shouldStream) {
           process.stderr.write(str)
         }
       })
@@ -212,7 +213,7 @@ export class CommandExecutor {
       stdout,
       stderr,
       duration,
-      streamed: this.config.streamOutput !== false,
+      streamed: shouldStream,
     }
   }
 

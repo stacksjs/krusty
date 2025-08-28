@@ -62,13 +62,29 @@ export class ReplManager {
               }
               catch {}
 
-              // Print buffered output only if it wasn't already streamed live
+              // A more robust way to print output and errors, ensuring proper newlines.
               if (!result.streamed) {
+                // Move to a new line after the user's input.
+                process.stdout.write('\n');
+
                 if (result.stdout) {
-                  process.stdout.write(result.stdout)
+                  process.stdout.write(result.stdout);
+                  if (!result.stdout.endsWith('\n')) {
+                    process.stdout.write('\n');
+                  }
                 }
+
                 if (result.stderr) {
-                  process.stderr.write(result.stderr)
+                  const colors = this.shell.getThemeManager().getColors();
+                  const errorColor = colors.error || 'red';
+                  const colorCode = errorColor === 'red' ? '\u001B[31m' : '\u001B[39m'; // Default to no color
+                  const resetCode = '\u001B[0m';
+
+                  const coloredError = `${colorCode}${result.stderr}${resetCode}`;
+                  process.stderr.write(coloredError);
+                  if (!result.stderr.endsWith('\n')) {
+                    process.stderr.write('\n');
+                  }
                 }
               }
             }
