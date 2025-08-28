@@ -8,6 +8,7 @@ import { defaultConfig } from '../src/config'
 describe('KrustyShell', () => {
   let shell: KrustyShell
   let testConfig: KrustyConfig
+  let originalCwd: string
   // Mock variables (prefixed with _ to indicate they're intentionally unused in some tests)
   let _mockOutput: string
   let _writeCallCount: number
@@ -27,6 +28,9 @@ describe('KrustyShell', () => {
       },
     }
     shell = new KrustyShell(testConfig)
+    
+    // Store original cwd for restoration
+    originalCwd = shell.cwd
 
     // Setup mock output tracking
     _mockOutput = ''
@@ -84,6 +88,9 @@ describe('KrustyShell', () => {
   })
 
   afterEach(() => {
+    // Restore original cwd to prevent test isolation issues
+    shell.cwd = originalCwd
+    
     // Restore original methods
     process.stdout.write = originalWrite
     process.stdin.on = originalOn

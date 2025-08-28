@@ -15,12 +15,12 @@ describe('File/path completions edge cases', () => {
       },
     })
     // Set the shell's cwd to the project root for consistent test results
-    shell.cwd = process.cwd()
+    shell.cwd = '/Users/chrisbreuer/Code/krusty'
     // Clear completion cache to ensure clean state
     ;(shell as any).completionProvider?.clearCache?.()
   })
 
-  it.skip('handles single-quoted path fragments', () => {
+  it('handles single-quoted path fragments', () => {
     // Test that completions work with quoted paths - use a simpler test
     const input = 'cat \'./README'
     const out = shell.getCompletions(input, input.length)
@@ -41,7 +41,7 @@ describe('File/path completions edge cases', () => {
     expect(withDot.some(item => item.startsWith('.g'))).toBe(true)
   })
 
-  it.skip('suggests directory entries with trailing slash when base ends with /', () => {
+  it('suggests directory entries with trailing slash when base ends with /', () => {
     const input = 'ls src/'
     const out = shell.getCompletions(input, input.length)
     // Should contain subdirectories ending with /

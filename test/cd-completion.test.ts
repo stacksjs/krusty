@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 /**
  * CD completion tests to ensure only existing directories are suggested
@@ -10,6 +10,7 @@ import { KrustyShell } from '../src'
 describe('CD Completion Validation', () => {
   let shell: KrustyShell
   let testDir: string
+  let originalCwd: string
 
   beforeEach(() => {
     // Set test environment to prevent shell from starting interactive session
@@ -22,6 +23,9 @@ describe('CD Completion Validation', () => {
         maxSuggestions: 25,
       },
     })
+
+    // Store original cwd for restoration
+    originalCwd = shell.cwd
 
     // Create a temporary test directory structure
     testDir = join(process.cwd(), 'test-cd-completion')
@@ -40,6 +44,9 @@ describe('CD Completion Validation', () => {
   })
 
   afterEach(() => {
+    // Restore original cwd to prevent test isolation issues
+    shell.changeDirectory(originalCwd)
+    
     // Properly stop shell to prevent hanging
     if (shell) {
       shell.stop()

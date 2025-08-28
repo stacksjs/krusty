@@ -14,6 +14,7 @@ function asGroups(out: any): { title: string, items: string[] }[] | null {
 describe('bun run TDD repro: three groups shown with expected local content', () => {
   let tmp: string
   let shell: KrustyShell
+  let originalCwd: string
 
   beforeAll(() => {
     tmp = mkdtempSync(join(tmpdir(), 'krusty-bunrun-'))
@@ -43,10 +44,14 @@ describe('bun run TDD repro: three groups shown with expected local content', ()
       ...defaultConfig,
       completion: { enabled: true, caseSensitive: false, maxSuggestions: 50 },
     })
+    // Store original cwd for restoration
+    originalCwd = (shell as any).cwd || process.cwd()
     ;(shell as any).cwd = tmp
   })
 
   afterAll(() => {
+    // Restore original cwd to prevent test isolation issues
+    ;(shell as any).cwd = originalCwd
     rmSync(tmp, { recursive: true, force: true })
   })
 

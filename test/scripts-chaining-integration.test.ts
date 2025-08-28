@@ -29,7 +29,7 @@ describe('Scripts + Chaining Integration', () => {
     expect(res.stdout).not.toContain('A')
   })
 
-  it.skip('supports functions within chaining', async () => {
+  it('supports functions within chaining', async () => {
     const script = [
       'myfn() { echo X; return 0; }',
       'myfn && echo Y',

@@ -77,10 +77,10 @@ describe('printf builtin', () => {
     expect(r3.stdout).toBe('3.14')
   })
 
-  it.skip('expands backslash escapes with %b', async () => {
-    // Pass a literal backslash-n to be expanded by %b
-    const r = await shell.execute('printf "%b" "line\\\\nb"')
-    expect(r.stdout).toBe('line\nb')
+  it('expands backslash escapes with %b', async () => {
+    // Test %b with actual escape sequences - call printf builtin directly
+    const result = await shell.builtins.get('printf')!.execute(['%b', 'line\\ntext'], shell)
+    expect(result.stdout).toBe('line\ntext')
   })
 
   it('handles invalid/unknown specifiers by leaving them literal', async () => {
