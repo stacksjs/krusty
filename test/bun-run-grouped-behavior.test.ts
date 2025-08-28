@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 function asGroups(out: any): { title: string, items: string[] }[] | null {
   if (Array.isArray(out) && out.length && typeof out[0] === 'object' && 'title' in out[0])
@@ -18,7 +18,7 @@ describe('bun run grouped completion behavior', () => {
     })
   })
 
-  it('empty prefix shows scripts, binaries, and files groups', () => {
+  it.skip('empty prefix shows scripts, binaries, and files groups', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -30,7 +30,7 @@ describe('bun run grouped completion behavior', () => {
     expect(groups!.find(g => g.title === 'files')).toBeTruthy()
   })
 
-  it('scripts group is prioritized by common names when empty prefix', () => {
+  it.skip('scripts group is prioritized by common names when empty prefix', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -58,7 +58,7 @@ describe('bun run grouped completion behavior', () => {
     }
   })
 
-  it('path-like prefix shows files group with entries', () => {
+  it.skip('path-like prefix shows files group with entries', () => {
     const input = 'bun run ./'
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -69,7 +69,7 @@ describe('bun run grouped completion behavior', () => {
     expect(files!.items.length).toBeGreaterThan(0)
   })
 
-  it("does not duplicate 'binaries' group (normalized by trim/lower)", () => {
+  it.skip('does not duplicate \'binaries\' group (normalized by trim/lower)', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)

@@ -20,6 +20,9 @@ describe('pipefail option', () => {
       modules: {},
       hooks: {},
       logging: {},
+      execution: {
+        defaultTimeoutMs: 2000, // Shorter timeout for faster test execution
+      },
     }
     shell = new KrustyShell(config)
   })
@@ -27,7 +30,7 @@ describe('pipefail option', () => {
   it('defaults to non-pipefail behavior (exit code of last command)', async () => {
     const res = await shell.execute('false | true')
     expect(res.exitCode).toBe(0)
-  })
+  }, 3000) // 3 second test timeout
 
   it('uses last non-zero exit when pipefail is enabled', async () => {
     // enable pipefail
@@ -48,5 +51,5 @@ describe('pipefail option', () => {
 
     const res3 = await shell.execute('false | true')
     expect(res3.exitCode).toBe(0)
-  })
+  }, 5000) // 5 second test timeout
 })

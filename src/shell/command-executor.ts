@@ -250,6 +250,12 @@ export class CommandExecutor {
     }
 
     try {
+      // If pipefail is enabled, we need to handle it ourselves by executing commands individually
+      if (this.pipefail) {
+        return await this.executePipelineWithPipefail(commands, cleanEnv, start)
+      }
+
+      // Default behavior: delegate to shell with normal pipeline semantics
       const child = spawn('/bin/sh', ['-c', commandStr], {
         cwd: this.cwd,
         env: cleanEnv,
@@ -326,6 +332,84 @@ export class CommandExecutor {
         duration: performance.now() - start,
         streamed: false,
       }
+    }
+  }
+
+  private async executePipelineWithPipefail(
+    commands: Array<{ name: string, args?: string[], background?: boolean }>,
+    cleanEnv: Record<string, string>,
+    start: number
+  ): Promise<CommandResult> {
+    // When pipefail is enabled, we use shell's built-in pipefail support
+    const commandStr = commands.map(cmd => `${cmd.name} ${(cmd.args || []).join(' ')}`).join(' | ')
+    
+    // Use bash with pipefail enabled for proper pipeline error handling
+    // Note: pipefail is a bash feature, not available in basic sh
+    const child = spawn('/bin/bash', ['-c', `set -o pipefail; ${commandStr}`], {
+      cwd: this.cwd,
+      env: cleanEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    }) as ChildProcess
+
+    let stdout = ''
+    let stderr = ''
+
+    if (child.stdout) {
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString()
+      })
+    }
+
+    if (child.stderr) {
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+      })
+    }
+
+    // Wait for process completion with timeout
+    const timeoutMs = this.config.execution?.defaultTimeoutMs ?? (process.env.NODE_ENV === 'test' ? 10000 : 2000)
+    let timedOut = false
+    
+    const exitCode = await Promise.race([
+      new Promise<number>((resolve) => {
+        child.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
+          resolve(code ?? (signal === 'SIGINT' ? 130 : 1))
+        })
+      }),
+      new Promise<number>((resolve) => {
+        setTimeout(() => {
+          timedOut = true
+          child.kill(this.config.execution?.killSignal as NodeJS.Signals || 'SIGTERM')
+          // Give process a chance to exit gracefully, then force kill
+          setTimeout(() => {
+            if (!child.killed) {
+              child.kill('SIGKILL')
+            }
+          }, 100)
+          resolve(124) // timeout exit code
+        }, timeoutMs)
+      }),
+    ])
+    
+    // Add timeout message to stderr if process timed out
+    if (timedOut) {
+      stderr += `krusty: process timed out after ${timeoutMs}ms\n`
+    }
+
+    const end = performance.now()
+    const duration = end - start
+
+    if (this.xtrace) {
+      process.stderr.write(`[pipefail pipeline exit] ${exitCode} (${duration.toFixed(2)}ms)\n`)
+    }
+
+    return {
+      exitCode,
+      stdout,
+      stderr,
+      duration,
+      streamed: this.config.streamOutput !== false,
     }
   }
 }

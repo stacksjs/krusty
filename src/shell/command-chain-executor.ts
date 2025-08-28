@@ -109,6 +109,18 @@ export class CommandChainExecutor {
         }
       }
 
+      // Check if this is a script before doing any parsing (but only if not bypassing script detection)
+      if (!options?.bypassScriptDetection) {
+        const scriptExecutor = (this.shell as any).scriptExecutor
+        if (scriptExecutor && scriptExecutor.isScript(input)) {
+          const result = await scriptExecutor.executeScript(input)
+          return {
+            ...result,
+            duration: performance.now() - start,
+          }
+        }
+      }
+
       // Operator-aware chaining: split into segments with ;, &&, ||
       const chain = (this.shell as any).parser.splitByOperatorsDetailed(input)
       if (chain.length > 1) {

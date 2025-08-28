@@ -385,8 +385,21 @@ export class CompletionProvider {
         const stackIdx: string[] = []
         for (let i = 1; i <= Math.min(9, stack.length); i++) stackIdx.push(`-${i}`)
         const idxMatches = stackIdx.filter(s => s.startsWith(last) || last === '')
+        
+        // Semantic completions: -, ~, ..
+        const semanticOptions: string[] = []
+        if (process.env.OLDPWD && ('-'.startsWith(last) || last === '')) {
+          semanticOptions.push('-')
+        }
+        if ('~'.startsWith(last) || last === '') {
+          semanticOptions.push('~')
+        }
+        if ('..'.startsWith(last) || last === '') {
+          semanticOptions.push('..')
+        }
+        
         // Bookmarks when prefix looks like ':name'
-        const out: string[] = [...idxMatches, ...files]
+        const out: string[] = [...semanticOptions, ...idxMatches, ...files]
         if (last.startsWith(':') || last === ':') {
           const bm = loadBookmarks()
           const names = Object.keys(bm).map(k => `:${k}`)

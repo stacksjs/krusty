@@ -78,6 +78,11 @@ export class KrustyShell implements Shell {
     return this.hookManager
   }
 
+  // Sync pipefail state with command executor
+  syncPipefailToExecutor(enabled: boolean): void {
+    this.commandExecutor.setPipefail(enabled)
+  }
+
   private rl: Readline.Interface | null = null
   private running = false
   private interactiveSession = false
@@ -123,13 +128,19 @@ export class KrustyShell implements Shell {
       this.systemInfoProvider = {} as any
       this.gitInfoProvider = {} as any
       this.completionProvider = new CompletionProvider(this)
-      this.pluginManager = { shutdown: async () => {}, getPluginCompletions: () => [] } as any
+      this.pluginManager = { 
+        shutdown: async () => {}, 
+        getPluginCompletions: () => [],
+        loadPlugins: async () => {},
+        getPlugin: () => undefined
+      } as any
       this.hookManager = { executeHooks: async () => {} } as any
       this.log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any
       this.autoSuggestInput = {} as any
       // Initialize real JobManager even in test mode since tests depend on it
       this.jobManager = new JobManager(this)
-      this.scriptManager = {} as any
+      // Initialize real ScriptManager even in test mode since script tests depend on it
+      this.scriptManager = new ScriptManager(this)
     } else {
       this.themeManager = new ThemeManager(this.config.theme)
       this.promptRenderer = new PromptRenderer(this.config)

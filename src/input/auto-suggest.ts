@@ -33,6 +33,7 @@ export class AutoSuggestInput {
   private currentSuggestion: string = ''
   private historyBrowseActive: boolean = false
   private groupedActive: boolean = false
+  private groupedForRender: Array<{ title: string, items: string[] }> = []
 
   // Configuration defaults
   private static readonly DEFAULT_OPTIONS: Required<AutoSuggestOptions> = {
@@ -59,6 +60,8 @@ export class AutoSuggestInput {
     // Reset history browsing when input changes
     this.historyBrowseActive = false
     this.historyIndex = -1
+    // Update suggestions for the new input
+    this.updateSuggestions()
   }
 
   public setCursorPositionForTesting(pos: number): void {
@@ -249,14 +252,48 @@ export class AutoSuggestInput {
     process.stdout.write(fullText)
 
     // Handle suggestions list display
-    if (this.isShowingSuggestions && this.suggestions.length > 0) {
-      for (let i = 0; i < this.suggestions.length; i++) {
-        const suggestion = this.suggestions[i]
-        const isSelected = i === this.selectedIndex
-        const prefix = isSelected ? '> ' : '  '
-        const color = isSelected ? '\x1B[7m' : '' // Reverse video for selected
-        const reset = isSelected ? '\x1B[0m' : ''
-        process.stdout.write(`\n\x1B[2K${prefix}${color}${suggestion}${reset}`)
+    if (this.isShowingSuggestions) {
+      // Use stored grouped data for rendering if available, otherwise get fresh data
+      const groups = this.groupedActive && this.groupedForRender.length > 0
+        ? this.groupedForRender
+        : (() => {
+            const completions = this.shell.getCompletions?.(this.currentInput, this.cursorPosition)
+            return Array.isArray(completions)
+              ? completions.filter(item =>
+                typeof item === 'object' && item !== null && 'title' in item && 'items' in item,
+              ) as Array<{ title: string, items: string[] }>
+              : []
+          })()
+
+      if (groups.length > 0) {
+        // Render grouped suggestions
+        let flatIndex = 0
+        for (const group of groups) {
+          // Group header
+          process.stdout.write(`\n\x1B[2K  ${group.title.toUpperCase()}:`)
+
+          // Group items
+          for (const item of group.items) {
+            const isSelected = flatIndex === this.selectedIndex
+            const prefix = isSelected ? '> ' : '  '
+            const color = isSelected ? '\x1B[7m' : ''
+            const reset = isSelected ? '\x1B[0m' : ''
+            const brackets = isSelected ? '' : '' // No brackets for selected items
+            process.stdout.write(`\n\x1B[2K${prefix}${color}${brackets}${item}${brackets}${reset}`)
+            flatIndex++
+          }
+        }
+      }
+      else if (this.suggestions.length > 0) {
+        // Render regular suggestions
+        for (let i = 0; i < this.suggestions.length; i++) {
+          const suggestion = this.suggestions[i]
+          const isSelected = i === this.selectedIndex
+          const prefix = isSelected ? '> ' : '  '
+          const color = isSelected ? '\x1B[7m' : '' // Reverse video for selected
+          const reset = isSelected ? '\x1B[0m' : ''
+          process.stdout.write(`\n\x1B[2K${prefix}${color}${suggestion}${reset}`)
+        }
       }
     }
 
@@ -340,7 +377,7 @@ export class AutoSuggestInput {
         // Get suggestions for the current input
         this.updateSuggestions()
       }
-      
+
       // Update display after any input change
       if (key.name === 'backspace' || key.name === 'delete' || (str && str.length === 1 && !key.ctrl && !key.meta)) {
         this.updateDisplay('❯ ')
@@ -356,41 +393,75 @@ export class AutoSuggestInput {
 
     try {
       const completions = this.shell.getCompletions(this.currentInput, this.cursorPosition)
-      
-      // Handle different completion result types
       let suggestions: string[] = []
-      if (Array.isArray(completions)) {
-        suggestions = completions.map(item => 
-          typeof item === 'string' ? item : (item as any).text || String(item)
-        ).filter(s => typeof s === 'string' && s.length > 0)
+
+      // Handle grouped completions
+      const groups = completions.filter(item =>
+        typeof item === 'object' && item !== null && 'title' in item && 'items' in item,
+      ) as Array<{ title: string, items: string[] }>
+
+      if (groups.length > 0) {
+        // Flatten grouped completions
+        for (const group of groups) {
+          suggestions.push(...group.items)
+        }
+
+        // Add history as a trailing group if we have matching history items
+        if (this.shell.history && this.currentInput.trim()) {
+          const historyMatches = this.getMatchingHistory(this.currentInput.trim())
+          if (historyMatches.length > 0) {
+            // Store the enhanced groups for rendering (will be used by updateDisplay)
+            this.groupedForRender = [...groups, { title: 'History', items: historyMatches }]
+            suggestions.push(...historyMatches)
+          }
+          else {
+            this.groupedForRender = groups
+          }
+        }
+        else {
+          this.groupedForRender = groups
+        }
+
+        this.groupedActive = true
       }
-      
+      else {
+        // Handle regular completions (strings or objects with text property)
+        suggestions = completions.map(item =>
+          typeof item === 'string' ? item : (item as any).text || String(item),
+        ).filter(s => typeof s === 'string' && s.length > 0)
+        this.groupedActive = false
+      }
+
       // Set the first suggestion as inline suggestion if available
       if (suggestions.length > 0) {
         const currentText = this.currentInput.trim()
-        const firstSuggestion = suggestions[0]
-        
+        const firstSuggestion = suggestions[this.selectedIndex] || suggestions[0]
+
         // For typo corrections, show the full suggestion if it's different from current input
         if (currentText && firstSuggestion !== currentText) {
           if (firstSuggestion.toLowerCase().startsWith(currentText.toLowerCase())) {
             // Show remaining part of suggestion
             this.currentSuggestion = firstSuggestion.slice(currentText.length)
-          } else {
+          }
+          else {
             // Show full suggestion for typo corrections (e.g., 'gti' -> 'git')
             this.currentSuggestion = firstSuggestion
           }
-        } else if (!currentText && firstSuggestion) {
+        }
+        else if (!currentText && firstSuggestion) {
           this.currentSuggestion = firstSuggestion
-        } else {
+        }
+        else {
           this.currentSuggestion = ''
         }
-        
-      } else {
+      }
+      else {
         this.currentSuggestion = ''
       }
-      
+
       this.suggestions = suggestions
-    } catch {
+    }
+    catch {
       this.currentSuggestion = ''
       this.suggestions = []
     }
@@ -569,6 +640,32 @@ export class AutoSuggestInput {
     return input
   }
 
+  // Get matching history items for grouped completions
+  private getMatchingHistory(prefix: string): string[] {
+    if (!this.shell.history || !prefix) {
+      return []
+    }
+
+    const matches: string[] = []
+    const seen = new Set<string>()
+
+    // Search from most recent to oldest
+    for (let i = this.shell.history.length - 1; i >= 0; i--) {
+      const historyItem = this.shell.history[i]
+      if (historyItem.startsWith(prefix) && !seen.has(historyItem)) {
+        matches.push(historyItem)
+        seen.add(historyItem)
+
+        // Limit to maxSuggestions to avoid overwhelming the display
+        if (matches.length >= this.options.maxSuggestions) {
+          break
+        }
+      }
+    }
+
+    return matches
+  }
+
   // Update display for testing
   public updateDisplayForTesting(prompt: string): void {
     this.updateDisplay(prompt)
@@ -576,6 +673,37 @@ export class AutoSuggestInput {
 
   // Apply selected completion
   public applySelectedCompletion(): void {
+    // Handle grouped completions - use stored grouped data if available
+    const groups = this.groupedActive && this.groupedForRender.length > 0
+      ? this.groupedForRender
+      : (() => {
+          const completions = this.shell.getCompletions?.(this.currentInput, this.cursorPosition)
+          return Array.isArray(completions)
+            ? completions.filter(item =>
+              typeof item === 'object' && item !== null && 'title' in item && 'items' in item,
+            ) as Array<{ title: string, items: string[] }>
+            : []
+        })()
+
+    if (groups.length > 0) {
+      // Flatten grouped completions to find the selected item
+      const flatItems: string[] = []
+      for (const group of groups) {
+        flatItems.push(...group.items)
+      }
+
+      const completion = flatItems[this.selectedIndex]
+      if (completion) {
+        this.currentInput = completion
+        this.cursorPosition = completion.length
+        this.suggestions = []
+        this.selectedIndex = 0
+        this.isShowingSuggestions = false
+      }
+      return
+    }
+
+    // Handle regular suggestions
     if (this.suggestions.length === 0)
       return
 
@@ -587,6 +715,7 @@ export class AutoSuggestInput {
     this.cursorPosition = completion.length
     this.suggestions = []
     this.selectedIndex = 0
+    this.isShowingSuggestions = false
   }
 
   // Key helper methods
@@ -731,6 +860,153 @@ export class AutoSuggestInput {
 
   public historyDownForTesting(): void {
     this.navigateHistory('down')
+  }
+
+  // Grouped navigation for multi-column suggestion lists
+  private navigateGrouped(direction: 'up' | 'down' | 'left' | 'right'): boolean {
+    if (!this.isShowingSuggestions) {
+      return false
+    }
+
+    // Get grouped completions from shell
+    const completions = this.shell.getCompletions?.(this.currentInput, this.cursorPosition)
+    if (!Array.isArray(completions) || completions.length === 0) {
+      return false
+    }
+
+    // Check if completions are grouped (have title property)
+    const groups = completions.filter(item =>
+      typeof item === 'object' && item !== null && 'title' in item && 'items' in item,
+    ) as Array<{ title: string, items: string[] }>
+
+    if (groups.length === 0) {
+      return false
+    }
+
+    // Build flat list with group information
+    const flatItems: Array<{ text: string, groupIndex: number, itemIndex: number }> = []
+    groups.forEach((group, groupIndex) => {
+      group.items.forEach((item, itemIndex) => {
+        flatItems.push({ text: item, groupIndex, itemIndex })
+      })
+    })
+
+    if (flatItems.length === 0 || this.selectedIndex >= flatItems.length) {
+      return false
+    }
+
+    const currentItem = flatItems[this.selectedIndex]
+    const currentGroup = groups[currentItem.groupIndex]
+
+    // Calculate layout for current group
+    const terminalWidth = process.stdout.columns || 80
+    const maxItemLength = Math.max(...currentGroup.items.map(item => item.length))
+    const colWidth = Math.min(maxItemLength + 2, Math.floor(terminalWidth / 2))
+    const cols = Math.max(1, Math.floor(terminalWidth / colWidth))
+
+    // Calculate current row and column within group
+    const currentRow = Math.floor(currentItem.itemIndex / cols)
+    const currentCol = currentItem.itemIndex % cols
+
+    let newSelectedIndex = this.selectedIndex
+
+    switch (direction) {
+      case 'left': {
+        // Move left within current group, wrap to end if at start
+        const newItemIndex = currentItem.itemIndex === 0
+          ? currentGroup.items.length - 1
+          : currentItem.itemIndex - 1
+
+        // Find the flat index for this group item
+        let flatIndex = 0
+        for (let i = 0; i < currentItem.groupIndex; i++) {
+          flatIndex += groups[i].items.length
+        }
+        newSelectedIndex = flatIndex + newItemIndex
+        break
+      }
+
+      case 'right': {
+        // Move right within current group, wrap to start if at end
+        const newItemIndex = currentItem.itemIndex === currentGroup.items.length - 1
+          ? 0
+          : currentItem.itemIndex + 1
+
+        // Find the flat index for this group item
+        let flatIndex = 0
+        for (let i = 0; i < currentItem.groupIndex; i++) {
+          flatIndex += groups[i].items.length
+        }
+        newSelectedIndex = flatIndex + newItemIndex
+        break
+      }
+
+      case 'up': {
+        // Move to previous group, preserving row position
+        if (currentItem.groupIndex > 0) {
+          const targetGroup = groups[currentItem.groupIndex - 1]
+          const targetCols = Math.max(1, Math.floor(terminalWidth / colWidth))
+          const targetRows = Math.ceil(targetGroup.items.length / targetCols)
+
+          // Preserve row, but clamp to available rows in target group
+          const targetRow = Math.min(currentRow, targetRows - 1)
+          const targetCol = Math.min(currentCol, targetCols - 1)
+          let targetItemIndex = targetRow * targetCols + targetCol
+
+          // Clamp to actual items in target group
+          targetItemIndex = Math.min(targetItemIndex, targetGroup.items.length - 1)
+
+          // Find flat index
+          let flatIndex = 0
+          for (let i = 0; i < currentItem.groupIndex - 1; i++) {
+            flatIndex += groups[i].items.length
+          }
+          newSelectedIndex = flatIndex + targetItemIndex
+        }
+        break
+      }
+
+      case 'down': {
+        // First try to move down within current group
+        const nextRowIndex = (currentRow + 1) * cols + currentCol
+        if (nextRowIndex < currentGroup.items.length) {
+          // Move down within current group
+          let flatIndex = 0
+          for (let i = 0; i < currentItem.groupIndex; i++) {
+            flatIndex += groups[i].items.length
+          }
+          newSelectedIndex = flatIndex + nextRowIndex
+        }
+        else if (currentItem.groupIndex < groups.length - 1) {
+          // Move to next group, preserving column position
+          const targetGroup = groups[currentItem.groupIndex + 1]
+          const targetCols = Math.max(1, Math.floor(terminalWidth / colWidth))
+
+          // Preserve column, start from first row
+          const targetCol = Math.min(currentCol, targetCols - 1)
+          let targetItemIndex = targetCol
+
+          // Clamp to actual items in target group
+          targetItemIndex = Math.min(targetItemIndex, targetGroup.items.length - 1)
+
+          // Find flat index
+          let flatIndex = 0
+          for (let i = 0; i <= currentItem.groupIndex; i++) {
+            flatIndex += groups[i].items.length
+          }
+          newSelectedIndex = flatIndex + targetItemIndex
+        }
+        break
+      }
+    }
+
+    // Update selected index if it changed
+    if (newSelectedIndex !== this.selectedIndex && newSelectedIndex >= 0 && newSelectedIndex < flatItems.length) {
+      this.selectedIndex = newSelectedIndex
+      return true
+    }
+
+    return false
   }
 
   // Shell mode management
