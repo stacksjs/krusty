@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 // Helper to safely treat CompletionResults as string[] when we expect flat results
 function flatStrings(out: any): string[] {
@@ -75,7 +75,7 @@ describe('Bun CLI completions', () => {
     expect(out).toContain('--version')
   })
 
-  it.skip('suggests package.json scripts for bun run', () => {
+  it('suggests package.json scripts for bun run', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     // Accept grouped or flat results

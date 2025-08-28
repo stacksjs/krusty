@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { homedir } from 'node:os'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 /**
  * CompletionProvider focused tests
@@ -51,7 +51,7 @@ describe('CompletionProvider', () => {
     expect(out.length).toBeLessThanOrEqual(5)
   })
 
-  it.skip('handles quoted/escaped path fragments', () => {
+  it('handles quoted/escaped path fragments', () => {
     // Cursor inside a quoted arg; we still pass full input and cursor at end
     const input = 'cat "./src/co'
     const out = shell.getCompletions(input, input.length)

@@ -18,7 +18,7 @@ describe('bun run grouped completion behavior', () => {
     })
   })
 
-  it.skip('empty prefix shows scripts, binaries, and files groups', () => {
+  it('empty prefix shows scripts, binaries, and files groups', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -30,7 +30,7 @@ describe('bun run grouped completion behavior', () => {
     expect(groups!.find(g => g.title === 'files')).toBeTruthy()
   })
 
-  it.skip('scripts group is prioritized by common names when empty prefix', () => {
+  it('scripts group is prioritized by common names when empty prefix', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -58,7 +58,7 @@ describe('bun run grouped completion behavior', () => {
     }
   })
 
-  it.skip('path-like prefix shows files group with entries', () => {
+  it('path-like prefix shows files group with entries', () => {
     const input = 'bun run ./'
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)
@@ -69,7 +69,7 @@ describe('bun run grouped completion behavior', () => {
     expect(files!.items.length).toBeGreaterThan(0)
   })
 
-  it.skip('does not duplicate \'binaries\' group (normalized by trim/lower)', () => {
+  it('does not duplicate \'binaries\' group (normalized by trim/lower)', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)

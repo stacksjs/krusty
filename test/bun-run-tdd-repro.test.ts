@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultConfig } from '../src/config'
 import { KrustyShell } from '../src'
+import { defaultConfig } from '../src/config'
 
 function asGroups(out: any): { title: string, items: string[] }[] | null {
   if (Array.isArray(out) && out.length && typeof out[0] === 'object' && 'title' in out[0])
@@ -50,7 +50,7 @@ describe('bun run TDD repro: three groups shown with expected local content', ()
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it.skip('bun run shows scripts, binaries, and files groups with expected items', () => {
+  it('bun run shows scripts, binaries, and files groups with expected items', () => {
     const input = 'bun run '
     const out: any = shell.getCompletions(input, input.length)
     const groups = asGroups(out)

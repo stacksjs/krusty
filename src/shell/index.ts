@@ -403,6 +403,22 @@ export class KrustyShell implements Shell {
         this.log.error('Error in completion provider:', error)
       }
 
+      // Check if completions are grouped (CompletionGroup[])
+      const isGrouped = Array.isArray(completions) && 
+        completions.length > 0 && 
+        completions[0] && 
+        typeof completions[0] === 'object' && 
+        'title' in completions[0] && 
+        'items' in completions[0]
+
+      // If grouped, return as-is (don't flatten or process further)
+      if (isGrouped) {
+        // Execute completion:after hooks
+        this.hookManager.executeHooks('completion:after', { input, cursor, completions })
+          .catch(err => this.log.error('completion:after hook error:', err))
+        return completions
+      }
+
       // Always collect plugin completions (flat strings)
       let pluginCompletions: string[] = []
       if (this.pluginManager?.getPluginCompletions) {
