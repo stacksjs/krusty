@@ -89,6 +89,19 @@ export class KrustyShell extends EventEmitter implements Shell {
 
   private rl: Readline.Interface | null = null
   private running = false
+  // Public method to check if shell is in interactive session
+  isInteractive(): boolean {
+    return this.interactiveSession
+  }
+
+  // Get current input for testing (delegates to AutoSuggestInput)
+  getCurrentInputForTesting(): string {
+    if (this.autoSuggestInput && typeof this.autoSuggestInput.getCurrentInput === 'function') {
+      return this.autoSuggestInput.getCurrentInput()
+    }
+    return ''
+  }
+
   private interactiveSession = false
   private promptPreRendered = false
 
