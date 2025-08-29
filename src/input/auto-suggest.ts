@@ -20,6 +20,7 @@ export class AutoSuggestInput {
   private rl: readline.Interface | null = null
   private readonly reverseSearchManager: ReverseSearchManager
   private handleKeypress!: (str: string, key: { name: string, ctrl: boolean, meta: boolean, shift: boolean } | undefined) => void
+  private keypressListener?: (str: string, key: { name: string, ctrl: boolean, meta?: boolean, shift?: boolean }) => void
 
   // Input state
   private currentInput: string = ''
@@ -329,15 +330,32 @@ export class AutoSuggestInput {
 
       // Handle Ctrl+C
       if (key.ctrl && key.name === 'c') {
+        // Clear input but stay on same line with fresh prompt
+        this.currentInput = ''
+        this.cursorPosition = 0
+        this.historyIndex = -1
+        this.originalInput = ''
+        this.isShowingSuggestions = false
+        this.suggestions = []
+        this.selectedIndex = 0
+        this.currentSuggestion = ''
+        this.historyBrowseActive = false
+        this.groupedActive = false
+        this.groupedForRender = []
+        
+        // Move to new line and show fresh prompt
         process.stdout.write('\n')
-        this.reset()
+        this.updateDisplay('❯ ')
+        return
       }
-      // Handle arrow keys
+      // Handle arrow keys for history navigation
       else if (key.name === 'up') {
-        this.moveCursorUp()
+        this.navigateHistory('up')
+        this.updateDisplay('❯ ')
       }
       else if (key.name === 'down') {
-        this.moveCursorDown()
+        this.navigateHistory('down')
+        this.updateDisplay('❯ ')
       }
       else if (key.name === 'left') {
         this.cursorPosition = Math.max(0, this.cursorPosition - 1)
@@ -391,8 +409,8 @@ export class AutoSuggestInput {
         this.updateSuggestions()
       }
 
-      // Update display after any input change
-      if (key.name === 'backspace' || key.name === 'delete' || (str && str.length === 1 && !key.ctrl && !key.meta)) {
+      // Update display after any input change (but not for Ctrl+C or arrow keys)
+      if (key.name === 'backspace' || key.name === 'delete' || (str && str.length === 1 && !key.ctrl && !key.meta) || key.name === 'left' || key.name === 'right' || key.name === 'home' || key.name === 'end') {
         this.updateDisplay('❯ ')
       }
     }
@@ -491,16 +509,13 @@ export class AutoSuggestInput {
         historySize: 0, // We handle history ourselves
       })
 
-      // Set up keypress listener with custom handler for Ctrl+C
+      // Set up keypress listener
       const onKeypress = (str: string, key: { name: string, ctrl: boolean, meta?: boolean, shift?: boolean }) => {
-        if (key.ctrl && key.name === 'c') {
-          process.stdout.write('\n')
-          this.cleanup()
-          resolve('') // Resolve with empty string on Ctrl+C
-          return
-        }
         this.handleKeypress(str, { ...key, meta: key.meta || false, shift: key.shift || false })
       }
+      
+      // Store the listener reference for proper cleanup
+      this.keypressListener = onKeypress
       process.stdin.on('keypress', onKeypress)
 
       // Initial display
@@ -508,10 +523,10 @@ export class AutoSuggestInput {
 
       // Handle line input
       this.rl.on('line', (input) => {
-        // Add newline after command input to separate from output
-        process.stdout.write('\n')
-        // Clear current input after command execution to prevent re-filling
-        this.currentInput = ''
+        // Clear current line and move to new line
+        process.stdout.write('\r\x1B[2K\n')
+        // Reset state after command execution
+        this.reset()
         resolve(input)
         this.cleanup()
       })
@@ -527,7 +542,11 @@ export class AutoSuggestInput {
   // Clean up resources
   private cleanup(): void {
     if (this.rl) {
-      process.stdin.removeListener('keypress', this.handleKeypress)
+      // Remove our specific keypress listener
+      if (this.keypressListener) {
+        process.stdin.removeListener('keypress', this.keypressListener)
+        this.keypressListener = undefined
+      }
       this.rl.close()
       this.rl = null
     }
@@ -543,6 +562,9 @@ export class AutoSuggestInput {
     this.suggestions = []
     this.selectedIndex = 0
     this.currentSuggestion = ''
+    this.historyBrowseActive = false
+    this.groupedActive = false
+    this.groupedForRender = []
   }
 
   // Get completion text from various completion types
