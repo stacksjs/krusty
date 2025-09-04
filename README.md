@@ -21,7 +21,6 @@ Krusty is a modern, feature-rich shell built with TypeScript and Bun. It provide
 - 📜 **Scripting**: Complete scripting engine with control flow, functions, and error handling
 - 🎨 **Themes**: Highly configurable prompts with Git status and runtime detection
 - 🔌 **Plugins**: Extensible plugin system with hooks and lifecycle management
-- 🧪 **Tested**: Comprehensive test suite with 200+ test cases for reliability
 
 ## Quick start
 
